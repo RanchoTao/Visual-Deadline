@@ -1,23 +1,15 @@
-export type TaskStatus = 'todo' | 'doing' | 'done';
+export type Importance = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 
 export interface Task {
   id: string;
   title: string;
   description?: string;
-  importance: 1 | 2 | 3 | 4 | 5;
+  importance: Importance;
   deadline?: string;
-  estimatedMinutes?: number;
-  status: TaskStatus;
+  progress: number;
+  schemaVersion: 2;
   createdAt: string;
   updatedAt: string;
 }
 
-export type TaskInput = Omit<Task, 'id' | 'createdAt' | 'updatedAt'>;
-
-export type QuadrantKey =
-  | 'importantUrgent'
-  | 'importantNotUrgent'
-  | 'notImportantUrgent'
-  | 'notImportantNotUrgent';
-
-export type MatrixGroups = Record<QuadrantKey, Task[]>;
+export type TaskInput = Omit<Task, 'id' | 'schemaVersion' | 'createdAt' | 'updatedAt'>;

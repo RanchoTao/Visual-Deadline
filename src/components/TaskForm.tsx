@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from 'react';
-import type { Task, TaskInput, TaskStatus } from '../types/task';
+import type { Task, TaskInput } from '../types/task';
 import { toDatetimeLocalValue } from '../utils/date';
+import { clampProgress } from '../utils/taskScoring';
 
 interface TaskFormProps {
   task?: Task;
@@ -11,10 +12,9 @@ interface TaskFormProps {
 const defaultValues: TaskInput = {
   title: '',
   description: '',
-  importance: 3,
+  importance: 6,
   deadline: toDatetimeLocalValue(new Date(Date.now() + 24 * 60 * 60 * 1000)),
-  estimatedMinutes: undefined,
-  status: 'todo',
+  progress: 0,
 };
 
 export function TaskForm({ task, onCancel, onSubmit }: TaskFormProps) {
@@ -31,7 +31,7 @@ export function TaskForm({ task, onCancel, onSubmit }: TaskFormProps) {
       title: values.title.trim(),
       description: values.description?.trim() || undefined,
       deadline: values.deadline || undefined,
-      estimatedMinutes: values.estimatedMinutes || undefined,
+      progress: clampProgress(values.progress),
     });
   }
 
@@ -67,20 +67,17 @@ export function TaskForm({ task, onCancel, onSubmit }: TaskFormProps) {
       <div className="grid gap-4 md:grid-cols-3">
         <div>
           <label className="text-sm font-medium text-slate-700" htmlFor="importance">
-            重要性
+            重要性（1-10）
           </label>
-          <select
+          <input
             id="importance"
+            type="number"
+            min="1"
+            max="10"
             value={values.importance}
             onChange={(event) => setValues({ ...values, importance: Number(event.target.value) as TaskInput['importance'] })}
             className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
-          >
-            {[1, 2, 3, 4, 5].map((level) => (
-              <option key={level} value={level}>
-                {level}
-              </option>
-            ))}
-          </select>
+          />
         </div>
 
         <div>
@@ -97,40 +94,19 @@ export function TaskForm({ task, onCancel, onSubmit }: TaskFormProps) {
         </div>
 
         <div>
-          <label className="text-sm font-medium text-slate-700" htmlFor="estimatedMinutes">
-            预计耗时（分钟）
+          <label className="text-sm font-medium text-slate-700" htmlFor="progress">
+            当前进度（0-100）
           </label>
           <input
-            id="estimatedMinutes"
+            id="progress"
             type="number"
-            min="1"
-            value={values.estimatedMinutes ?? ''}
-            onChange={(event) =>
-              setValues({
-                ...values,
-                estimatedMinutes: event.target.value ? Number(event.target.value) : undefined,
-              })
-            }
+            min="0"
+            max="100"
+            value={values.progress}
+            onChange={(event) => setValues({ ...values, progress: clampProgress(Number(event.target.value)) })}
             className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
-            placeholder="30"
           />
         </div>
-      </div>
-
-      <div>
-        <label className="text-sm font-medium text-slate-700" htmlFor="status">
-          状态
-        </label>
-        <select
-          id="status"
-          value={values.status}
-          onChange={(event) => setValues({ ...values, status: event.target.value as TaskStatus })}
-          className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
-        >
-          <option value="todo">todo</option>
-          <option value="doing">doing</option>
-          <option value="done">done</option>
-        </select>
       </div>
 
       <div className="flex flex-wrap justify-end gap-3">
