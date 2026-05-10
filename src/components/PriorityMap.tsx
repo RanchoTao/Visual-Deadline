@@ -1,7 +1,7 @@
-import { type CSSProperties, useMemo, useState } from 'react';
+import { type CSSProperties, useEffect, useMemo, useState } from 'react';
 import type { Task } from '../types/task';
 import { formatCountdown, formatDeadline } from '../utils/date';
-import { getImportancePosition, getRecommendationReason, getUrgencyPosition, getUrgencyScore, isTaskComplete } from '../utils/taskScoring';
+import { getActivityTypeLabel, getImportancePosition, getPulseDuration, getRecommendationReason, getUrgencyPosition, getUrgencyScore, isTaskActive, isTaskComplete } from '../utils/taskScoring';
 import { ProgressBar } from './ProgressBar';
 
 interface PriorityMapProps {
@@ -16,6 +16,15 @@ interface PositionedTask {
 
 const MIN_POINT_POSITION = 9;
 const MAX_POINT_POSITION = 91;
+
+function formatCurrentTime(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${year}-${month}-${day} ${hours}:${minutes}`;
+}
 
 function clampPosition(value: number): number {
   return Math.min(MAX_POINT_POSITION, Math.max(MIN_POINT_POSITION, value));
@@ -60,7 +69,8 @@ function getHoverCardStyle(positionedTask: PositionedTask): CSSProperties {
 function taskPointTone(task: Task): string {
   const urgent = getUrgencyScore(task.deadline) >= 30;
 
-  if (isTaskComplete(task)) return 'h-5 w-5 border-white bg-emerald-400 shadow-emerald-100';
+  if (task.lifecycleStatus === 'abandoned') return 'h-5 w-5 border-white bg-slate-300 opacity-45 shadow-slate-100';
+  if (isTaskComplete(task)) return 'h-5 w-5 border-white bg-emerald-300 opacity-70 shadow-emerald-100';
   if (task.importance >= 8 && urgent) return 'h-7 w-7 border-white bg-rose-400 shadow-rose-100';
   if (task.importance >= 8) return 'h-6 w-6 border-white bg-amber-400 shadow-amber-100';
   if (urgent) return 'h-6 w-6 border-white bg-sky-400 shadow-sky-100';
@@ -72,7 +82,7 @@ function TaskDetailContent({ task }: { task: Task }) {
     <>
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-semibold text-sky-700">任务详情</p>
+          <p className="text-xs font-semibold text-sky-700">任务详情 · {getActivityTypeLabel(task.activityType)}</p>
           <h3 className="mt-1 text-lg font-bold text-slate-950">{task.title}</h3>
         </div>
         {isTaskComplete(task) ? <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">已完成</span> : null}
@@ -92,11 +102,17 @@ function TaskDetailContent({ task }: { task: Task }) {
 }
 
 export function PriorityMap({ tasks }: PriorityMapProps) {
+  const [now, setNow] = useState(() => new Date());
   const positionedTasks = useMemo(() => tasks.map(getPositionedTask), [tasks]);
   const [hoverTaskId, setHoverTaskId] = useState<string | undefined>(undefined);
   const [selectedTaskId, setSelectedTaskId] = useState<string | undefined>(undefined);
   const hoverPositionedTask = positionedTasks.find(({ task }) => task.id === hoverTaskId);
   const selectedTask = positionedTasks.find(({ task }) => task.id === selectedTaskId)?.task;
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => setNow(new Date()), 60_000);
+    return () => window.clearInterval(intervalId);
+  }, []);
 
   return (
     <section className="rounded-[2rem] bg-white p-5 shadow-sm ring-1 ring-slate-100">
@@ -105,7 +121,10 @@ export function PriorityMap({ tasks }: PriorityMapProps) {
           <p className="text-sm font-semibold text-slate-500">紧急重要矩阵</p>
           <h2 className="text-2xl font-bold text-slate-950">任务在时间和重要性中的位置</h2>
         </div>
-        <p className="text-sm text-slate-500">越靠右越接近截止，越靠上越重要。</p>
+        <div className="text-right">
+          <p className="text-sm text-slate-500">越靠右越接近截止，越靠上越重要。</p>
+          <p className="mt-1 text-xs font-medium text-slate-400">当前时间 {formatCurrentTime(now)}</p>
+        </div>
       </div>
 
       <div className="overflow-x-auto pb-2">
@@ -154,7 +173,10 @@ export function PriorityMap({ tasks }: PriorityMapProps) {
                 style={{ left: `${left}%`, bottom: `${bottom}%` }}
                 aria-label={`查看任务 ${task.title}`}
               >
-                <span className={`block rounded-full border-4 shadow-md transition group-hover:scale-110 ${taskPointTone(task)} ${active ? 'scale-110 ring-4 ring-sky-100/80' : ''}`} />
+                <span
+                  className={`block rounded-full border-4 shadow-md transition group-hover:scale-110 ${taskPointTone(task)} ${active ? 'scale-110 ring-4 ring-sky-100/80' : ''} ${isTaskActive(task) ? 'animate-task-breathe' : ''}`}
+                  style={isTaskActive(task) ? { animationDuration: `${getPulseDuration(task)}s` } : undefined}
+                />
                 <span className="absolute left-6 top-1/2 max-w-28 -translate-y-1/2 truncate rounded-full bg-white/90 px-2.5 py-1 text-xs font-medium text-slate-600 shadow-sm ring-1 ring-white/80 backdrop-blur group-hover:max-w-40">
                   {task.title}
                 </span>

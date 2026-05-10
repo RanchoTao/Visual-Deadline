@@ -16,3 +16,18 @@ select,
 textarea {
   font: inherit;
 }
+
+@keyframes task-breathe {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.86;
+  }
+  50% {
+    transform: scale(1.16);
+    opacity: 1;
+  }
+}
+
+.animate-task-breathe {
+  animation: task-breathe 3s ease-in-out infinite;
+}
