@@ -3,6 +3,8 @@ import { getActivityTypeLabel, getLifecycleStatusLabel } from '../utils/taskScor
 
 interface ActivityLogProps {
   tasks: Task[];
+  limit?: number;
+  title?: string;
 }
 
 function formatLogTime(value?: string): string {
@@ -15,20 +17,20 @@ function formatLogTime(value?: string): string {
   }).format(new Date(value));
 }
 
-export function ActivityLog({ tasks }: ActivityLogProps) {
-  const logTasks = tasks
+export function ActivityLog({ tasks, limit = 8, title = '最近归档' }: ActivityLogProps) {
+  const archivedTasks = tasks
     .filter((task) => task.lifecycleStatus === 'completed' || task.lifecycleStatus === 'abandoned')
-    .sort((a, b) => new Date(b.completedAt ?? b.abandonedAt ?? b.updatedAt).getTime() - new Date(a.completedAt ?? a.abandonedAt ?? a.updatedAt).getTime())
-    .slice(0, 8);
+    .sort((a, b) => new Date(b.completedAt ?? b.abandonedAt ?? b.updatedAt).getTime() - new Date(a.completedAt ?? a.abandonedAt ?? a.updatedAt).getTime());
+  const logTasks = Number.isFinite(limit) ? archivedTasks.slice(0, limit) : archivedTasks;
 
   return (
     <section className="rounded-[2rem] border border-white/70 bg-white/75 p-5 shadow-xl shadow-slate-200/60 backdrop-blur">
       <div className="flex items-center justify-between gap-4">
         <div>
           <p className="text-sm font-semibold text-slate-500">生命日志 / Activity Log</p>
-          <h2 className="text-2xl font-semibold text-slate-950">最近归档</h2>
+          <h2 className="text-2xl font-semibold text-slate-950">{title}</h2>
         </div>
-        <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-500">{logTasks.length} 条</span>
+        <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-500">{archivedTasks.length} 条</span>
       </div>
 
       {logTasks.length === 0 ? (

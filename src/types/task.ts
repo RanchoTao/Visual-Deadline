@@ -41,3 +41,15 @@ export interface Achievement {
   description: string;
   unlockedAt: string;
 }
+
+export type LifeOSModule = 'life-map' | 'vd' | 'social' | 'profile' | 'log';
+
+export interface UserProfile {
+  nickname: string;
+  height: string;
+  weight: string;
+  identity: string;
+  skills: string;
+  longTermGoals: string;
+  currentStage: string;
+}

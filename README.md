@@ -2,19 +2,16 @@
 
 **可视化 Deadline，非传统 Todo List。**
 
-Visualized-Deadline（VD）是一个帮助用户观察 Deadline、认知压力与生活动量的前端 MVP。它不是传统待办列表；系统记录任务、时间压力与人生节奏，用户只需要观察状态，选择下一步。
+Visualized-Deadline（VD）现在是 LifeOS Shell 的第一个工作模块：它仍然负责可视化 Deadline、认知压力与生活动量，同时为后续的人生地图、社交、个人主页和日志模块保留清晰入口。
 
-## v0.5-alpha：Pressure Calibration + Achievement System
+## v0.6-alpha：LifeOS Shell
 
-- 创建项目：标题、描述、重要性（1-10）、截止时间、进度（0-100）、活动类型。
-- 管理项目：新增、编辑、删除、完成、放弃，并保留基础生命日志。
-- 首次压力校准：首次进入时询问“你近期主观生活压力有多大？”，保存为 `baselinePressure`。
-- 实时压力指数：以压力基线、进行中项目的紧急度/重要性、完成项目与恢复/娱乐活动的释放共同估算。
-- 压力状态：平稳、可控、高压、过载，以及 raw pressure 超过 100 时的“压力爆表 / Burnout Risk”。
-- 轻量成就系统：记录首次进入、首次创建/完成/放弃低价值任务、压力回到可控区等生活动量事件。
-- 紧急重要矩阵：用二维压力场展示进行中项目，并清晰呈现四个象限。
-- 倒计时：展示“还剩 6天 12小时”或“已超时 3小时”等截止时间状态。
-- 本地持久化：使用 `localStorage` 保存项目、压力基线、成就，并兼容旧版本任务数据。
+- 顶部导航：在不刷新页面的情况下切换「人生地图 / VD / 社交 / 个人主页 / 日志」。
+- VD 默认模块：保留压力指数、主观压力基线滑杆、优先级地图、活动列表、归档日志、成就和本地持久化。
+- 人生地图：展示 Academic、Research、Fitness、Finance、Social、Content、Health 七个生活领域的占位卡片。
+- 社交：保留 relationship map、contact notes、social energy tracking、interaction review 的未来说明。
+- 个人主页：本地编辑 nickname、height、weight、identity、skills、longTermGoals、currentStage。
+- 日志：独立展示已完成 / 已放弃项目、时间戳和活动类型，同时 VD 内仍保留小日志预览。
 
 ## 压力模型
 
@@ -32,7 +29,7 @@ rawPressure = baselinePressure + weightedActiveItemPressure - relief
 
 其中：
 
-- `baselinePressure` 来自首次进入时的主观压力校准。
+- `baselinePressure` 来自首次进入时的主观压力校准，也可以在 VD 压力卡片中用滑杆微调。
 - `urgencyWeight` 根据截止时间远近计算，超期和 24 小时内更高。
 - `importanceWeight` 来自 1-10 的重要性。
 - `unfinishedWeight` 随进度降低，但保留最小未完成权重。
@@ -46,6 +43,13 @@ rawPressure = baselinePressure + weightedActiveItemPressure - relief
 - 61-80：高压
 - 81-100：过载
 - >100：压力爆表 / Burnout Risk
+
+## 本地存储 keys
+
+- `visualized-deadline.tasks`：任务与活动项目。
+- `visualized-deadline.baselinePressure`：主观压力基线。
+- `visualized-deadline.achievements`：已解锁成就。
+- `visualized-deadline.profile`：本地个人主页资料。
 
 ## 成就列表
 

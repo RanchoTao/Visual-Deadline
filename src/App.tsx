@@ -1,15 +1,20 @@
-import { useEffect, useMemo, useState } from 'react';
+import { type ReactElement, useEffect, useMemo, useState } from 'react';
 import { AchievementToast } from './components/AchievementToast';
 import { AchievementsPanel } from './components/AchievementsPanel';
 import { ActivityLog } from './components/ActivityLog';
+import { LifeMapPage } from './components/LifeMapPage';
+import { LifeOSNav } from './components/LifeOSNav';
+import { LogPage } from './components/LogPage';
 import { PressureCalibration } from './components/PressureCalibration';
+import { ProfilePage } from './components/ProfilePage';
 import { PressureCard } from './components/PressureCard';
 import { PriorityMap } from './components/PriorityMap';
 import { RecommendationCard } from './components/RecommendationCard';
 import { TaskForm } from './components/TaskForm';
+import { SocialPage } from './components/SocialPage';
 import { TaskList } from './components/TaskList';
 import { useLocalStorage } from './hooks/useLocalStorage';
-import type { Achievement, ActivityType, LifecycleStatus, PressureBreakdown, Task, TaskInput } from './types/task';
+import type { Achievement, ActivityType, LifecycleStatus, LifeOSModule, PressureBreakdown, Task, TaskInput, UserProfile } from './types/task';
 import {
   achievementCatalog,
   calculatePressureIndex,
@@ -25,8 +30,19 @@ import {
 const STORAGE_KEY = 'visualized-deadline.tasks';
 const BASELINE_PRESSURE_STORAGE_KEY = 'visualized-deadline.baselinePressure';
 const ACHIEVEMENTS_STORAGE_KEY = 'visualized-deadline.achievements';
+const PROFILE_STORAGE_KEY = 'visualized-deadline.profile';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+const defaultProfile: UserProfile = {
+  nickname: '',
+  height: '',
+  weight: '',
+  identity: '',
+  skills: '',
+  longTermGoals: '',
+  currentStage: '',
+};
 
 type LegacyTask = Partial<Omit<Task, 'schemaVersion' | 'activityType' | 'lifecycleStatus'>> & {
   activityType?: ActivityType | string;
@@ -118,6 +134,21 @@ function normalizeStoredAchievements(achievements: Achievement[]): Achievement[]
   return achievements.filter((achievement) => knownIds.has(achievement.id) && Boolean(achievement.unlockedAt));
 }
 
+function normalizeProfile(profile: unknown): UserProfile {
+  if (!profile || typeof profile !== 'object') return defaultProfile;
+  const storedProfile = profile as Partial<UserProfile>;
+
+  return {
+    nickname: storedProfile.nickname ?? '',
+    height: storedProfile.height ?? '',
+    weight: storedProfile.weight ?? '',
+    identity: storedProfile.identity ?? '',
+    skills: storedProfile.skills ?? '',
+    longTermGoals: storedProfile.longTermGoals ?? '',
+    currentStage: storedProfile.currentStage ?? '',
+  };
+}
+
 function createTask(input: TaskInput): Task {
   const now = new Date().toISOString();
   const normalizedInput = normalizeTaskInput(input);
@@ -146,6 +177,8 @@ function createAchievement(id: string): Achievement | undefined {
 function App() {
   const [tasks, setTasks] = useLocalStorage<Task[]>(STORAGE_KEY, demoTasks);
   const [achievements, setAchievements] = useLocalStorage<Achievement[]>(ACHIEVEMENTS_STORAGE_KEY, []);
+  const [profile, setProfile] = useLocalStorage<UserProfile>(PROFILE_STORAGE_KEY, defaultProfile);
+  const [activeModule, setActiveModule] = useState<LifeOSModule>('vd');
   const [baselinePressure, setBaselinePressure] = useState<number | null>(() => readBaselinePressure());
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | undefined>();
@@ -156,6 +189,7 @@ function App() {
     return storedTasks.map((task) => normalizeStoredTask(task));
   }, [tasks]);
   const normalizedAchievements = useMemo(() => normalizeStoredAchievements(achievements), [achievements]);
+  const normalizedProfile = useMemo(() => normalizeProfile(profile), [profile]);
   const activeTasks = useMemo(() => normalizedTasks.filter((task) => task.lifecycleStatus === 'active'), [normalizedTasks]);
   const recommendedTask = useMemo(() => getRecommendedTask(normalizedTasks), [normalizedTasks]);
   const pressure = useMemo<PressureBreakdown>(() => calculatePressureIndex(normalizedTasks, baselinePressure ?? 35), [normalizedTasks, baselinePressure]);
@@ -171,6 +205,12 @@ function App() {
       setAchievements(normalizedAchievements);
     }
   }, [achievements, normalizedAchievements, setAchievements]);
+
+  useEffect(() => {
+    if (JSON.stringify(profile) !== JSON.stringify(normalizedProfile)) {
+      setProfile(normalizedProfile);
+    }
+  }, [normalizedProfile, profile, setProfile]);
 
   useEffect(() => {
     if (!toastAchievement) return;
@@ -282,37 +322,52 @@ function App() {
     setIsFormOpen(true);
   }
 
+  const vdModule = (
+    <>
+      <header className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <p className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-500">Visualized Deadline · v0.6-alpha</p>
+          <h1 className="mt-2 text-4xl font-semibold tracking-tight text-slate-950 md:text-5xl">可视化 Deadline，非传统 Todo List。</h1>
+          <p className="mt-3 max-w-2xl text-slate-600">系统记录任务、时间压力与人生节奏；你只需要观察状态，选择下一步。</p>
+        </div>
+        <button onClick={() => setIsFormOpen(true)} className="rounded-full bg-slate-950 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-slate-900/10 hover:bg-slate-700">
+          添加项目
+        </button>
+      </header>
+
+      <PressureCard pressure={pressure} onBaselinePressureChange={saveBaselinePressure} onResetBaseline={resetBaselinePressure} />
+      <RecommendationCard task={recommendedTask} />
+
+      {isFormOpen ? <TaskForm task={editingTask} onCancel={closeForm} onSubmit={handleSubmit} /> : null}
+
+      <AchievementsPanel achievements={normalizedAchievements} />
+
+      <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+        <PriorityMap tasks={activeTasks} />
+        <div className="space-y-6">
+          <TaskList tasks={activeTasks} onArchive={archiveTask} onDelete={deleteTask} onEdit={startEditing} />
+          <ActivityLog tasks={normalizedTasks} />
+        </div>
+      </div>
+    </>
+  );
+
+  const moduleContent: Record<LifeOSModule, ReactElement> = {
+    'life-map': <LifeMapPage />,
+    vd: vdModule,
+    social: <SocialPage />,
+    profile: <ProfilePage profile={normalizedProfile} onProfileChange={setProfile} />,
+    log: <LogPage tasks={normalizedTasks} />,
+  };
+
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,#dbeafe,transparent_32%),radial-gradient(circle_at_top_right,#f8fafc,transparent_30%),linear-gradient(180deg,#f8fafc,#eef2f7)] px-4 py-8 text-slate-900 md:px-8">
       {baselinePressure === null ? <PressureCalibration onSave={saveBaselinePressure} /> : null}
       <AchievementToast achievement={toastAchievement} />
 
       <div className="mx-auto max-w-6xl space-y-6">
-        <header className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-500">Visualized Deadline · v0.5-alpha</p>
-            <h1 className="mt-2 text-4xl font-semibold tracking-tight text-slate-950 md:text-5xl">可视化 Deadline，非传统 Todo List。</h1>
-            <p className="mt-3 max-w-2xl text-slate-600">系统记录任务、时间压力与人生节奏；你只需要观察状态，选择下一步。</p>
-          </div>
-          <button onClick={() => setIsFormOpen(true)} className="rounded-full bg-slate-950 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-slate-900/10 hover:bg-slate-700">
-            添加项目
-          </button>
-        </header>
-
-        <PressureCard pressure={pressure} onResetBaseline={resetBaselinePressure} />
-        <RecommendationCard task={recommendedTask} />
-
-        {isFormOpen ? <TaskForm task={editingTask} onCancel={closeForm} onSubmit={handleSubmit} /> : null}
-
-        <AchievementsPanel achievements={normalizedAchievements} />
-
-        <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-          <PriorityMap tasks={activeTasks} />
-          <div className="space-y-6">
-            <TaskList tasks={activeTasks} onArchive={archiveTask} onDelete={deleteTask} onEdit={startEditing} />
-            <ActivityLog tasks={normalizedTasks} />
-          </div>
-        </div>
+        <LifeOSNav activeModule={activeModule} onModuleChange={setActiveModule} />
+        {moduleContent[activeModule]}
       </div>
     </main>
   );
