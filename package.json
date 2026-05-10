@@ -19,8 +19,6 @@
     "vite": "latest",
     "tailwindcss": "latest",
     "@types/react": "latest",
-    "@types/react-dom": "latest",
-    "@tailwindcss/vite": "latest"
     "@types/react-dom": "latest"
   }
 }
