@@ -14,8 +14,8 @@ interface PositionedTask {
   bottom: number;
 }
 
-const MIN_POINT_POSITION = 6;
-const MAX_POINT_POSITION = 94;
+const MIN_POINT_POSITION = 9;
+const MAX_POINT_POSITION = 91;
 
 function clampPosition(value: number): number {
   return Math.min(MAX_POINT_POSITION, Math.max(MIN_POINT_POSITION, value));
@@ -60,11 +60,11 @@ function getHoverCardStyle(positionedTask: PositionedTask): CSSProperties {
 function taskPointTone(task: Task): string {
   const urgent = getUrgencyScore(task.deadline) >= 30;
 
-  if (isTaskComplete(task)) return 'h-5 w-5 border-emerald-100 bg-emerald-500 shadow-emerald-200';
-  if (task.importance >= 8 && urgent) return 'h-8 w-8 border-rose-100 bg-rose-500 shadow-rose-300';
-  if (task.importance >= 8) return 'h-7 w-7 border-amber-100 bg-amber-500 shadow-amber-200';
-  if (urgent) return 'h-7 w-7 border-sky-100 bg-sky-500 shadow-sky-200';
-  return 'h-5 w-5 border-slate-100 bg-slate-500 shadow-slate-200';
+  if (isTaskComplete(task)) return 'h-5 w-5 border-white bg-emerald-400 shadow-emerald-100';
+  if (task.importance >= 8 && urgent) return 'h-7 w-7 border-white bg-rose-400 shadow-rose-100';
+  if (task.importance >= 8) return 'h-6 w-6 border-white bg-amber-400 shadow-amber-100';
+  if (urgent) return 'h-6 w-6 border-white bg-sky-400 shadow-sky-100';
+  return 'h-5 w-5 border-white bg-slate-400 shadow-slate-100';
 }
 
 function TaskDetailContent({ task }: { task: Task }) {
@@ -109,30 +109,30 @@ export function PriorityMap({ tasks }: PriorityMapProps) {
       </div>
 
       <div className="overflow-x-auto pb-2">
-        <div className="relative h-[31rem] min-w-[42rem] overflow-hidden rounded-[1.75rem] border border-slate-300 bg-white p-5">
-          <div className="pointer-events-none absolute inset-x-12 bottom-14 top-12 border-2 border-slate-400 bg-[linear-gradient(90deg,rgba(148,163,184,0.11)_1px,transparent_1px),linear-gradient(0deg,rgba(148,163,184,0.11)_1px,transparent_1px)] bg-[size:12.5%_12.5%]" />
-          <div className="pointer-events-none absolute bottom-14 left-12 top-12 w-[calc(50%-3rem)] bg-sky-50/45" />
-          <div className="pointer-events-none absolute bottom-14 right-12 top-12 w-[calc(50%-3rem)] bg-rose-50/45" />
-          <div className="pointer-events-none absolute bottom-14 left-12 right-12 top-1/2 bg-white/45" />
-          <div className="pointer-events-none absolute bottom-14 left-1/2 top-12 border-l-2 border-slate-500" />
-          <div className="pointer-events-none absolute left-12 right-12 top-1/2 border-t-2 border-slate-500" />
+        <div className="relative h-[31rem] min-w-[42rem] overflow-hidden rounded-[2rem] border border-slate-200 bg-gradient-to-br from-white via-slate-50/80 to-sky-50/40 p-6 shadow-inner">
+          <div className="pointer-events-none absolute inset-x-16 bottom-16 top-16 border border-slate-300/80 bg-[linear-gradient(90deg,rgba(148,163,184,0.08)_1px,transparent_1px),linear-gradient(0deg,rgba(148,163,184,0.08)_1px,transparent_1px)] bg-[size:12.5%_12.5%]" />
+          <div className="pointer-events-none absolute bottom-16 left-16 top-16 w-[calc(50%-4rem)] bg-sky-50/35" />
+          <div className="pointer-events-none absolute bottom-16 right-16 top-16 w-[calc(50%-4rem)] bg-rose-50/30" />
+          <div className="pointer-events-none absolute bottom-16 left-16 right-16 top-1/2 bg-white/55" />
+          <div className="pointer-events-none absolute bottom-16 left-1/2 top-16 border-l border-slate-300/90" />
+          <div className="pointer-events-none absolute left-16 right-16 top-1/2 border-t border-slate-300/90" />
 
-          <div className="pointer-events-none absolute left-16 top-16 text-sm font-bold text-sky-800">II 重要但不紧急</div>
-          <div className="pointer-events-none absolute right-16 top-16 text-sm font-bold text-rose-800">I 紧急且重要</div>
-          <div className="pointer-events-none absolute bottom-20 left-16 text-sm font-bold text-slate-500">III 不紧急且不重要</div>
-          <div className="pointer-events-none absolute bottom-20 right-16 text-sm font-bold text-amber-700">IV 紧急但不重要</div>
+          <div className="pointer-events-none absolute left-20 top-20 text-xs font-semibold text-sky-700/75">II 重要但不紧急</div>
+          <div className="pointer-events-none absolute right-20 top-20 text-xs font-semibold text-rose-700/75">I 紧急且重要</div>
+          <div className="pointer-events-none absolute bottom-24 left-20 text-xs font-semibold text-slate-500/80">III 不紧急且不重要</div>
+          <div className="pointer-events-none absolute bottom-24 right-20 text-xs font-semibold text-amber-700/70">IV 紧急但不重要</div>
 
-          <div className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-center text-xs font-semibold text-slate-500 [writing-mode:vertical-rl]">
+          <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-center text-[11px] font-medium text-slate-400 [writing-mode:vertical-rl]">
             不紧急 / 时间出生线
           </div>
-          <div className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-center text-xs font-semibold text-rose-600 [writing-mode:vertical-rl]">
+          <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-center text-[11px] font-medium text-rose-400 [writing-mode:vertical-rl]">
             非常紧急 / 时间死亡线
           </div>
-          <div className="pointer-events-none absolute left-1/2 top-4 -translate-x-1/2 text-xs font-semibold text-rose-600">重要性高 / 重要性死亡线</div>
-          <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 text-xs font-semibold text-slate-500">重要性低 / 重要性出生线</div>
+          <div className="pointer-events-none absolute left-1/2 top-5 -translate-x-1/2 text-[11px] font-medium text-rose-400">重要性高 / 重要性死亡线</div>
+          <div className="pointer-events-none absolute bottom-5 left-1/2 -translate-x-1/2 text-[11px] font-medium text-slate-400">重要性低 / 重要性出生线</div>
 
           {positionedTasks.length === 0 ? (
-            <div className="pointer-events-none absolute bottom-24 left-1/2 -translate-x-1/2 rounded-full bg-white/80 px-4 py-2 text-sm text-slate-400 ring-1 ring-slate-100">
+            <div className="pointer-events-none absolute bottom-28 left-1/2 -translate-x-1/2 rounded-full bg-white/65 px-4 py-2 text-xs text-slate-400 ring-1 ring-white/70 backdrop-blur">
               添加任务后，圆点会从出生线向截止线移动。
             </div>
           ) : null}
@@ -154,8 +154,8 @@ export function PriorityMap({ tasks }: PriorityMapProps) {
                 style={{ left: `${left}%`, bottom: `${bottom}%` }}
                 aria-label={`查看任务 ${task.title}`}
               >
-                <span className={`block rounded-full border-4 shadow-lg transition group-hover:scale-125 ${taskPointTone(task)} ${active ? 'scale-125 ring-4 ring-sky-100' : ''}`} />
-                <span className="absolute left-6 top-1/2 max-w-28 -translate-y-1/2 truncate rounded-full bg-white/95 px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-sm ring-1 ring-slate-100 group-hover:max-w-40">
+                <span className={`block rounded-full border-4 shadow-md transition group-hover:scale-110 ${taskPointTone(task)} ${active ? 'scale-110 ring-4 ring-sky-100/80' : ''}`} />
+                <span className="absolute left-6 top-1/2 max-w-28 -translate-y-1/2 truncate rounded-full bg-white/90 px-2.5 py-1 text-xs font-medium text-slate-600 shadow-sm ring-1 ring-white/80 backdrop-blur group-hover:max-w-40">
                   {task.title}
                 </span>
               </button>
@@ -163,7 +163,7 @@ export function PriorityMap({ tasks }: PriorityMapProps) {
           })}
 
           {hoverPositionedTask && !selectedTask ? (
-            <div className="pointer-events-none absolute z-20 w-64 rounded-2xl bg-white/95 p-3 shadow-xl ring-1 ring-slate-100" style={getHoverCardStyle(hoverPositionedTask)}>
+            <div className="pointer-events-none absolute z-20 w-64 rounded-2xl bg-white/90 p-3 shadow-xl shadow-slate-200/60 ring-1 ring-white/80 backdrop-blur" style={getHoverCardStyle(hoverPositionedTask)}>
               <p className="truncate text-sm font-bold text-slate-950">{hoverPositionedTask.task.title}</p>
               <p className="mt-2 text-xs text-slate-600">{formatCountdown(hoverPositionedTask.task.deadline)}</p>
               <p className="mt-2 rounded-xl bg-sky-50 px-2.5 py-1.5 text-xs text-sky-700">{getRecommendationReason(hoverPositionedTask.task)}</p>
@@ -174,8 +174,8 @@ export function PriorityMap({ tasks }: PriorityMapProps) {
           ) : null}
 
           {selectedTask ? (
-            <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/20 p-6 backdrop-blur-[1px]">
-              <div className="w-full max-w-xl rounded-[2rem] bg-white p-6 shadow-2xl ring-1 ring-slate-200">
+            <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-900/15 p-6 backdrop-blur-sm">
+              <div className="w-full max-w-xl rounded-[2rem] bg-white/95 p-6 shadow-2xl shadow-slate-300/40 ring-1 ring-white/80 backdrop-blur">
                 <div className="mb-4 flex justify-end">
                   <button
                     type="button"
