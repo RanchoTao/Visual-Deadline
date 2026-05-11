@@ -34,9 +34,14 @@ export function Controls() {
   }, '滚轮缩放 · 拖动画布平移 · 拖动节点调整位置');
 }
 
+function isReasonablePosition(position) {
+  return Number.isFinite(position?.x) && Number.isFinite(position?.y) && Math.abs(position.x) < 10000 && Math.abs(position.y) < 10000;
+}
+
 function getGraphBounds(nodes) {
-  if (!nodes.length) return { minX: 0, minY: 0, maxX: NODE_WIDTH, maxY: NODE_HEIGHT };
-  return nodes.reduce((bounds, node) => ({
+  const validNodes = nodes.filter((node) => isReasonablePosition(node.position));
+  if (!validNodes.length) return { minX: 0, minY: 0, maxX: NODE_WIDTH, maxY: NODE_HEIGHT };
+  return validNodes.reduce((bounds, node) => ({
     minX: Math.min(bounds.minX, node.position.x),
     minY: Math.min(bounds.minY, node.position.y),
     maxX: Math.max(bounds.maxX, node.position.x + NODE_WIDTH),
@@ -225,11 +230,11 @@ export function ReactFlow({ nodes = [], edges = [], onNodesChange, onNodeClick, 
         },
         onPointerUp: () => { setDocumentDragging(false); setDraggingId(null); },
         onPointerCancel: () => { setDocumentDragging(false); setDraggingId(null); },
-        className: `absolute w-40 cursor-grab select-none rounded-3xl border bg-white/95 px-4 py-3 text-center shadow-xl shadow-slate-200/60 ring-1 ring-white/80 backdrop-blur active:cursor-grabbing ${node.id === 'me' ? 'border-slate-950 bg-slate-950 text-white' : 'border-white/80 text-slate-950'}`,
-        style: { left: node.position.x, top: node.position.y, borderColor: node.id === 'me' ? '#020617' : node.data?.color ?? undefined, userSelect: 'none', WebkitUserSelect: 'none', touchAction: 'none' },
+        className: `absolute w-40 cursor-grab select-none rounded-3xl border bg-white/95 px-4 py-3 text-center shadow-xl shadow-slate-200/60 ring-1 backdrop-blur active:cursor-grabbing ${node.id === 'me' ? 'border-slate-300 text-slate-950 ring-slate-200' : 'border-white/80 text-slate-950 ring-white/80'}`,
+        style: { left: node.position.x, top: node.position.y, backgroundColor: node.id === 'me' ? '#f8fafc' : undefined, borderColor: node.id === 'me' ? '#94a3b8' : node.data?.color ?? undefined, color: node.id === 'me' ? '#0f172a' : undefined, userSelect: 'none', WebkitUserSelect: 'none', touchAction: 'none' },
       },
-        React.createElement('p', { className: `truncate text-sm font-semibold ${node.id === 'me' ? 'text-white' : 'text-slate-950'}` }, node.data?.name || node.data?.label || node.data?.title || '未命名联系人'),
-        node.data?.relationshipType ? React.createElement('p', { className: `mt-1 truncate text-xs ${node.id === 'me' ? 'text-slate-300' : 'text-slate-500'}` }, node.data.relationshipType) : node.data?.description ? React.createElement('p', { className: `mt-1 truncate text-xs ${node.id === 'me' ? 'text-slate-300' : 'text-slate-500'}` }, node.data.description) : null,
+        React.createElement('p', { className: 'truncate text-sm font-semibold', style: { color: node.id === 'me' ? '#0f172a' : '#020617' } }, node.data?.name || node.data?.label || node.data?.title || '未命名联系人'),
+        node.data?.relationshipType ? React.createElement('p', { className: 'mt-1 truncate text-xs', style: { color: '#64748b' } }, node.data.relationshipType) : node.data?.description ? React.createElement('p', { className: 'mt-1 truncate text-xs', style: { color: '#64748b' } }, node.data.description) : null,
       )),
     ),
   );

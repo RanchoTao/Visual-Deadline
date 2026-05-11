@@ -4,10 +4,13 @@ import { useLocalStorage } from '../hooks/useLocalStorage';
 import type { SocialPersonData } from '../types/task';
 
 const SOCIAL_NODES_KEY = 'visualized-deadline.social.nodes';
+const SOCIAL_LAYOUT_VERSION_KEY = 'visualized-deadline.social.layoutVersion';
+const CURRENT_SOCIAL_LAYOUT_VERSION = 3;
 const CENTER = { x: 680, y: 560 };
 const DEFAULT_PERSON_COLOR = '#d8e2dc';
 const CENTER_NODE_COLOR = '#cbd5e1';
 const NODE_GAP = 170;
+const MAX_SOCIAL_DISTANCE = 1200;
 
 type SocialNode = Node<SocialPersonData>;
 type LegacySocialData = Partial<SocialPersonData> & { details?: string; nickname?: string };
@@ -26,24 +29,41 @@ function orbitRadius(favorability: number): number {
   return 470;
 }
 
-function orbitPosition(node: SocialNode, index: number, siblings: SocialNode[]): SocialNode['position'] {
-  if (node.id === 'me') return CENTER;
-  const favorability = clampScore(node.data?.subjectiveFavorability);
-  let radius = orbitRadius(favorability);
-  const sameBand = siblings.filter((item) => item.id !== 'me' && orbitRadius(clampScore(item.data?.subjectiveFavorability)) === radius);
-  const bandIndex = Math.max(0, sameBand.findIndex((item) => item.id === node.id));
-  const slots = Math.max(8, sameBand.length + 3);
+function distanceFromCenter(position: SocialNode['position']): number {
+  return Math.hypot(position.x - CENTER.x, position.y - CENTER.y);
+}
 
-  for (let ringOffset = 0; ringOffset < 4; ringOffset += 1) {
-    const candidateRadius = radius + ringOffset * 46;
-    for (let offset = 0; offset < slots; offset += 1) {
-      const angle = ((bandIndex + offset * 0.37) / slots) * Math.PI * 2 - Math.PI / 2 + index * 0.09;
-      const position = { x: Math.round(CENTER.x + Math.cos(angle) * candidateRadius), y: Math.round(CENTER.y + Math.sin(angle) * candidateRadius) };
-      const collides = siblings.some((sibling) => sibling.id !== node.id && Math.hypot(sibling.position.x - position.x, sibling.position.y - position.y) < NODE_GAP);
-      if (!collides) return position;
-    }
-  }
-  return { x: CENTER.x + radius, y: CENTER.y + index * NODE_GAP };
+function isValidSocialPosition(position: unknown): position is SocialNode['position'] {
+  if (!position || typeof position !== 'object') return false;
+  const candidate = position as SocialNode['position'];
+  return Number.isFinite(candidate.x) && Number.isFinite(candidate.y) && distanceFromCenter(candidate) <= MAX_SOCIAL_DISTANCE;
+}
+
+function ringPosition(radius: number, index: number, total: number, layer = 0): SocialNode['position'] {
+  const slots = Math.max(1, total);
+  const angle = (Math.PI * 2 * index) / slots - Math.PI / 2 + layer * 0.23;
+  return { x: Math.round(CENTER.x + Math.cos(angle) * radius), y: Math.round(CENTER.y + Math.sin(angle) * radius) };
+}
+
+function layoutPeopleByFavorability(people: SocialNode[]): SocialNode[] {
+  const ringOrder = [140, 250, 360, 470];
+  const groups = new Map<number, SocialNode[]>();
+  people.forEach((node) => {
+    const radius = orbitRadius(clampScore(node.data?.subjectiveFavorability));
+    groups.set(radius, [...(groups.get(radius) ?? []), node]);
+  });
+
+  return ringOrder.flatMap((radius) => {
+    const group = [...(groups.get(radius) ?? [])].sort((a, b) => a.id.localeCompare(b.id));
+    const capacity = Math.max(4, Math.floor((Math.PI * 2 * radius) / NODE_GAP));
+    return group.map((node, index) => {
+      const layer = Math.floor(index / capacity);
+      const indexInLayer = index % capacity;
+      const layerSize = Math.min(capacity, group.length - layer * capacity);
+      const nextRadius = Math.min(radius + layer * 78, MAX_SOCIAL_DISTANCE - 120);
+      return { ...node, position: ringPosition(nextRadius, indexInLayer, layerSize, layer) };
+    });
+  });
 }
 
 function meNode(): SocialNode {
@@ -72,10 +92,9 @@ function normalizeNodes(nodes: unknown): SocialNode[] {
   const people = nodes
     .filter((node): node is LegacySocialNode => Boolean(node) && typeof node === 'object')
     .filter((node) => node.id !== 'me')
-    .map((node) => ({ id: node.id || crypto.randomUUID(), position: { x: 0, y: 0 }, data: normalizeSocialData(node.data) }));
-  const positioned: SocialNode[] = [meNode()];
-  people.forEach((node, index) => positioned.push({ ...node, position: orbitPosition(node, index, positioned) }));
-  return positioned;
+    .map((node) => ({ id: node.id || crypto.randomUUID(), position: isValidSocialPosition(node.position) ? node.position : { x: 0, y: 0 }, data: normalizeSocialData(node.data) }));
+  const positionedPeople = layoutPeopleByFavorability(people);
+  return [meNode(), ...positionedPeople];
 }
 
 function getSocialData(node: SocialNode): SocialPersonData { return normalizeSocialData(node.data, node.id === 'me'); }
@@ -90,6 +109,7 @@ function applyVisualOverrides(nodes: SocialNode[], overrides: Record<string, Soc
 
 export function SocialPage() {
   const [storedNodes, setStoredNodes] = useLocalStorage<SocialNode[]>(SOCIAL_NODES_KEY, seedNodes());
+  const [layoutVersion, setLayoutVersion] = useLocalStorage<number>(SOCIAL_LAYOUT_VERSION_KEY, 0);
   const normalizedNodes = useMemo(() => normalizeNodes(storedNodes), [storedNodes]);
   const relationshipEdges = useMemo(() => buildRelationshipEdges(normalizedNodes), [normalizedNodes]);
   const [editingNode, setEditingNode] = useState<SocialNode | undefined>();
@@ -97,7 +117,12 @@ export function SocialPage() {
   const graphNodes = useMemo(() => applyVisualOverrides(normalizedNodes, visualOverrides), [normalizedNodes, visualOverrides]);
   const hasContacts = normalizedNodes.some((node) => node.id !== 'me');
 
-  useEffect(() => { if (JSON.stringify(storedNodes) !== JSON.stringify(normalizedNodes)) setStoredNodes(normalizedNodes); }, [normalizedNodes, setStoredNodes, storedNodes]);
+  useEffect(() => {
+    if (layoutVersion < CURRENT_SOCIAL_LAYOUT_VERSION || JSON.stringify(storedNodes) !== JSON.stringify(normalizedNodes)) {
+      setStoredNodes(normalizedNodes);
+      setLayoutVersion(CURRENT_SOCIAL_LAYOUT_VERSION);
+    }
+  }, [layoutVersion, normalizedNodes, setLayoutVersion, setStoredNodes, storedNodes]);
 
   function handleNodesChange(changes: NodeChange<SocialNode>[]) {
     setVisualOverrides((overrides) => {
@@ -113,7 +138,7 @@ export function SocialPage() {
   function addPerson() {
     const newNode: SocialNode = { id: crypto.randomUUID(), position: CENTER, data: { name: '未命名联系人', relationshipType: '', subjectiveFavorability: '50', familiarity: '50', lastInteractionDate: '', notes: '', color: DEFAULT_PERSON_COLOR } };
     const baseNodes = normalizeNodes(storedNodes);
-    const positionedNode = { ...newNode, position: orbitPosition(newNode, baseNodes.length, baseNodes) };
+    const positionedNode = layoutPeopleByFavorability([...baseNodes.filter((node) => node.id !== 'me'), newNode]).find((node) => node.id === newNode.id) ?? newNode;
     setStoredNodes([...baseNodes, positionedNode]);
     setEditingNode(positionedNode);
   }
@@ -121,7 +146,7 @@ export function SocialPage() {
   function saveNode() {
     if (!editingNode) return;
     const sanitizedNode = { ...editingNode, data: getSocialData(editingNode) };
-    setStoredNodes((nodes) => normalizeNodes(nodes).map((node, index, all) => node.id === sanitizedNode.id ? { ...sanitizedNode, position: sanitizedNode.id === 'me' ? CENTER : orbitPosition(sanitizedNode, index, all) } : node));
+    setStoredNodes((nodes) => normalizeNodes(nodes).map((node) => node.id === sanitizedNode.id ? { ...sanitizedNode, position: sanitizedNode.id === 'me' ? CENTER : node.position } : node));
     setVisualOverrides((overrides) => { const { [sanitizedNode.id]: _removed, ...rest } = overrides; return rest; });
     setEditingNode(undefined);
   }

@@ -4,9 +4,12 @@ import { useLocalStorage } from '../hooks/useLocalStorage';
 import type { LifeMapNodeData } from '../types/task';
 
 const LIFE_MAP_NODES_KEY = 'visualized-deadline.lifeMap.nodes';
+const LIFE_MAP_LAYOUT_VERSION_KEY = 'visualized-deadline.lifeMap.layoutVersion';
+const CURRENT_LIFE_MAP_LAYOUT_VERSION = 3;
 const LIFE_CENTER = { x: 620, y: 430 };
 const ORBIT_STEP = 120;
 const NODE_GAP = 170;
+const MAX_LIFE_DISTANCE = 900;
 
 type LifeNode = Node<LifeMapNodeData>;
 
@@ -20,23 +23,60 @@ const domainSeeds: LifeMapNodeData[] = [
   { title: '健康', description: '睡眠、饮食与基础健康信号。', color: '#d9f99d' },
 ];
 
+const legacyDomainTitleMap: Record<string, string> = {
+  Academic: '学习',
+  Research: '研究',
+  Fitness: '健身',
+  Finance: '资产管理',
+  Social: '社交',
+  Content: '内容',
+  Health: '健康',
+  学术研究: '学习',
+  学习工作: '学习',
+  社会交流: '社交',
+  内容创作: '内容',
+  身体健康: '健康',
+};
+
+function normalizeLifeTitle(title: string, nodeId?: string): string {
+  const legacyTitle = legacyDomainTitleMap[title];
+  if (legacyTitle) return legacyTitle;
+  if (nodeId?.startsWith('life-')) {
+    const seedIndex = Number(nodeId.replace('life-', ''));
+    if (Number.isInteger(seedIndex) && domainSeeds[seedIndex]) return domainSeeds[seedIndex].title;
+  }
+  return title || '未命名节点';
+}
+
 function orbitPoint(index: number, radius = 300): LifeNode['position'] {
   const angle = (Math.PI * 2 * index) / Math.max(domainSeeds.length, 8) - Math.PI / 2;
   return { x: Math.round(LIFE_CENTER.x + Math.cos(angle) * radius), y: Math.round(LIFE_CENTER.y + Math.sin(angle) * radius) };
+}
+
+function distanceFromCenter(position: LifeNode['position']): number {
+  return Math.hypot(position.x - LIFE_CENTER.x, position.y - LIFE_CENTER.y);
+}
+
+function isValidLifePosition(position: unknown): position is LifeNode['position'] {
+  if (!position || typeof position !== 'object') return false;
+  const candidate = position as LifeNode['position'];
+  return Number.isFinite(candidate.x) && Number.isFinite(candidate.y) && distanceFromCenter(candidate) <= MAX_LIFE_DISTANCE;
 }
 
 function hasCollision(position: LifeNode['position'], nodes: LifeNode[]): boolean {
   return nodes.some((node) => Math.hypot(node.position.x - position.x, node.position.y - position.y) < NODE_GAP);
 }
 
-function findAvailablePosition(nodes: LifeNode[]): LifeNode['position'] {
+function findAvailablePosition(nodes: LifeNode[], preferredIndex = nodes.length): LifeNode['position'] {
+  const preferred = orbitPoint(preferredIndex);
+  if (!hasCollision(preferred, nodes) && distanceFromCenter(preferred) <= MAX_LIFE_DISTANCE) return preferred;
   for (let ring = 0; ring < 5; ring += 1) {
     const radius = 240 + ring * ORBIT_STEP;
     const slots = 8 + ring * 6;
     for (let slot = 0; slot < slots; slot += 1) {
       const angle = (Math.PI * 2 * slot) / slots - Math.PI / 2;
       const position = { x: Math.round(LIFE_CENTER.x + Math.cos(angle) * radius), y: Math.round(LIFE_CENTER.y + Math.sin(angle) * radius) };
-      if (!hasCollision(position, nodes)) return position;
+      if (!hasCollision(position, nodes) && distanceFromCenter(position) <= MAX_LIFE_DISTANCE) return position;
     }
   }
   return { x: LIFE_CENTER.x + 420, y: LIFE_CENTER.y + 220 };
@@ -53,28 +93,41 @@ function createEdges(nodes: LifeNode[]): Edge[] {
   return nodes.filter((node) => node.id !== 'me').map((node) => ({ id: `me-${node.id}`, source: 'me', target: node.id }));
 }
 
-function normalizeNodes(nodes: unknown): LifeNode[] {
+function normalizeNodes(nodes: unknown, forceRelayout = false): LifeNode[] {
   if (!Array.isArray(nodes) || nodes.length === 0) return createSeedNodes();
-  const existing: LifeNode[] = [];
-  const safeNodes = nodes
-    .filter((node): node is Partial<LifeNode> => Boolean(node) && typeof node === 'object')
+  const rawNodes = nodes.filter((node): node is Partial<LifeNode> => Boolean(node) && typeof node === 'object');
+  const storedCenter = rawNodes.find((node) => node.id === 'me');
+  const centerNode: LifeNode = {
+    id: 'me',
+    position: LIFE_CENTER,
+    data: {
+      title: storedCenter?.data?.title || '我',
+      description: storedCenter?.data?.description || 'LifeOS 的中心节点',
+      currentStage: storedCenter?.data?.currentStage || '',
+      notes: storedCenter?.data?.notes || '',
+      color: storedCenter?.data?.color || '#cbd5e1',
+    },
+  };
+  const existing: LifeNode[] = [centerNode];
+  const people = rawNodes
+    .filter((node) => node.id !== 'me')
     .map((node) => {
-      const isCenter = node.id === 'me';
+      const position = !forceRelayout && isValidLifePosition(node.position) && !hasCollision(node.position, existing) ? node.position : findAvailablePosition(existing);
       const nextNode: LifeNode = {
         id: node.id || crypto.randomUUID(),
-        position: isCenter ? LIFE_CENTER : node.position && typeof node.position.x === 'number' && typeof node.position.y === 'number' ? node.position : findAvailablePosition(existing),
+        position,
         data: {
-          title: isCenter ? node.data?.title || '我' : node.data?.title || '未命名节点',
+          title: normalizeLifeTitle(node.data?.title || '', node.id),
           description: node.data?.description || '',
           currentStage: node.data?.currentStage || '',
           notes: node.data?.notes || '',
-          color: node.data?.color || (isCenter ? '#cbd5e1' : '#e2e8f0'),
+          color: node.data?.color || '#e2e8f0',
         },
       };
       existing.push(nextNode);
       return nextNode;
     });
-  return safeNodes.some((node) => node.id === 'me') ? safeNodes.map((node) => (node.id === 'me' ? { ...node, position: LIFE_CENTER } : node)) : [createSeedNodes()[0], ...safeNodes];
+  return [centerNode, ...people];
 }
 
 function getLifeMapData(node: LifeNode): LifeMapNodeData {
@@ -83,13 +136,17 @@ function getLifeMapData(node: LifeNode): LifeMapNodeData {
 
 export function LifeMapPage() {
   const [storedNodes, setStoredNodes] = useLocalStorage<LifeNode[]>(LIFE_MAP_NODES_KEY, createSeedNodes());
-  const normalizedNodes = useMemo(() => normalizeNodes(storedNodes), [storedNodes]);
+  const [layoutVersion, setLayoutVersion] = useLocalStorage<number>(LIFE_MAP_LAYOUT_VERSION_KEY, 0);
+  const normalizedNodes = useMemo(() => normalizeNodes(storedNodes, layoutVersion < CURRENT_LIFE_MAP_LAYOUT_VERSION), [layoutVersion, storedNodes]);
   const edges = useMemo(() => createEdges(normalizedNodes), [normalizedNodes]);
   const [editingNode, setEditingNode] = useState<LifeNode | undefined>();
 
   useEffect(() => {
-    if (JSON.stringify(storedNodes) !== JSON.stringify(normalizedNodes)) setStoredNodes(normalizedNodes);
-  }, [normalizedNodes, setStoredNodes, storedNodes]);
+    if (layoutVersion < CURRENT_LIFE_MAP_LAYOUT_VERSION || JSON.stringify(storedNodes) !== JSON.stringify(normalizedNodes)) {
+      setStoredNodes(normalizedNodes);
+      setLayoutVersion(CURRENT_LIFE_MAP_LAYOUT_VERSION);
+    }
+  }, [layoutVersion, normalizedNodes, setLayoutVersion, setStoredNodes, storedNodes]);
 
   function handleNodesChange(changes: NodeChange<LifeNode>[]) {
     setStoredNodes((nodes) => applyNodeChanges(changes, normalizeNodes(nodes)).map((node) => (node.id === 'me' ? { ...node, position: LIFE_CENTER } : node)));
