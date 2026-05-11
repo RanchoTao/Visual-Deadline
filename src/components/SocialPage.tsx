@@ -136,7 +136,7 @@ export function SocialPage() {
   return (
     <section className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4 rounded-[2rem] border border-white/70 bg-white/75 p-6 shadow-xl shadow-slate-200/60 backdrop-blur"><div><p className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-400">关系宇宙</p><h1 className="mt-2 text-4xl font-semibold tracking-tight text-slate-950">社交关系</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">以“我”为中心，按主观好感度观察关系距离。</p></div><button type="button" onClick={addPerson} className="rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white shadow-sm hover:bg-slate-700">添加联系人</button></div>
-      <div className="relative h-[78vh] min-h-[680px] overflow-hidden rounded-[2rem] border border-white/70 bg-white/75 p-3 shadow-xl shadow-slate-200/60 backdrop-blur">
+      <div className="relative h-[78vh] min-h-[680px] touch-none select-none overflow-hidden rounded-[2rem] border border-white/70 bg-white/75 p-3 shadow-xl shadow-slate-200/60 backdrop-blur">
         {!hasContacts ? <div className="pointer-events-none absolute inset-x-0 top-24 z-10 text-center text-sm font-medium text-slate-400">添加对你重要的人，构建你的关系地图。</div> : null}
         <ReactFlow nodes={graphNodes} edges={relationshipEdges} onNodesChange={handleNodesChange} onNodeClick={(_, node) => setEditingNode(node)} fitView className="rounded-[1.5rem] bg-slate-50/80"><Background /><Controls /></ReactFlow>
       </div>

@@ -6,6 +6,13 @@ const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 2.2;
 const DRAG_THRESHOLD = 6;
 
+function setDocumentDragging(isDragging) {
+  if (typeof document === 'undefined') return;
+  document.body.style.userSelect = isDragging ? 'none' : '';
+  document.body.style.webkitUserSelect = isDragging ? 'none' : '';
+  if (isDragging) window.getSelection?.()?.removeAllRanges?.();
+}
+
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
@@ -22,7 +29,8 @@ export function Background() {
 
 export function Controls() {
   return React.createElement('div', {
-    className: 'absolute bottom-4 left-4 rounded-2xl bg-white/80 px-3 py-2 text-xs font-medium text-slate-500 shadow-sm ring-1 ring-white/80 backdrop-blur',
+    className: 'absolute bottom-4 left-4 select-none rounded-2xl bg-white/80 px-3 py-2 text-xs font-medium text-slate-500 shadow-sm ring-1 ring-white/80 backdrop-blur',
+    style: { userSelect: 'none', WebkitUserSelect: 'none', touchAction: 'none' },
   }, '滚轮缩放 · 拖动画布平移 · 拖动节点调整位置');
 }
 
@@ -87,6 +95,7 @@ export function ReactFlow({ nodes = [], edges = [], onNodesChange, onNodeClick, 
 
   function handleWheel(event) {
     event.preventDefault();
+    event.stopPropagation?.();
     const bounds = containerRef.current?.getBoundingClientRect();
     if (!bounds) return;
     const pointerX = event.clientX - bounds.left;
@@ -99,15 +108,30 @@ export function ReactFlow({ nodes = [], edges = [], onNodesChange, onNodeClick, 
     });
   }
 
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return undefined;
+    const wheelListener = (event) => handleWheel(event);
+    container.addEventListener('wheel', wheelListener, { passive: false });
+    return () => container.removeEventListener('wheel', wheelListener);
+  });
+
+  useEffect(() => () => setDocumentDragging(false), []);
+
   function startPan(event) {
     if (event.button !== 0 || event.target.closest?.('button')) return;
+    event.preventDefault();
+    window.getSelection?.()?.removeAllRanges?.();
     dragStateRef.current = { type: 'pan', id: null, startX: event.clientX, startY: event.clientY, startViewport: viewport, startPosition: null, moved: false };
     setPanning(true);
+    setDocumentDragging(true);
     event.currentTarget.setPointerCapture?.(event.pointerId);
   }
 
   function movePan(event) {
     if (!panning || dragStateRef.current.type !== 'pan') return;
+    event.preventDefault();
+    window.getSelection?.()?.removeAllRanges?.();
     const distance = Math.hypot(event.clientX - dragStateRef.current.startX, event.clientY - dragStateRef.current.startY);
     if (distance > DRAG_THRESHOLD) dragStateRef.current.moved = true;
     const startViewport = dragStateRef.current.startViewport;
@@ -116,10 +140,15 @@ export function ReactFlow({ nodes = [], edges = [], onNodesChange, onNodeClick, 
 
   function endPan() {
     setPanning(false);
-    if (dragStateRef.current.type === 'pan') dragStateRef.current = { type: null, id: null, startX: 0, startY: 0, startViewport: null, startPosition: null, moved: false };
+    if (dragStateRef.current.type === 'pan') {
+      setDocumentDragging(false);
+      dragStateRef.current = { type: null, id: null, startX: 0, startY: 0, startViewport: null, startPosition: null, moved: false };
+    }
   }
 
   function updateNodePosition(event, nodeId) {
+    event.preventDefault();
+    window.getSelection?.()?.removeAllRanges?.();
     const startPosition = dragStateRef.current.startPosition;
     if (!startPosition) return;
     const distance = Math.hypot(event.clientX - dragStateRef.current.startX, event.clientY - dragStateRef.current.startY);
@@ -133,8 +162,8 @@ export function ReactFlow({ nodes = [], edges = [], onNodesChange, onNodeClick, 
 
   return React.createElement('div', {
     ref: containerRef,
-    className: `relative h-full w-full overflow-hidden touch-none ${panning ? 'cursor-grabbing' : 'cursor-grab'} ${className}`,
-    onWheel: handleWheel,
+    className: `relative h-full w-full overflow-hidden select-none touch-none ${panning ? 'cursor-grabbing' : 'cursor-grab'} ${className}`,
+    style: { userSelect: 'none', WebkitUserSelect: 'none', touchAction: 'none', overscrollBehavior: 'contain' },
     onPointerDown: startPan,
     onPointerMove: movePan,
     onPointerUp: endPan,
@@ -142,17 +171,18 @@ export function ReactFlow({ nodes = [], edges = [], onNodesChange, onNodeClick, 
   },
     children,
     React.createElement('div', {
-      className: 'absolute right-4 top-4 z-20 flex gap-2 rounded-2xl bg-white/85 p-2 shadow-sm ring-1 ring-white/80 backdrop-blur',
+      className: 'absolute right-4 top-4 z-20 flex select-none gap-2 rounded-2xl bg-white/85 p-2 shadow-sm ring-1 ring-white/80 backdrop-blur',
       onPointerDown: (event) => event.stopPropagation(),
       onClick: (event) => event.stopPropagation(),
+      style: { userSelect: 'none', WebkitUserSelect: 'none', touchAction: 'none' },
     },
-      React.createElement('button', { type: 'button', onClick: () => zoomBy(1.18), className: 'rounded-xl bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100' }, '缩放 +'),
-      React.createElement('button', { type: 'button', onClick: () => zoomBy(0.85), className: 'rounded-xl bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100' }, '缩放 -'),
-      React.createElement('button', { type: 'button', onClick: fitToView, className: 'rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700' }, '适应画布'),
+      React.createElement('button', { type: 'button', onClick: () => zoomBy(1.18), className: 'select-none rounded-xl bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100' }, '缩放 +'),
+      React.createElement('button', { type: 'button', onClick: () => zoomBy(0.85), className: 'select-none rounded-xl bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100' }, '缩放 -'),
+      React.createElement('button', { type: 'button', onClick: fitToView, className: 'select-none rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700' }, '适应画布'),
     ),
     React.createElement('div', {
-      className: 'absolute left-0 top-0 h-full w-full origin-top-left',
-      style: { transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})` },
+      className: 'absolute left-0 top-0 h-full w-full origin-top-left select-none',
+      style: { transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`, userSelect: 'none', WebkitUserSelect: 'none', touchAction: 'none' },
     },
       React.createElement('svg', { className: 'pointer-events-none absolute left-0 top-0 h-[2400px] w-[2400px] overflow-visible' },
         edges.map((edge) => {
@@ -182,18 +212,21 @@ export function ReactFlow({ nodes = [], edges = [], onNodesChange, onNodeClick, 
           onNodeClick?.(event, node);
         },
         onPointerDown: (event) => {
+          event.preventDefault();
           event.stopPropagation();
+          window.getSelection?.()?.removeAllRanges?.();
           event.currentTarget.setPointerCapture?.(event.pointerId);
           dragStateRef.current = { type: 'node', id: node.id, startX: event.clientX, startY: event.clientY, startViewport: null, startPosition: node.position, moved: false };
+          setDocumentDragging(true);
           setDraggingId(node.id);
         },
         onPointerMove: (event) => {
           if (draggingId === node.id) updateNodePosition(event, node.id);
         },
-        onPointerUp: () => setDraggingId(null),
-        onPointerCancel: () => setDraggingId(null),
-        className: `absolute w-40 cursor-grab rounded-3xl border bg-white/95 px-4 py-3 text-center shadow-xl shadow-slate-200/60 ring-1 ring-white/80 backdrop-blur active:cursor-grabbing ${node.id === 'me' ? 'border-slate-950 bg-slate-950 text-white' : 'border-white/80 text-slate-950'}`,
-        style: { left: node.position.x, top: node.position.y, borderColor: node.id === 'me' ? '#020617' : node.data?.color ?? undefined },
+        onPointerUp: () => { setDocumentDragging(false); setDraggingId(null); },
+        onPointerCancel: () => { setDocumentDragging(false); setDraggingId(null); },
+        className: `absolute w-40 cursor-grab select-none rounded-3xl border bg-white/95 px-4 py-3 text-center shadow-xl shadow-slate-200/60 ring-1 ring-white/80 backdrop-blur active:cursor-grabbing ${node.id === 'me' ? 'border-slate-950 bg-slate-950 text-white' : 'border-white/80 text-slate-950'}`,
+        style: { left: node.position.x, top: node.position.y, borderColor: node.id === 'me' ? '#020617' : node.data?.color ?? undefined, userSelect: 'none', WebkitUserSelect: 'none', touchAction: 'none' },
       },
         React.createElement('p', { className: `truncate text-sm font-semibold ${node.id === 'me' ? 'text-white' : 'text-slate-950'}` }, node.data?.name || node.data?.label || node.data?.title || '未命名联系人'),
         node.data?.relationshipType ? React.createElement('p', { className: `mt-1 truncate text-xs ${node.id === 'me' ? 'text-slate-300' : 'text-slate-500'}` }, node.data.relationshipType) : node.data?.description ? React.createElement('p', { className: `mt-1 truncate text-xs ${node.id === 'me' ? 'text-slate-300' : 'text-slate-500'}` }, node.data.description) : null,
