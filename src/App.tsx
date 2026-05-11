@@ -18,10 +18,13 @@ import type { Achievement, ActivityType, LifecycleStatus, LifeOSModule, Pressure
 import {
   achievementCatalog,
   calculatePressureIndex,
+  calculateTaskLoad,
+  createPressureCalibration,
   clampImportance,
   clampPressure,
   clampProgress,
   getTaskScore,
+  normalizePressureCalibration,
   migrateLegacyImportance,
   normalizeActivityType,
   normalizeLifecycleStatus,
@@ -170,9 +173,11 @@ function App() {
   const [achievements, setAchievements] = useLocalStorage<Achievement[]>(ACHIEVEMENTS_STORAGE_KEY, []);
   const [profile, setProfile] = useLocalStorage<UserProfile>(PROFILE_STORAGE_KEY, defaultProfile);
   const [onboardingComplete, setOnboardingComplete] = useLocalStorage<boolean>(ONBOARDING_STORAGE_KEY, readInitialOnboardingComplete());
-  const [, setPressureCalibration] = useLocalStorage<PressureCalibrationSnapshot | null>(PRESSURE_CALIBRATION_STORAGE_KEY, null);
+  const legacyReferencePressure = readBaselinePressure() ?? 35;
+  const [pressureCalibration, setPressureCalibration] = useLocalStorage<PressureCalibrationSnapshot>(PRESSURE_CALIBRATION_STORAGE_KEY, normalizePressureCalibration(null, legacyReferencePressure));
   const [activeModule, setActiveModule] = useState<LifeOSModule>('vd');
-  const [baselinePressure, setBaselinePressure] = useState<number | null>(() => readBaselinePressure());
+  const [isRecalibrationOpen, setIsRecalibrationOpen] = useState(false);
+  const [recalibrationPressure, setRecalibrationPressure] = useState(legacyReferencePressure);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | undefined>();
   const [toastAchievement, setToastAchievement] = useState<Achievement | undefined>();
@@ -183,9 +188,10 @@ function App() {
   }, [tasks]);
   const normalizedAchievements = useMemo(() => normalizeStoredAchievements(achievements), [achievements]);
   const normalizedProfile = useMemo(() => normalizeProfile(profile), [profile]);
+  const normalizedPressureCalibration = useMemo(() => normalizePressureCalibration(pressureCalibration, legacyReferencePressure), [legacyReferencePressure, pressureCalibration]);
   const activeTasks = useMemo(() => normalizedTasks.filter((task) => task.lifecycleStatus === 'active'), [normalizedTasks]);
   const recommendedTasks = useMemo(() => normalizedTasks.filter((task) => task.lifecycleStatus === 'active').sort((a, b) => getTaskScore(b) - getTaskScore(a)).slice(0, 3), [normalizedTasks]);
-  const pressure = useMemo<PressureBreakdown>(() => calculatePressureIndex(normalizedTasks, baselinePressure ?? 35), [normalizedTasks, baselinePressure]);
+  const pressure = useMemo<PressureBreakdown>(() => calculatePressureIndex(normalizedTasks, normalizedPressureCalibration, legacyReferencePressure), [normalizedTasks, normalizedPressureCalibration, legacyReferencePressure]);
 
   useEffect(() => {
     if (JSON.stringify(tasks) !== JSON.stringify(normalizedTasks)) {
@@ -204,6 +210,12 @@ function App() {
       setProfile(normalizedProfile);
     }
   }, [normalizedProfile, profile, setProfile]);
+
+  useEffect(() => {
+    if (JSON.stringify(pressureCalibration) !== JSON.stringify(normalizedPressureCalibration)) {
+      setPressureCalibration(normalizedPressureCalibration);
+    }
+  }, [normalizedPressureCalibration, pressureCalibration, setPressureCalibration]);
 
   useEffect(() => {
     if (!toastAchievement) return;
@@ -228,7 +240,7 @@ function App() {
   }
 
   useEffect(() => {
-    if (baselinePressure === null) return;
+    if (!onboardingComplete) return;
 
     unlockAchievement('first-entry');
 
@@ -246,25 +258,32 @@ function App() {
       unlockAchievement('first-seven-day-progress');
     }
     if (normalizedTasks.some((task) => task.lifecycleStatus === 'completed' && ['recovery', 'entertainment'].includes(task.activityType))) unlockAchievement('first-recovery-relief');
-  }, [baselinePressure, normalizedTasks, pressure.state]);
+  }, [onboardingComplete, normalizedTasks, pressure.state]);
 
-  function saveBaselinePressure(pressureValue: number) {
-    const normalizedPressure = clampPressure(pressureValue);
-    window.localStorage.setItem(BASELINE_PRESSURE_STORAGE_KEY, JSON.stringify(normalizedPressure));
-    setBaselinePressure(normalizedPressure);
+  function savePressureCalibration(referencePressure: number, sourceTasks = normalizedTasks) {
+    const activeLoad = calculateTaskLoad(sourceTasks);
+    const activeCount = sourceTasks.filter((task) => task.lifecycleStatus === 'active').length;
+    const calibration = createPressureCalibration(referencePressure, activeLoad, activeCount);
+    setPressureCalibration(calibration);
+    // Keep the legacy key in sync only for older app versions; it is no longer an additive base layer.
+    window.localStorage.setItem(BASELINE_PRESSURE_STORAGE_KEY, JSON.stringify(calibration.referencePressure));
   }
 
-  function resetBaselinePressure() {
-    window.localStorage.removeItem(BASELINE_PRESSURE_STORAGE_KEY);
-    setBaselinePressure(null);
-    setOnboardingComplete(false);
+  function openRecalibration() {
+    setRecalibrationPressure(pressure.referencePressure);
+    setIsRecalibrationOpen(true);
   }
 
-  function completeOnboarding(importedTasks: TaskInput[], pressureValue: number, calibration: PressureCalibrationSnapshot) {
+  function submitRecalibration() {
+    savePressureCalibration(recalibrationPressure);
+    setIsRecalibrationOpen(false);
+  }
+
+  function completeOnboarding(importedTasks: TaskInput[], _referencePressure: number, calibration: PressureCalibrationSnapshot) {
     const createdTasks = importedTasks.map((task) => createTask(task));
     setTasks((currentTasks) => [...createdTasks, ...currentTasks]);
-    saveBaselinePressure(pressureValue);
     setPressureCalibration(calibration);
+    window.localStorage.setItem(BASELINE_PRESSURE_STORAGE_KEY, JSON.stringify(calibration.referencePressure));
     setOnboardingComplete(true);
   }
 
@@ -353,7 +372,7 @@ function App() {
         </button>
       </header>
 
-      <PressureCard pressure={pressure} onBaselinePressureChange={saveBaselinePressure} onResetBaseline={resetBaselinePressure} />
+      <PressureCard pressure={pressure} onRecalibrate={openRecalibration} />
       <RecommendationCard tasks={recommendedTasks} />
 
       {isFormOpen ? (
@@ -396,6 +415,20 @@ function App() {
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,#dbeafe,transparent_32%),radial-gradient(circle_at_top_right,#f8fafc,transparent_30%),linear-gradient(180deg,#f8fafc,#eef2f7)] px-4 py-8 text-slate-900 md:px-8">
       {!onboardingComplete ? <OnboardingFlow onComplete={completeOnboarding} /> : null}
+      {isRecalibrationOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/15 px-4 backdrop-blur-sm">
+          <section className="w-full max-w-lg rounded-[2rem] border border-white/80 bg-white/95 p-6 shadow-2xl shadow-slate-300/60">
+            <p className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-400">Pressure Recalibration</p>
+            <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">此刻这组任务让你感觉有多大压力？</h2>
+            <p className="mt-3 text-sm leading-6 text-slate-500">系统会读取当前进行中任务负载，并用你的主观感受重新计算个体压力映射系数。</p>
+            <div className="mt-6 rounded-3xl bg-slate-50/90 p-5 ring-1 ring-white/80">
+              <div className="flex items-end justify-between gap-4"><span className="text-sm font-medium text-slate-600">主观压力</span><span className="text-5xl font-semibold text-slate-950">{recalibrationPressure}</span></div>
+              <input type="range" min="0" max="100" value={recalibrationPressure} onChange={(event) => setRecalibrationPressure(clampPressure(Number(event.target.value)))} className="mt-5 w-full accent-slate-700" />
+            </div>
+            <div className="mt-6 flex justify-end gap-3"><button type="button" onClick={() => setIsRecalibrationOpen(false)} className="rounded-full px-5 py-2.5 text-sm font-semibold text-slate-500 hover:bg-slate-100">取消</button><button type="button" onClick={submitRecalibration} className="rounded-full bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white">保存校准</button></div>
+          </section>
+        </div>
+      ) : null}
       <AchievementToast achievement={toastAchievement} />
 
       <div className="mx-auto max-w-6xl space-y-6">

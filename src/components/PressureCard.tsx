@@ -2,8 +2,7 @@ import type { PressureBreakdown } from '../types/task';
 
 interface PressureCardProps {
   pressure: PressureBreakdown;
-  onBaselinePressureChange: (pressure: number) => void;
-  onResetBaseline: () => void;
+  onRecalibrate: () => void;
 }
 
 const stateTone: Record<PressureBreakdown['state'], string> = {
@@ -14,7 +13,7 @@ const stateTone: Record<PressureBreakdown['state'], string> = {
   burnout: 'bg-rose-50 text-rose-700 ring-rose-100',
 };
 
-export function PressureCard({ pressure, onBaselinePressureChange, onResetBaseline }: PressureCardProps) {
+export function PressureCard({ pressure, onRecalibrate }: PressureCardProps) {
   const meterWidth = Math.min(100, pressure.rawPressure);
 
   return (
@@ -32,33 +31,26 @@ export function PressureCard({ pressure, onBaselinePressureChange, onResetBaseli
             <div className={`h-full rounded-full transition-all duration-700 ${pressure.state === 'burnout' ? 'bg-rose-300' : 'bg-slate-700'}`} style={{ width: `${meterWidth}%` }} />
           </div>
           <div className="mt-4 rounded-3xl bg-slate-50/80 p-4 ring-1 ring-white/80">
-            <p className="text-sm font-semibold text-slate-600">压力 = 主观压力基线 + 活动压力 - 完成/恢复释放</p>
-            <div className="mt-3 grid gap-2 text-xs text-slate-500 sm:grid-cols-3">
-              <span className="rounded-full bg-white px-3 py-2">主观压力基线 {pressure.baselinePressure}</span>
-              <span className="rounded-full bg-white px-3 py-2">活动压力 +{pressure.activePressure}</span>
-              <span className="rounded-full bg-white px-3 py-2">完成/恢复释放 -{pressure.relief}</span>
+            <p className="text-sm font-semibold text-slate-600">压力 ≈ 当前任务负载 × 个体压力映射系数 - 恢复释放</p>
+            <p className="mt-2 text-xs leading-5 text-slate-500">系统把你校准时输入的主观压力视为“当时任务集合的感受”，用它学习你的压力敏感度，而不是叠加一层固定背景压力。</p>
+            <div className="mt-3 grid gap-2 text-xs text-slate-500 sm:grid-cols-4">
+              <span className="rounded-full bg-white px-3 py-2">当前任务负载 {pressure.currentTaskLoad}</span>
+              <span className="rounded-full bg-white px-3 py-2">映射系数 ×{pressure.pressureRatio}</span>
+              <span className="rounded-full bg-white px-3 py-2">恢复释放 -{pressure.recoveryRelief}</span>
+              <span className="rounded-full bg-white px-3 py-2">估算压力 {pressure.rawPressure}</span>
             </div>
           </div>
         </div>
 
         <div className="w-full rounded-3xl bg-slate-50/80 p-4 ring-1 ring-white/80 sm:w-64">
-          <p className="text-sm font-medium text-slate-600">主观压力基线</p>
-          <p className="mt-2 text-3xl font-semibold text-slate-950">{pressure.baselinePressure}</p>
-          <input
-            aria-label="调整主观压力基线"
-            type="range"
-            min="0"
-            max="100"
-            value={pressure.baselinePressure}
-            onChange={(event) => onBaselinePressureChange(Number(event.target.value))}
-            className="mt-4 w-full accent-slate-700"
-          />
-          <div className="mt-2 flex justify-between text-xs text-slate-400">
-            <span>轻</span>
-            <span>重</span>
+          <p className="text-sm font-medium text-slate-600">最近一次校准</p>
+          <p className="mt-2 text-3xl font-semibold text-slate-950">{pressure.referencePressure}</p>
+          <div className="mt-3 space-y-2 text-xs text-slate-500">
+            <p>参考任务负载 {pressure.referenceTaskLoad}</p>
+            <p>个体压力映射系数 ×{pressure.pressureRatio}</p>
           </div>
-          <p className="mt-3 text-xs leading-5 text-slate-500">首次进入时记录。之后可以直接微调，或重置后重新校准。</p>
-          <button type="button" onClick={onResetBaseline} className="mt-4 rounded-full bg-white px-4 py-2 text-xs font-semibold text-slate-600 shadow-sm hover:bg-slate-100">
+          <p className="mt-3 text-xs leading-5 text-slate-500">点击重新校准时，系统会读取当前进行中任务，再请你输入此刻的主观压力。</p>
+          <button type="button" onClick={onRecalibrate} className="mt-4 rounded-full bg-white px-4 py-2 text-xs font-semibold text-slate-600 shadow-sm hover:bg-slate-100">
             重新校准
           </button>
         </div>

@@ -1,4 +1,4 @@
-import type { ActivityType, Achievement, Importance, LifecycleStatus, PressureBreakdown, PressureState, Task } from '../types/task';
+import type { ActivityType, Achievement, Importance, LifecycleStatus, PressureBreakdown, PressureCalibrationSnapshot, PressureState, Task } from '../types/task';
 
 const MS_PER_HOUR = 60 * 60 * 1000;
 const MS_PER_DAY = 24 * MS_PER_HOUR;
@@ -89,8 +89,7 @@ export function getUrgencyWeight(deadline?: string, now = new Date()): number {
 export function getItemPressure(task: Task, now = new Date()): number {
   const urgencyWeight = getUrgencyWeight(task.deadline, now);
   const importanceWeight = 0.8 + task.importance / 2;
-  const unfinishedWeight = Math.max(0.25, 1 - clampProgress(task.progress) / 100);
-  return urgencyWeight * importanceWeight * unfinishedWeight;
+  return urgencyWeight * importanceWeight;
 }
 
 export function getTaskScore(task: Task, now = new Date()): number {
@@ -151,6 +150,13 @@ export function getPulseDuration(task: Task): number {
   return 4.2;
 }
 
+const DEFAULT_PRESSURE_RATIO = 6;
+const MIN_REFERENCE_TASK_LOAD = 1;
+
+function roundToTenth(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
 function getPressureState(rawPressure: number): PressureState {
   if (rawPressure > 100) return 'burnout';
   if (rawPressure >= 81) return 'overload';
@@ -159,17 +165,55 @@ function getPressureState(rawPressure: number): PressureState {
   return 'steady';
 }
 
-export function calculatePressureIndex(tasks: Task[], baselinePressure: number, now = new Date()): PressureBreakdown {
-  const activePressure = tasks.filter(isTaskActive).reduce((sum, task) => sum + getItemPressure(task, now), 0);
+export function calculateTaskLoad(tasks: Task[], now = new Date()): number {
+  return tasks.filter(isTaskActive).reduce((sum, task) => sum + getItemPressure(task, now), 0);
+}
 
-  const relief = tasks.reduce((sum, task) => {
-    const completionRelief = task.lifecycleStatus === 'completed' ? 4 + task.importance * 0.35 : 0;
+export function calculateRecoveryRelief(tasks: Task[]): number {
+  return tasks.reduce((sum, task) => {
     const recoveryRelief = task.lifecycleStatus !== 'abandoned' && task.activityType === 'recovery' ? 6 : 0;
     const entertainmentRelief = task.lifecycleStatus !== 'abandoned' && task.activityType === 'entertainment' ? 4 : 0;
-    return sum + completionRelief + recoveryRelief + entertainmentRelief;
+    return sum + recoveryRelief + entertainmentRelief;
   }, 0);
+}
 
-  const rawPressure = Math.max(0, clampPressure(baselinePressure) + activePressure * 4 - relief);
+export function createPressureCalibration(referencePressure: number, referenceTaskLoad: number, taskCount: number, capturedAt = new Date().toISOString()): PressureCalibrationSnapshot {
+  const safeReferencePressure = clampPressure(referencePressure);
+  const safeReferenceTaskLoad = Math.max(0, referenceTaskLoad);
+  const pressureRatio = safeReferenceTaskLoad > 0 ? safeReferencePressure / safeReferenceTaskLoad : DEFAULT_PRESSURE_RATIO;
+
+  return {
+    referencePressure: safeReferencePressure,
+    referenceTaskLoad: roundToTenth(safeReferenceTaskLoad),
+    pressureRatio: roundToTenth(pressureRatio),
+    taskCount,
+    capturedAt,
+    note: 'referencePressure describes how the calibrated task set felt; current pressure = currentTaskLoad × pressureRatio - recoveryRelief. Future versions may personalize urgency/importance weights from behavior.',
+  };
+}
+
+export function normalizePressureCalibration(calibration?: Partial<PressureCalibrationSnapshot> | null, legacyReferencePressure = 35): PressureCalibrationSnapshot {
+  const legacyCalibration = calibration as Partial<PressureCalibrationSnapshot> & { baselinePressure?: number; initialTotalTaskLoad?: number } | null | undefined;
+  const referencePressure = clampPressure(calibration?.referencePressure ?? legacyCalibration?.baselinePressure ?? legacyReferencePressure);
+  const storedReferenceTaskLoad = calibration?.referenceTaskLoad ?? legacyCalibration?.initialTotalTaskLoad;
+  const referenceTaskLoad = typeof storedReferenceTaskLoad === 'number' && Number.isFinite(storedReferenceTaskLoad) ? Math.max(0, storedReferenceTaskLoad) : Math.max(MIN_REFERENCE_TASK_LOAD, referencePressure / DEFAULT_PRESSURE_RATIO);
+  const pressureRatio = typeof calibration?.pressureRatio === 'number' && Number.isFinite(calibration.pressureRatio) && calibration.pressureRatio > 0 ? calibration.pressureRatio : referencePressure / Math.max(MIN_REFERENCE_TASK_LOAD, referenceTaskLoad);
+
+  return {
+    referencePressure,
+    referenceTaskLoad: roundToTenth(referenceTaskLoad),
+    pressureRatio: roundToTenth(pressureRatio),
+    taskCount: typeof calibration?.taskCount === 'number' ? Math.max(0, calibration.taskCount) : 0,
+    capturedAt: calibration?.capturedAt || new Date().toISOString(),
+    note: calibration?.note || 'Migrated pressure calibration. Subjective pressure is treated as a calibration sample, not a permanent base layer.',
+  };
+}
+
+export function calculatePressureIndex(tasks: Task[], calibration?: Partial<PressureCalibrationSnapshot> | null, legacyReferencePressure = 35, now = new Date()): PressureBreakdown {
+  const normalizedCalibration = normalizePressureCalibration(calibration, legacyReferencePressure);
+  const currentTaskLoad = calculateTaskLoad(tasks, now);
+  const recoveryRelief = calculateRecoveryRelief(tasks);
+  const rawPressure = Math.max(0, currentTaskLoad * normalizedCalibration.pressureRatio - recoveryRelief);
   const roundedRawPressure = Math.round(rawPressure);
   const state = getPressureState(roundedRawPressure);
 
@@ -182,17 +226,19 @@ export function calculatePressureIndex(tasks: Task[], baselinePressure: number, 
   };
 
   const recommendations: Record<PressureState, string> = {
-    steady: '节奏平稳，可以选择一个小而确定的下一步。',
+    steady: '当前任务负载较轻，可以选择一个小而确定的下一步。',
     manageable: '压力仍在可控区，保持当前节奏并留意恢复。',
-    high: '建议收窄今日目标，只保留真正重要的推进。',
+    high: '任务负载已经偏高，建议收窄今日目标。',
     overload: '可以减少并行任务，先完成或放弃低价值事项。',
     burnout: '先降低负载：放弃低价值任务，延后非必要事项，并安排恢复时间。',
   };
 
   return {
-    baselinePressure: clampPressure(baselinePressure),
-    activePressure: Math.round(activePressure * 10) / 10,
-    relief: Math.round(relief * 10) / 10,
+    referencePressure: normalizedCalibration.referencePressure,
+    referenceTaskLoad: normalizedCalibration.referenceTaskLoad,
+    pressureRatio: normalizedCalibration.pressureRatio,
+    currentTaskLoad: roundToTenth(currentTaskLoad),
+    recoveryRelief: roundToTenth(recoveryRelief),
     rawPressure: roundedRawPressure,
     displayPressure: state === 'burnout' ? roundedRawPressure : Math.min(100, roundedRawPressure),
     state,
@@ -202,7 +248,11 @@ export function calculatePressureIndex(tasks: Task[], baselinePressure: number, 
 }
 
 export function getPressureInterpretation(totalPressure: number): string {
-  return calculatePressureIndex([], totalPressure).label;
+  const pressure = clampPressure(totalPressure);
+  if (pressure <= 30) return '平稳';
+  if (pressure <= 60) return '可控';
+  if (pressure <= 80) return '高压';
+  return '过载';
 }
 
 export const achievementCatalog: Omit<Achievement, 'unlockedAt'>[] = [

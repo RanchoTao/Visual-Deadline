@@ -1,10 +1,10 @@
 import { FormEvent, useMemo, useState } from 'react';
 import type { ActivityType, Importance, LifecycleStatus, PressureCalibrationSnapshot, TaskInput } from '../types/task';
 import { toDatetimeLocalValue } from '../utils/date';
-import { clampImportance, clampPressure, clampProgress, getActivityTypeLabel, getUrgencyWeight } from '../utils/taskScoring';
+import { clampImportance, clampPressure, clampProgress, createPressureCalibration, getActivityTypeLabel, getUrgencyWeight } from '../utils/taskScoring';
 
 interface OnboardingFlowProps {
-  onComplete: (tasks: TaskInput[], baselinePressure: number, calibration: PressureCalibrationSnapshot) => void;
+  onComplete: (tasks: TaskInput[], referencePressure: number, calibration: PressureCalibrationSnapshot) => void;
 }
 
 const activityTypes: ActivityType[] = ['task', 'schedule', 'study', 'fitness', 'social', 'recovery', 'entertainment', 'other'];
@@ -24,7 +24,7 @@ function createDraftTask(title: string): TaskInput {
 function calculateInitialTaskLoad(tasks: TaskInput[]): number {
   return tasks.reduce((sum, task) => {
     if (task.lifecycleStatus !== 'active') return sum;
-    return sum + getUrgencyWeight(task.deadline) * task.importance;
+    return sum + getUrgencyWeight(task.deadline) * (0.8 + task.importance / 2);
   }, 0);
 }
 
@@ -32,7 +32,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   const [step, setStep] = useState(1);
   const [roughTitle, setRoughTitle] = useState('');
   const [roughTitles, setRoughTitles] = useState<string[]>([]);
-  const [baselinePressure, setBaselinePressure] = useState(35);
+  const [referencePressure, setReferencePressure] = useState(35);
   const [draftTasks, setDraftTasks] = useState<TaskInput[]>([]);
   const canContinueDump = roughTitles.length > 0;
   const initialTaskLoad = useMemo(() => calculateInitialTaskLoad(draftTasks), [draftTasks]);
@@ -67,13 +67,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
 
     // Future versions can compare this initial load with later user behavior to learn
     // personalized urgency/importance weighting. No machine learning is implemented here.
-    onComplete(refinedTasks, baselinePressure, {
-      baselinePressure,
-      initialTotalTaskLoad: Math.round(initialTaskLoad * 10) / 10,
-      taskCount: refinedTasks.length,
-      capturedAt: new Date().toISOString(),
-      note: 'taskLoad = urgencyWeight × importance; future versions may personalize weights from behavior.',
-    });
+    onComplete(refinedTasks, referencePressure, createPressureCalibration(referencePressure, initialTaskLoad, refinedTasks.length));
   }
 
   return (
@@ -114,9 +108,9 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
             <div className="mt-8 rounded-3xl bg-slate-50/90 p-5 ring-1 ring-white/80">
               <div className="flex items-end justify-between gap-4">
                 <span className="text-sm font-medium text-slate-600">主观压力</span>
-                <span className="text-5xl font-semibold text-slate-950">{baselinePressure}</span>
+                <span className="text-5xl font-semibold text-slate-950">{referencePressure}</span>
               </div>
-              <input type="range" min="0" max="100" value={baselinePressure} onChange={(event) => setBaselinePressure(clampPressure(Number(event.target.value)))} className="mt-5 w-full accent-slate-700" />
+              <input type="range" min="0" max="100" value={referencePressure} onChange={(event) => setReferencePressure(clampPressure(Number(event.target.value)))} className="mt-5 w-full accent-slate-700" />
               <div className="mt-2 flex justify-between text-xs text-slate-400"><span>平静</span><span>很重</span></div>
             </div>
             <div className="mt-8 flex justify-between gap-3">

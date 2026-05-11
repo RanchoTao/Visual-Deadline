@@ -7,7 +7,7 @@ Visualized-Deadline（VD）现在保留 LifeOS Shell 的模块入口：它仍然
 ## v0.6.1：LifeOS Interaction + Graph Foundations
 
 - 顶部导航：在不刷新页面的情况下切换「人生地图 / 任务管理器 / 社交 / 个人主页 / 日志」。
-- VD 默认模块：保留压力指数、主观压力基线滑杆、优先级地图、活动列表、归档日志、成就和本地持久化。
+- VD 默认模块：保留压力指数、压力校准、优先级地图、活动列表、归档日志、成就和本地持久化。
 - 人生地图：使用本地可编辑节点图谱，以“我”为中心连接 Academic、Research、Fitness、Finance、Social、Content、Health 等生活领域。
 - 社交：使用本地可编辑的有向关系图谱，以“我”为中心连接联系人节点。
 - 个人主页：本地编辑 nickname、height、weight、identity、skills、longTermGoals、currentStage，并支持头像 data URL。
@@ -19,26 +19,29 @@ Visualized-Deadline（VD）现在保留 LifeOS Shell 的模块入口：它仍然
 
 ## 压力模型
 
-每个进行中项目会计算：
+VD 不再把主观压力当作永久背景压力叠加到任务压力上。用户在引导或重新校准时输入的主观压力代表“当前这组任务给我的总体压力感”。
+
+校准时记录：
 
 ```text
-itemPressure = urgencyWeight * importanceWeight * unfinishedWeight
+referencePressure = 用户输入的主观压力
+referenceTaskLoad = 当前进行中任务负载之和
+pressureRatio = referencePressure / referenceTaskLoad
 ```
 
-总压力会计算：
+日常估算：
 
 ```text
-rawPressure = baselinePressure + weightedActiveItemPressure - relief
+currentPressure = currentTaskLoad × pressureRatio - recoveryRelief
 ```
 
 其中：
 
-- `baselinePressure` 来自首次进入时的主观压力校准，也可以在 VD 压力卡片中用滑杆微调。
-- `urgencyWeight` 根据截止时间远近计算，超期和 24 小时内更高。
-- `importanceWeight` 来自 1-10 的重要性。
-- `unfinishedWeight` 随进度降低，但保留最小未完成权重。
-- `relief` 来自完成项目，以及恢复 / 娱乐活动带来的轻微减压。
-- 常规显示归一到 0-100；raw pressure 超过 100 时会显示 100+ 的 burnout risk 状态。
+- `currentTaskLoad` 来自进行中任务的 `urgencyWeight × importanceWeight`。
+- `pressureRatio` 是个体压力映射系数，来自最近一次校准样本。
+- `recoveryRelief` 来自恢复 / 娱乐活动的轻微释放。
+- 如果校准时没有进行中任务，系统会使用安全默认系数，避免除以 0。
+- raw pressure 超过 100 时会显示 100+ 的 burnout risk 状态。
 
 压力状态分区：
 
@@ -51,11 +54,11 @@ rawPressure = baselinePressure + weightedActiveItemPressure - relief
 ## 本地存储 keys
 
 - `visualized-deadline.tasks`：任务与活动项目。
-- `visualized-deadline.baselinePressure`：主观压力基线。
+- `visualized-deadline.baselinePressure`：旧版本兼容键；现在只作为迁移参考，不再作为叠加型背景压力。
 - `visualized-deadline.achievements`：已解锁成就。
 - `visualized-deadline.profile`：本地个人主页资料与头像 data URL。
 - `visualized-deadline.onboardingComplete`：首次引导是否完成。
-- `visualized-deadline.pressureCalibration`：首次任务倾倒与主观压力的校准快照。
+- `visualized-deadline.pressureCalibration`：保存 `referencePressure`、`referenceTaskLoad` 与 `pressureRatio` 的校准快照。
 - `visualized-deadline.lifeMap.nodes` / `visualized-deadline.lifeMap.edges`：人生地图节点与连接。
 - `visualized-deadline.social.nodes` / `visualized-deadline.social.edges`：社交图谱节点与有向连接。
 
@@ -128,5 +131,5 @@ Vite 的 `base` 已设置为 `/Visualized-Deadline/`，适配仓库 Pages 地址
 - 缺失的 `lifecycleStatus` 会补为 `active`。
 - 旧的 `done` 状态会视为 100% 进度和已完成。
 - 如果没有 `onboardingComplete`，但已有旧任务或压力基线，会视为已完成引导，避免阻塞旧数据。
-- 如果没有 `baselinePressure`，任务管理器会使用安全默认值，并可在压力卡片中重新校准。
+- 如果缺少 `pressureRatio` 或 `referenceTaskLoad`，会从旧压力值生成安全默认映射，避免除以 0。
 - 如果没有成就、头像、人生地图、社交图谱数据，会使用安全默认值初始化。

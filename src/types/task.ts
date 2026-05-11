@@ -25,10 +25,21 @@ export type TaskInput = Omit<Task, 'id' | 'schemaVersion' | 'createdAt' | 'updat
 
 export type PressureState = 'steady' | 'manageable' | 'high' | 'overload' | 'burnout';
 
+export interface PressureCalibrationSnapshot {
+  referencePressure: number;
+  referenceTaskLoad: number;
+  pressureRatio: number;
+  taskCount: number;
+  capturedAt: string;
+  note: string;
+}
+
 export interface PressureBreakdown {
-  baselinePressure: number;
-  activePressure: number;
-  relief: number;
+  referencePressure: number;
+  referenceTaskLoad: number;
+  pressureRatio: number;
+  currentTaskLoad: number;
+  recoveryRelief: number;
   rawPressure: number;
   displayPressure: number;
   state: PressureState;
@@ -54,14 +65,6 @@ export interface UserProfile {
   longTermGoals: string;
   currentStage: string;
   avatarDataUrl?: string;
-}
-
-export interface PressureCalibrationSnapshot {
-  baselinePressure: number;
-  initialTotalTaskLoad: number;
-  taskCount: number;
-  capturedAt: string;
-  note: string;
 }
 
 export interface LifeMapNodeData {
