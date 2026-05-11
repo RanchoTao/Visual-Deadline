@@ -43,12 +43,14 @@ export function ReactFlow({ nodes = [], edges = [], onNodesChange, onNodeClick, 
         const target = nodeById.get(edge.target);
         if (!source || !target) return null;
         const x1 = source.position.x + 80;
-        const y1 = source.position.y + 28;
+        const y1 = source.position.y + 36;
         const x2 = target.position.x + 80;
-        const y2 = target.position.y + 28;
+        const y2 = target.position.y + 36;
+        const familiarity = Math.min(100, Math.max(0, Number(edge.data?.familiarity ?? 50)));
+        const opacity = 0.22 + familiarity / 180;
+        const strokeWidth = 1 + familiarity / 45;
         return React.createElement('g', { key: edge.id },
-          edge.animated ? React.createElement('defs', null, React.createElement('marker', { id: `arrow-${edge.id}`, viewBox: '0 0 10 10', refX: '8', refY: '5', markerWidth: '5', markerHeight: '5', orient: 'auto-start-reverse' }, React.createElement('path', { d: 'M 0 0 L 10 5 L 0 10 z', fill: 'rgba(100,116,139,0.55)' }))) : null,
-          React.createElement('line', { x1, y1, x2, y2, stroke: 'rgba(148,163,184,0.55)', strokeWidth: '1.5', markerEnd: edge.animated ? `url(#arrow-${edge.id})` : undefined }),
+          React.createElement('line', { x1, y1, x2, y2, stroke: `rgba(100,116,139,${opacity})`, strokeWidth, strokeLinecap: 'round' }),
         );
       }),
     ),
@@ -64,11 +66,11 @@ export function ReactFlow({ nodes = [], edges = [], onNodesChange, onNodeClick, 
         if (draggingId === node.id) updateNodePosition(event, node.id);
       },
       onPointerUp: () => setDraggingId(null),
-      className: 'absolute min-w-36 cursor-grab rounded-3xl border border-white/80 bg-white/90 px-4 py-3 text-left shadow-xl shadow-slate-200/60 ring-1 ring-white/80 backdrop-blur active:cursor-grabbing',
+      className: `absolute min-w-36 cursor-grab rounded-3xl border bg-white/90 px-4 py-3 text-center shadow-xl shadow-slate-200/60 ring-1 ring-white/80 backdrop-blur active:cursor-grabbing ${node.id === 'me' ? 'border-slate-300 bg-slate-950 text-white' : 'border-white/80 text-slate-950'}`,
       style: { left: node.position.x, top: node.position.y, borderColor: node.data?.color ?? undefined },
     },
-      React.createElement('p', { className: 'text-sm font-semibold text-slate-950' }, node.data?.label ?? node.data?.title ?? node.id),
-      node.data?.description ? React.createElement('p', { className: 'mt-1 line-clamp-2 text-xs text-slate-500' }, node.data.description) : null,
+      React.createElement('p', { className: `text-sm font-semibold ${node.id === 'me' ? 'text-white' : 'text-slate-950'}` }, node.data?.name || node.data?.label || node.data?.title || '未命名联系人'),
+      node.data?.relationshipType ? React.createElement('p', { className: `mt-1 text-xs ${node.id === 'me' ? 'text-slate-300' : 'text-slate-500'}` }, node.data.relationshipType) : null,
     )),
   );
 }

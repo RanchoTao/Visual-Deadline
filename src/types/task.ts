@@ -80,6 +80,5 @@ export interface SocialPersonData {
   familiarity: string;
   lastInteractionDate: string;
   notes: string;
-  details: string;
   color?: string;
 }
