@@ -5,7 +5,7 @@ import { ActivityLog } from './components/ActivityLog';
 import { LifeMapPage } from './components/LifeMapPage';
 import { LifeOSNav } from './components/LifeOSNav';
 import { LogPage } from './components/LogPage';
-import { PressureCalibration } from './components/PressureCalibration';
+import { OnboardingFlow } from './components/OnboardingFlow';
 import { ProfilePage } from './components/ProfilePage';
 import { PressureCard } from './components/PressureCard';
 import { PriorityMap } from './components/PriorityMap';
@@ -14,7 +14,7 @@ import { TaskForm } from './components/TaskForm';
 import { SocialPage } from './components/SocialPage';
 import { TaskList } from './components/TaskList';
 import { useLocalStorage } from './hooks/useLocalStorage';
-import type { Achievement, ActivityType, LifecycleStatus, LifeOSModule, PressureBreakdown, Task, TaskInput, UserProfile } from './types/task';
+import type { Achievement, ActivityType, LifecycleStatus, LifeOSModule, PressureBreakdown, PressureCalibrationSnapshot, Task, TaskInput, UserProfile } from './types/task';
 import {
   achievementCatalog,
   calculatePressureIndex,
@@ -31,6 +31,8 @@ const STORAGE_KEY = 'visualized-deadline.tasks';
 const BASELINE_PRESSURE_STORAGE_KEY = 'visualized-deadline.baselinePressure';
 const ACHIEVEMENTS_STORAGE_KEY = 'visualized-deadline.achievements';
 const PROFILE_STORAGE_KEY = 'visualized-deadline.profile';
+const ONBOARDING_STORAGE_KEY = 'visualized-deadline.onboardingComplete';
+const PRESSURE_CALIBRATION_STORAGE_KEY = 'visualized-deadline.pressureCalibration';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -42,6 +44,7 @@ const defaultProfile: UserProfile = {
   skills: '',
   longTermGoals: '',
   currentStage: '',
+  avatarDataUrl: undefined,
 };
 
 type LegacyTask = Partial<Omit<Task, 'schemaVersion' | 'activityType' | 'lifecycleStatus'>> & {
@@ -51,40 +54,25 @@ type LegacyTask = Partial<Omit<Task, 'schemaVersion' | 'activityType' | 'lifecyc
   schemaVersion?: number;
 };
 
-const demoTasks: Task[] = [
-  {
-    id: 'demo-1',
-    title: '整理今天最重要的交付物',
-    description: '只列出 1-3 件真正需要推进的事情。',
-    importance: 9,
-    deadline: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString().slice(0, 16),
-    progress: 20,
-    activityType: 'task',
-    lifecycleStatus: 'active',
-    schemaVersion: 3,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: 'demo-2',
-    title: '预约下周复盘时间',
-    importance: 8,
-    deadline: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16),
-    progress: 0,
-    activityType: 'schedule',
-    lifecycleStatus: 'active',
-    schemaVersion: 3,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-];
-
 function readBaselinePressure(): number | null {
   try {
     const storedPressure = window.localStorage.getItem(BASELINE_PRESSURE_STORAGE_KEY);
     return storedPressure === null ? null : clampPressure(JSON.parse(storedPressure));
   } catch {
     return null;
+  }
+}
+
+function readInitialOnboardingComplete(): boolean {
+  try {
+    const storedFlag = window.localStorage.getItem(ONBOARDING_STORAGE_KEY);
+    if (storedFlag !== null) return JSON.parse(storedFlag) === true;
+
+    // Existing users may have tasks or a baseline before onboardingComplete existed.
+    // Treat that as already onboarded so migration never blocks their current data.
+    return window.localStorage.getItem(STORAGE_KEY) !== null || window.localStorage.getItem(BASELINE_PRESSURE_STORAGE_KEY) !== null;
+  } catch {
+    return false;
   }
 }
 
@@ -147,6 +135,7 @@ function normalizeProfile(profile: unknown): UserProfile {
     skills: storedProfile.skills ?? '',
     longTermGoals: storedProfile.longTermGoals ?? '',
     currentStage: storedProfile.currentStage ?? '',
+    avatarDataUrl: storedProfile.avatarDataUrl || undefined,
   };
 }
 
@@ -177,9 +166,11 @@ function createAchievement(id: string): Achievement | undefined {
 }
 
 function App() {
-  const [tasks, setTasks] = useLocalStorage<Task[]>(STORAGE_KEY, demoTasks);
+  const [tasks, setTasks] = useLocalStorage<Task[]>(STORAGE_KEY, []);
   const [achievements, setAchievements] = useLocalStorage<Achievement[]>(ACHIEVEMENTS_STORAGE_KEY, []);
   const [profile, setProfile] = useLocalStorage<UserProfile>(PROFILE_STORAGE_KEY, defaultProfile);
+  const [onboardingComplete, setOnboardingComplete] = useLocalStorage<boolean>(ONBOARDING_STORAGE_KEY, readInitialOnboardingComplete());
+  const [, setPressureCalibration] = useLocalStorage<PressureCalibrationSnapshot | null>(PRESSURE_CALIBRATION_STORAGE_KEY, null);
   const [activeModule, setActiveModule] = useState<LifeOSModule>('vd');
   const [baselinePressure, setBaselinePressure] = useState<number | null>(() => readBaselinePressure());
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -187,7 +178,7 @@ function App() {
   const [toastAchievement, setToastAchievement] = useState<Achievement | undefined>();
 
   const normalizedTasks = useMemo(() => {
-    const storedTasks = Array.isArray(tasks) ? tasks : demoTasks;
+    const storedTasks = Array.isArray(tasks) ? tasks : [];
     return storedTasks.map((task) => normalizeStoredTask(task));
   }, [tasks]);
   const normalizedAchievements = useMemo(() => normalizeStoredAchievements(achievements), [achievements]);
@@ -266,6 +257,15 @@ function App() {
   function resetBaselinePressure() {
     window.localStorage.removeItem(BASELINE_PRESSURE_STORAGE_KEY);
     setBaselinePressure(null);
+    setOnboardingComplete(false);
+  }
+
+  function completeOnboarding(importedTasks: TaskInput[], pressureValue: number, calibration: PressureCalibrationSnapshot) {
+    const createdTasks = importedTasks.map((task) => createTask(task));
+    setTasks((currentTasks) => [...createdTasks, ...currentTasks]);
+    saveBaselinePressure(pressureValue);
+    setPressureCalibration(calibration);
+    setOnboardingComplete(true);
   }
 
   function closeForm() {
@@ -344,7 +344,7 @@ function App() {
     <>
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-500">Visualized Deadline · v0.5.1</p>
+          <p className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-500">Visualized Deadline · v0.6.1</p>
           <h1 className="mt-2 text-4xl font-semibold tracking-tight text-slate-950 md:text-5xl">可视化 Deadline，非传统 Todo List。</h1>
           <p className="mt-3 max-w-2xl text-slate-600">系统记录任务、时间压力与人生节奏；你只需要观察状态，选择下一步。</p>
         </div>
@@ -373,8 +373,6 @@ function App() {
         </div>
       ) : null}
 
-      <AchievementsPanel achievements={normalizedAchievements} />
-
       <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
         <PriorityMap tasks={activeTasks} />
         <div className="space-y-6">
@@ -382,6 +380,8 @@ function App() {
           <ActivityLog tasks={normalizedTasks} onDelete={deleteTask} onReviewNoteChange={updateReviewNote} />
         </div>
       </div>
+
+      <AchievementsPanel achievements={normalizedAchievements} />
     </>
   );
 
@@ -395,7 +395,7 @@ function App() {
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,#dbeafe,transparent_32%),radial-gradient(circle_at_top_right,#f8fafc,transparent_30%),linear-gradient(180deg,#f8fafc,#eef2f7)] px-4 py-8 text-slate-900 md:px-8">
-      {baselinePressure === null ? <PressureCalibration onSave={saveBaselinePressure} /> : null}
+      {!onboardingComplete ? <OnboardingFlow onComplete={completeOnboarding} /> : null}
       <AchievementToast achievement={toastAchievement} />
 
       <div className="mx-auto max-w-6xl space-y-6">

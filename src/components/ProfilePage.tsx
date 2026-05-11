@@ -1,3 +1,4 @@
+import type { ChangeEvent } from 'react';
 import type { UserProfile } from '../types/task';
 
 interface ProfilePageProps {
@@ -16,11 +17,33 @@ const profileFields: { key: keyof UserProfile; label: string; placeholder: strin
 ];
 
 export function ProfilePage({ profile, onProfileChange }: ProfilePageProps) {
+  function handleAvatarChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.addEventListener('load', () => {
+      if (typeof reader.result === 'string') onProfileChange({ ...profile, avatarDataUrl: reader.result });
+    });
+    reader.readAsDataURL(file);
+  }
+
   return (
     <section className="rounded-[2rem] border border-white/70 bg-white/75 p-6 shadow-xl shadow-slate-200/60 backdrop-blur">
-      <p className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-400">Local Profile</p>
-      <h1 className="mt-2 text-4xl font-semibold tracking-tight text-slate-950">个人主页</h1>
-      <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">这些信息只保存在当前浏览器的 localStorage 中，用于之后连接 LifeOS 的本地上下文。</p>
+      <div className="flex flex-wrap items-center gap-5">
+        <div className="flex h-28 w-28 items-center justify-center overflow-hidden rounded-[2rem] bg-slate-100 text-4xl font-semibold text-slate-400 shadow-inner ring-1 ring-white/80">
+          {profile.avatarDataUrl ? <img src={profile.avatarDataUrl} alt="Profile avatar" className="h-full w-full object-cover" /> : (profile.nickname || '我').slice(0, 1)}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-400">Local Profile</p>
+          <h1 className="mt-2 text-4xl font-semibold tracking-tight text-slate-950">个人主页</h1>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">这些信息只保存在当前浏览器的 localStorage 中，用于之后连接 LifeOS 的本地上下文。</p>
+          <label className="mt-4 inline-flex cursor-pointer rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-700">
+            选择头像
+            <input type="file" accept="image/*" onChange={handleAvatarChange} className="sr-only" />
+          </label>
+        </div>
+      </div>
 
       <div className="mt-6 grid gap-4 md:grid-cols-2">
         {profileFields.map((field) => (
@@ -28,14 +51,14 @@ export function ProfilePage({ profile, onProfileChange }: ProfilePageProps) {
             <span className="text-sm font-medium text-slate-600">{field.label}</span>
             {field.multiline ? (
               <textarea
-                value={profile[field.key]}
+                value={profile[field.key] ?? ''}
                 onChange={(event) => onProfileChange({ ...profile, [field.key]: event.target.value })}
                 className="mt-2 min-h-28 w-full rounded-3xl border border-slate-200/80 bg-white/80 px-4 py-3 text-sm outline-none transition focus:border-sky-200 focus:ring-4 focus:ring-sky-100/70"
                 placeholder={field.placeholder}
               />
             ) : (
               <input
-                value={profile[field.key]}
+                value={profile[field.key] ?? ''}
                 onChange={(event) => onProfileChange({ ...profile, [field.key]: event.target.value })}
                 className="mt-2 w-full rounded-2xl border border-slate-200/80 bg-white/80 px-4 py-3 text-sm outline-none transition focus:border-sky-200 focus:ring-4 focus:ring-sky-100/70"
                 placeholder={field.placeholder}

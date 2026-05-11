@@ -1,7 +1,7 @@
 {
   "name": "visualized-deadline",
   "private": true,
-  "version": "0.5.1-alpha.0",
+  "version": "0.6.1-alpha.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,7 +10,8 @@
   },
   "dependencies": {
     "react": "latest",
-    "react-dom": "latest"
+    "react-dom": "latest",
+    "@xyflow/react": "file:src/vendor/xyflow-react"
   },
   "devDependencies": {
     "@tailwindcss/vite": "latest",

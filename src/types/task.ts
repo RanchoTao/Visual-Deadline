@@ -53,4 +53,30 @@ export interface UserProfile {
   skills: string;
   longTermGoals: string;
   currentStage: string;
+  avatarDataUrl?: string;
+}
+
+export interface PressureCalibrationSnapshot {
+  baselinePressure: number;
+  initialTotalTaskLoad: number;
+  taskCount: number;
+  capturedAt: string;
+  note: string;
+}
+
+export interface LifeMapNodeData {
+  title: string;
+  description: string;
+  color?: string;
+}
+
+export interface SocialPersonData {
+  name: string;
+  relationshipType: string;
+  subjectiveFavorability: string;
+  familiarity: string;
+  lastInteractionDate: string;
+  notes: string;
+  details: string;
+  color?: string;
 }

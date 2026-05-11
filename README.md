@@ -4,14 +4,16 @@
 
 Visualized-Deadline（VD）现在保留 LifeOS Shell 的模块入口：它仍然负责可视化 Deadline、认知压力与生活节奏，同时为后续的人生地图、社交、个人主页和日志模块保留清晰入口。
 
-## v0.5.1：UX Refinement
+## v0.6.1：LifeOS Interaction + Graph Foundations
 
-- 顶部导航：在不刷新页面的情况下切换「人生地图 / VD / 社交 / 个人主页 / 日志」。
+- 顶部导航：在不刷新页面的情况下切换「人生地图 / 任务管理器 / 社交 / 个人主页 / 日志」。
 - VD 默认模块：保留压力指数、主观压力基线滑杆、优先级地图、活动列表、归档日志、成就和本地持久化。
-- 人生地图：展示 Academic、Research、Fitness、Finance、Social、Content、Health 七个生活领域的占位卡片。
-- 社交：保留 relationship map、contact notes、social energy tracking、interaction review 的未来说明。
-- 个人主页：本地编辑 nickname、height、weight、identity、skills、longTermGoals、currentStage。
+- 人生地图：使用本地可编辑节点图谱，以“我”为中心连接 Academic、Research、Fitness、Finance、Social、Content、Health 等生活领域。
+- 社交：使用本地可编辑的有向关系图谱，以“我”为中心连接联系人节点。
+- 个人主页：本地编辑 nickname、height、weight、identity、skills、longTermGoals、currentStage，并支持头像 data URL。
 - 日志：独立展示已完成 / 已放弃项目、时间戳和活动类型，同时 VD 内仍保留小日志预览。
+- 首次进入：先进行快速任务倾倒，再校准主观压力，最后补全任务信息。
+- 当前关注：最多展示 3 个推荐活动，帮助用户选择而不是替用户决定。
 - 表单体验：新建 / 编辑项目使用居中大弹窗，不再静默插入页面。
 - 复盘记录：归档项目支持展开、删除与填写「复盘记录」。
 
@@ -51,7 +53,11 @@ rawPressure = baselinePressure + weightedActiveItemPressure - relief
 - `visualized-deadline.tasks`：任务与活动项目。
 - `visualized-deadline.baselinePressure`：主观压力基线。
 - `visualized-deadline.achievements`：已解锁成就。
-- `visualized-deadline.profile`：本地个人主页资料。
+- `visualized-deadline.profile`：本地个人主页资料与头像 data URL。
+- `visualized-deadline.onboardingComplete`：首次引导是否完成。
+- `visualized-deadline.pressureCalibration`：首次任务倾倒与主观压力的校准快照。
+- `visualized-deadline.lifeMap.nodes` / `visualized-deadline.lifeMap.edges`：人生地图节点与连接。
+- `visualized-deadline.social.nodes` / `visualized-deadline.social.edges`：社交图谱节点与有向连接。
 
 ## 成就列表
 
@@ -71,6 +77,7 @@ rawPressure = baselinePressure + weightedActiveItemPressure - relief
 - Vite
 - Tailwind CSS
 - localStorage
+- @xyflow/react（当前仓库内以 local file dependency 形式提供图谱交互基础）
 
 ## 快速开始
 
@@ -120,5 +127,6 @@ Vite 的 `base` 已设置为 `/Visualized-Deadline/`，适配仓库 Pages 地址
 - 缺失的 `activityType` 会补为 `task`。
 - 缺失的 `lifecycleStatus` 会补为 `active`。
 - 旧的 `done` 状态会视为 100% 进度和已完成。
-- 如果没有 `baselinePressure`，会显示首次压力校准。
-- 如果没有成就数据，会初始化为空数组。
+- 如果没有 `onboardingComplete`，但已有旧任务或压力基线，会视为已完成引导，避免阻塞旧数据。
+- 如果没有 `baselinePressure`，任务管理器会使用安全默认值，并可在压力卡片中重新校准。
+- 如果没有成就、头像、人生地图、社交图谱数据，会使用安全默认值初始化。

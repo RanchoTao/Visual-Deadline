@@ -7,7 +7,7 @@ interface LifeOSNavProps {
 
 const navItems: { id: LifeOSModule; label: string }[] = [
   { id: 'life-map', label: '人生地图' },
-  { id: 'vd', label: 'VD' },
+  { id: 'vd', label: '任务管理器' },
   { id: 'social', label: '社交' },
   { id: 'profile', label: '个人主页' },
   { id: 'log', label: '日志' },
