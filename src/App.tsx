@@ -401,11 +401,20 @@ function App() {
   ) : null;
 
 
-
+  const taskModule = (
+    <TaskPage
+      activeTasks={activeTasks}
+      achievements={normalizedAchievements}
+      onAddTask={() => setIsFormOpen(true)}
+      onArchiveTask={archiveTask}
+      onDeleteTask={deleteTask}
+      onEditTask={startEditing}
+    />
+  );
 
   const moduleContent: Record<LifeOSModule, ReactElement> = {
     home: <HomePage pressure={pressure} pressureHistory={normalizedPressureHistory} recommendedTasks={recommendedTasks} activeTasks={activeTasks} tasks={normalizedTasks} onAddTask={() => setIsFormOpen(true)} onRecalibrate={openRecalibration} onOpenTasks={() => setActiveModule('task')} />,
-    task: <TaskPage activeTasks={activeTasks} achievements={normalizedAchievements} onAddTask={() => setIsFormOpen(true)} onArchiveTask={archiveTask} onDeleteTask={deleteTask} onEditTask={startEditing} />,
+    task: taskModule,
     map: <LifeMapPage />,
     social: <SocialPage />,
     log: <>{taskManagerModule}<LogPage tasks={normalizedTasks} onDelete={deleteTask} onReviewNoteChange={updateReviewNote} /></>,
