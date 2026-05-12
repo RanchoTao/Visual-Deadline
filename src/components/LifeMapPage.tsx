@@ -4,22 +4,24 @@ import { useLocalStorage } from '../hooks/useLocalStorage';
 import { storageKeys } from '../storage';
 import type { LifeMapNodeData } from '../types/task';
 
-const CURRENT_LIFE_MAP_LAYOUT_VERSION = 3;
-const LIFE_CENTER = { x: 620, y: 430 };
-const ORBIT_STEP = 120;
-const NODE_GAP = 170;
-const MAX_LIFE_DISTANCE = 900;
+const CURRENT_LIFE_MAP_LAYOUT_VERSION = 4;
+const LIFE_CENTER = { x: 600, y: 560 };
+const NODE_GAP = 150;
+const TREE_COLUMNS = [120, 360, 600, 840];
+const TREE_ROWS = [150, 330];
 
 type LifeNode = Node<LifeMapNodeData>;
+type LifeEdgeData = { route: 'orthogonal'; label?: string };
 
 const domainSeeds: LifeMapNodeData[] = [
-  { title: '学习', description: '课程、技能与日常学习节奏。', color: '#bfdbfe' },
-  { title: '研究', description: '长期问题、论文与实验推进。', color: '#ddd6fe' },
-  { title: '健身', description: '训练、力量与身体状态。', color: '#bbf7d0' },
-  { title: '资产管理', description: '收入、支出、储蓄与风险边界。', color: '#fde68a' },
-  { title: '社交', description: '关系维护与社交能量。', color: '#fecdd3' },
-  { title: '内容', description: '表达、作品与内容资产。', color: '#bae6fd' },
-  { title: '健康', description: '睡眠、饮食与基础健康信号。', color: '#d9f99d' },
+  { title: '学习', description: '课程、技能与日常学习节奏。', color: '#dbeafe' },
+  { title: '研究', description: '长期问题、论文与实验推进。', color: '#ede9fe' },
+  { title: '健身', description: '训练、力量与身体状态。', color: '#dcfce7' },
+  { title: '健康', description: '睡眠、饮食与基础健康信号。', color: '#ecfccb' },
+  { title: '社交', description: '关系维护与社交能量。', color: '#ffe4e6' },
+  { title: '资产管理', description: '收入、支出、储蓄与风险边界。', color: '#fef3c7' },
+  { title: '内容', description: '表达、作品与内容资产。', color: '#cffafe' },
+  { title: '个人思考', description: '复盘、价值观与长期判断。', color: '#e2e8f0' },
 ];
 
 const legacyDomainTitleMap: Record<string, string> = {
@@ -47,49 +49,36 @@ function normalizeLifeTitle(title: string, nodeId?: string): string {
   return title || '未命名节点';
 }
 
-function orbitPoint(index: number, radius = 300): LifeNode['position'] {
-  const angle = (Math.PI * 2 * index) / Math.max(domainSeeds.length, 8) - Math.PI / 2;
-  return { x: Math.round(LIFE_CENTER.x + Math.cos(angle) * radius), y: Math.round(LIFE_CENTER.y + Math.sin(angle) * radius) };
-}
-
-function distanceFromCenter(position: LifeNode['position']): number {
-  return Math.hypot(position.x - LIFE_CENTER.x, position.y - LIFE_CENTER.y);
-}
-
-function isValidLifePosition(position: unknown): position is LifeNode['position'] {
-  if (!position || typeof position !== 'object') return false;
-  const candidate = position as LifeNode['position'];
-  return Number.isFinite(candidate.x) && Number.isFinite(candidate.y) && distanceFromCenter(candidate) <= MAX_LIFE_DISTANCE;
+function treePosition(index: number): LifeNode['position'] {
+  if (index < 4) return { x: TREE_COLUMNS[index], y: TREE_ROWS[1] };
+  if (index < 8) return { x: TREE_COLUMNS[index - 4], y: TREE_ROWS[0] };
+  const extraIndex = index - 8;
+  const row = Math.floor(extraIndex / 4);
+  const column = extraIndex % 4;
+  return { x: TREE_COLUMNS[column], y: Math.max(40, TREE_ROWS[0] - (row + 1) * 135) };
 }
 
 function hasCollision(position: LifeNode['position'], nodes: LifeNode[]): boolean {
   return nodes.some((node) => Math.hypot(node.position.x - position.x, node.position.y - position.y) < NODE_GAP);
 }
 
-function findAvailablePosition(nodes: LifeNode[], preferredIndex = nodes.length): LifeNode['position'] {
-  const preferred = orbitPoint(preferredIndex);
-  if (!hasCollision(preferred, nodes) && distanceFromCenter(preferred) <= MAX_LIFE_DISTANCE) return preferred;
-  for (let ring = 0; ring < 5; ring += 1) {
-    const radius = 240 + ring * ORBIT_STEP;
-    const slots = 8 + ring * 6;
-    for (let slot = 0; slot < slots; slot += 1) {
-      const angle = (Math.PI * 2 * slot) / slots - Math.PI / 2;
-      const position = { x: Math.round(LIFE_CENTER.x + Math.cos(angle) * radius), y: Math.round(LIFE_CENTER.y + Math.sin(angle) * radius) };
-      if (!hasCollision(position, nodes) && distanceFromCenter(position) <= MAX_LIFE_DISTANCE) return position;
-    }
+function findAvailablePosition(nodes: LifeNode[]): LifeNode['position'] {
+  for (let index = 0; index < 40; index += 1) {
+    const position = treePosition(index);
+    if (!hasCollision(position, nodes)) return position;
   }
-  return { x: LIFE_CENTER.x + 420, y: LIFE_CENTER.y + 220 };
+  return { x: LIFE_CENTER.x + 360, y: LIFE_CENTER.y - 520 };
 }
 
 function createSeedNodes(): LifeNode[] {
   return [
-    { id: 'me', position: LIFE_CENTER, data: { title: '我', description: 'LifeOS 的中心节点', currentStage: '', notes: '', color: '#cbd5e1' } },
-    ...domainSeeds.map((domain, index) => ({ id: `life-${index}`, position: orbitPoint(index), data: domain })),
+    { id: 'me', type: 'life', position: LIFE_CENTER, data: { title: '我', description: 'LifeOS 的中心节点', currentStage: '', notes: '', color: '#cbd5e1' } },
+    ...domainSeeds.map((domain, index) => ({ id: `life-${index}`, type: 'life', position: treePosition(index), data: domain })),
   ];
 }
 
-function createEdges(nodes: LifeNode[]): Edge[] {
-  return nodes.filter((node) => node.id !== 'me').map((node) => ({ id: `me-${node.id}`, source: 'me', target: node.id }));
+function createEdges(nodes: LifeNode[]): Edge<LifeEdgeData>[] {
+  return nodes.filter((node) => node.id !== 'me').map((node) => ({ id: `me-${node.id}`, source: 'me', target: node.id, data: { route: 'orthogonal' } }));
 }
 
 function normalizeNodes(nodes: unknown, forceRelayout = false): LifeNode[] {
@@ -98,6 +87,7 @@ function normalizeNodes(nodes: unknown, forceRelayout = false): LifeNode[] {
   const storedCenter = rawNodes.find((node) => node.id === 'me');
   const centerNode: LifeNode = {
     id: 'me',
+    type: 'life',
     position: LIFE_CENTER,
     data: {
       title: storedCenter?.data?.title || '我',
@@ -108,25 +98,26 @@ function normalizeNodes(nodes: unknown, forceRelayout = false): LifeNode[] {
     },
   };
   const existing: LifeNode[] = [centerNode];
-  const people = rawNodes
+  const lifeNodes = rawNodes
     .filter((node) => node.id !== 'me')
-    .map((node) => {
-      const position = !forceRelayout && isValidLifePosition(node.position) && !hasCollision(node.position, existing) ? node.position : findAvailablePosition(existing);
+    .map((node, index) => {
+      const position = forceRelayout ? treePosition(index) : node.position && Number.isFinite(node.position.x) && Number.isFinite(node.position.y) && !hasCollision(node.position, existing) ? node.position : findAvailablePosition(existing);
       const nextNode: LifeNode = {
         id: node.id || crypto.randomUUID(),
+        type: 'life',
         position,
         data: {
           title: normalizeLifeTitle(node.data?.title || '', node.id),
           description: node.data?.description || '',
           currentStage: node.data?.currentStage || '',
           notes: node.data?.notes || '',
-          color: node.data?.color || '#e2e8f0',
+          color: node.data?.color || domainSeeds[index]?.color || '#e2e8f0',
         },
       };
       existing.push(nextNode);
       return nextNode;
     });
-  return [centerNode, ...people];
+  return [centerNode, ...lifeNodes];
 }
 
 function getLifeMapData(node: LifeNode): LifeMapNodeData {
@@ -153,7 +144,7 @@ export function LifeMapPage() {
 
   function addNode() {
     const baseNodes = normalizeNodes(storedNodes);
-    const newNode: LifeNode = { id: crypto.randomUUID(), position: findAvailablePosition(baseNodes), data: { title: '新的生活节点', description: '', currentStage: '', notes: '', color: '#e0f2fe' } };
+    const newNode: LifeNode = { id: crypto.randomUUID(), type: 'life', position: findAvailablePosition(baseNodes), data: { title: '新的生活节点', description: '', currentStage: '', notes: '', color: '#e0f2fe' } };
     setStoredNodes([...baseNodes, newNode]);
     setEditingNode(newNode);
   }
@@ -173,7 +164,11 @@ export function LifeMapPage() {
   return (
     <section className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4 rounded-[2rem] border border-white/70 bg-white/75 p-6 shadow-xl shadow-slate-200/60 backdrop-blur">
-        <div><p className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-400">人生地图</p><h1 className="mt-2 text-4xl font-semibold tracking-tight text-slate-950">人生地图</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">把生活领域摊开成一张可拖动的地图。点击节点编辑，拖动时不会误开弹窗。</p></div>
+        <div>
+          <p className="text-sm font-semibold tracking-[0.24em] text-slate-400">人生结构树</p>
+          <h1 className="mt-2 text-4xl font-semibold tracking-tight text-slate-950">人生地图</h1>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">用路线图 / 技能树方式整理生活领域：底部是“我”，分支向上展开。点击节点编辑，拖动时不会误开弹窗。</p>
+        </div>
         <button type="button" onClick={addNode} className="rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white shadow-sm hover:bg-slate-700">添加节点</button>
       </div>
 
@@ -182,7 +177,7 @@ export function LifeMapPage() {
       </div>
 
       {editingNode ? (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/15 px-4 backdrop-blur-sm"><section className="max-h-[calc(100vh-3rem)] w-full max-w-2xl overflow-y-auto rounded-[2rem] border border-white/80 bg-white/95 p-5 shadow-2xl shadow-slate-300/60">
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/15 px-4 backdrop-blur-sm"><section className="w-full max-w-2xl rounded-[2rem] border border-white/80 bg-white/95 p-5 shadow-2xl shadow-slate-300/60">
           <h2 className="text-2xl font-semibold text-slate-950">{editingNode.id === 'me' ? '编辑中心节点' : '编辑生活节点'}</h2>
           <div className="mt-4 grid gap-4 md:grid-cols-2">
             <label className="text-sm font-medium text-slate-600">{editingNode.id === 'me' ? '昵称' : '节点名称'}<input value={editingNode.data?.title ?? ''} onChange={(event) => setEditingNode({ ...editingNode, data: { ...getLifeMapData(editingNode), title: event.target.value } })} className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3" /></label>

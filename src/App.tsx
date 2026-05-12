@@ -1,17 +1,14 @@
 import { type ReactElement, useEffect, useMemo, useState } from 'react';
 import { AchievementToast } from './components/AchievementToast';
-import { AchievementsPanel } from './components/AchievementsPanel';
-import { ActivityLog } from './components/ActivityLog';
 import { HomePage } from './components/HomePage';
 import { LifeMapPage } from './components/LifeMapPage';
 import { LifeOSNav } from './components/LifeOSNav';
 import { LogPage } from './components/LogPage';
 import { OnboardingFlow } from './components/OnboardingFlow';
 import { ProfilePage } from './components/ProfilePage';
-import { PriorityMap } from './components/PriorityMap';
 import { TaskForm } from './components/TaskForm';
 import { SocialPage } from './components/SocialPage';
-import { TaskList } from './components/TaskList';
+import { TaskPage } from './components/TaskPage';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import type { Achievement, ActivityType, LifecycleStatus, LifeOSModule, PressureBreakdown, PressureCalibrationSnapshot, PressureHistoryEventType, PressureHistoryRecord, Task, TaskInput, UserProfile } from './types/task';
 import {
@@ -336,6 +333,8 @@ function App() {
     closeForm();
   }
 
+
+
   function archiveTask(task: Task, lifecycleStatus: Exclude<LifecycleStatus, 'active'>) {
     const now = new Date().toISOString();
     const nextTasks = normalizedTasks.map((item) =>
@@ -377,18 +376,19 @@ function App() {
     );
   }
 
+
+
   function startEditing(task: Task) {
     setEditingTask(task);
     setIsFormOpen(true);
   }
-
 
   const taskFormOverlay = isFormOpen ? (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/15 px-4 py-6 backdrop-blur-sm">
       <section className="max-h-[calc(100vh-3rem)] w-full max-w-5xl overflow-y-auto rounded-[2rem] border border-white/80 bg-white/90 p-5 shadow-2xl shadow-slate-300/60">
         <div className="mb-4 flex items-center justify-between gap-4">
           <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-400">项目表单</p>
+            <p className="text-sm font-semibold tracking-[0.22em] text-slate-400">项目表单</p>
             <h2 className="mt-1 text-3xl font-semibold tracking-tight text-slate-950">{editingTask ? '编辑项目' : '新建项目'}</h2>
           </div>
           <button type="button" onClick={closeForm} className="rounded-full bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-200">
@@ -400,34 +400,21 @@ function App() {
     </div>
   ) : null;
 
-  const taskManagerModule = (
-    <>
-      <header className="flex flex-wrap items-center justify-between gap-4 rounded-[2rem] border border-white/70 bg-white/75 p-6 shadow-xl shadow-slate-200/60 backdrop-blur">
-        <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-500">Task Manager · v0.9 foundation</p>
-          <h1 className="mt-2 text-4xl font-semibold tracking-tight text-slate-950 md:text-5xl">任务系统</h1>
-          <p className="mt-3 max-w-2xl text-slate-600">完整任务地图、活动列表与长期归档。首页只保留日常控制台。</p>
-        </div>
-        <button onClick={() => setIsFormOpen(true)} className="rounded-full bg-slate-950 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-slate-900/10 hover:bg-slate-700">
-          添加项目
-        </button>
-      </header>
 
-
-      <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-        <PriorityMap tasks={activeTasks} />
-        <div className="space-y-6">
-          <TaskList tasks={activeTasks} onArchive={archiveTask} onDelete={deleteTask} onEdit={startEditing} />
-          <ActivityLog tasks={normalizedTasks} onDelete={deleteTask} onReviewNoteChange={updateReviewNote} />
-        </div>
-      </div>
-
-      <AchievementsPanel achievements={normalizedAchievements} />
-    </>
+  const taskModule = (
+    <TaskPage
+      activeTasks={activeTasks}
+      achievements={normalizedAchievements}
+      onAddTask={() => setIsFormOpen(true)}
+      onArchiveTask={archiveTask}
+      onDeleteTask={deleteTask}
+      onEditTask={startEditing}
+    />
   );
 
   const moduleContent: Record<LifeOSModule, ReactElement> = {
-    home: <><HomePage pressure={pressure} pressureHistory={normalizedPressureHistory} recommendedTasks={recommendedTasks} activeTasks={activeTasks} tasks={normalizedTasks} onAddTask={() => setIsFormOpen(true)} onRecalibrate={openRecalibration} onDeleteTask={deleteTask} onReviewNoteChange={updateReviewNote} />{taskManagerModule}</>,
+    home: <HomePage pressure={pressure} pressureHistory={normalizedPressureHistory} recommendedTasks={recommendedTasks} activeTasks={activeTasks} tasks={normalizedTasks} onAddTask={() => setIsFormOpen(true)} onRecalibrate={openRecalibration} onOpenTasks={() => setActiveModule('task')} />,
+    task: taskModule,
     map: <LifeMapPage />,
     social: <SocialPage />,
     log: <LogPage tasks={normalizedTasks} onDelete={deleteTask} onReviewNoteChange={updateReviewNote} />,
@@ -441,7 +428,7 @@ function App() {
       {isRecalibrationOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/15 px-4 backdrop-blur-sm">
           <section className="w-full max-w-lg rounded-[2rem] border border-white/80 bg-white/95 p-6 shadow-2xl shadow-slate-300/60">
-            <p className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-400">Pressure Recalibration</p>
+            <p className="text-sm font-semibold tracking-[0.22em] text-slate-400">压力校准</p>
             <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">此刻这组任务让你感觉有多大压力？</h2>
             <p className="mt-3 text-sm leading-6 text-slate-500">系统会读取当前进行中任务负载，并用你的主观感受重新计算个体压力映射系数。</p>
             <div className="mt-6 rounded-3xl bg-slate-50/90 p-5 ring-1 ring-white/80">
