@@ -70,7 +70,7 @@ export interface Achievement {
   unlockedAt: string;
 }
 
-export type LifeOSModule = 'home' | 'map' | 'social' | 'log' | 'me';
+export type LifeOSModule = 'home' | 'task' | 'map' | 'social' | 'log' | 'me';
 
 export interface UserProfile {
   nickname: string;
