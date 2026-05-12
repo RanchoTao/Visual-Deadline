@@ -1,6 +1,7 @@
 import type { ChangeEvent } from 'react';
 import type { UserProfile } from '../types/task';
 import { DataSafetyPanel } from './DataSafetyPanel';
+import { DeveloperToolsPanel } from './DeveloperToolsPanel';
 
 interface ProfilePageProps {
   profile: UserProfile;
@@ -92,6 +93,7 @@ export function ProfilePage({ profile, onProfileChange }: ProfilePageProps) {
       </section>
 
       <DataSafetyPanel />
+      <DeveloperToolsPanel />
     </section>
   );
 }
