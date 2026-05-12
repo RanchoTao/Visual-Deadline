@@ -417,7 +417,7 @@ function App() {
     task: taskModule,
     map: <LifeMapPage />,
     social: <SocialPage />,
-    log: <>{taskManagerModule}<LogPage tasks={normalizedTasks} onDelete={deleteTask} onReviewNoteChange={updateReviewNote} /></>,
+    log: <LogPage tasks={normalizedTasks} onDelete={deleteTask} onReviewNoteChange={updateReviewNote} />,
     me: <ProfilePage profile={normalizedProfile} onProfileChange={setProfile} />,
   };
 
