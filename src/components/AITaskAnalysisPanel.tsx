@@ -4,6 +4,7 @@ import { storageKeys } from '../storage';
 import type { PressureBreakdown, Task } from '../types/task';
 import { defaultAISettings, getProviderDefaults, normalizeAISettings, requestChatCompletion, type AIProvider, type AISettings } from '../services/aiClient';
 import { buildTaskAnalysisUserPrompt, createTaskAnalysisPayload, taskAnalysisSystemPrompt } from '../services/taskAnalysisPrompt';
+import { AIReportRenderer } from './AIReportRenderer';
 import { ModalPortal } from './ModalPortal';
 
 interface AITaskAnalysisPanelProps {
@@ -102,7 +103,7 @@ export function AITaskAnalysisPanel({ tasks, pressure }: AITaskAnalysisPanelProp
 
       {analysisState === 'loading' ? <div className="mt-4 rounded-3xl bg-sky-50 p-5 text-sm font-semibold text-sky-700 ring-1 ring-sky-100">正在生成任务压力报告……</div> : null}
       {analysisState === 'error' && errorMessage ? <div className="mt-4 rounded-3xl bg-rose-50 p-5 text-sm font-semibold text-rose-600 ring-1 ring-rose-100">{errorMessage}</div> : null}
-      {report ? <article className="mt-4 whitespace-pre-wrap rounded-[1.5rem] bg-white/90 p-5 text-sm leading-7 text-slate-700 shadow-inner ring-1 ring-white/80">{report}</article> : null}
+      {report ? <AIReportRenderer content={report} variant="task-analysis" /> : null}
 
       {isSettingsOpen ? (
         <ModalPortal>

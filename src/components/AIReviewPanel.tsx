@@ -4,6 +4,7 @@ import { storageKeys } from '../storage';
 import type { PressureHistoryRecord, Task } from '../types/task';
 import { defaultAISettings, normalizeAISettings, requestChatCompletion, type AISettings } from '../services/aiClient';
 import { buildReviewUserPrompt, reviewSystemPrompt } from '../services/reviewPrompt';
+import { AIReportRenderer } from './AIReportRenderer';
 
 interface AIReviewPanelProps {
   tasks: Task[];
@@ -62,7 +63,7 @@ export function AIReviewPanel({ tasks, pressureHistory }: AIReviewPanelProps) {
       <div className="mt-4 rounded-2xl bg-slate-50/80 px-4 py-3 text-xs leading-5 text-slate-500 ring-1 ring-white/80">当前配置：{hasApiKey ? `${settings.provider} · ${settings.model}` : '未配置 API Key'}。复盘仅发送必要任务与压力历史字段。</div>
       {state === 'loading' ? <div className="mt-4 rounded-3xl bg-sky-50 p-5 text-sm font-semibold text-sky-700 ring-1 ring-sky-100">正在生成近期复盘……</div> : null}
       {state === 'error' && errorMessage ? <div className="mt-4 rounded-3xl bg-rose-50 p-5 text-sm font-semibold text-rose-600 ring-1 ring-rose-100">{errorMessage}</div> : null}
-      {report ? <article className="mt-4 whitespace-pre-wrap rounded-[1.5rem] bg-white/90 p-5 text-sm leading-7 text-slate-700 shadow-inner ring-1 ring-white/80">{report}</article> : null}
+      {report ? <AIReportRenderer content={report} variant="review" /> : null}
     </section>
   );
 }
