@@ -22,6 +22,8 @@ export const storageKeys = {
   achievements: 'visualized-deadline.achievements',
   profile: 'visualized-deadline.profile',
   onboardingComplete: 'visualized-deadline.onboardingComplete',
+  welcomeLastActive: 'visualized-deadline.welcomeLastActive',
+  aiSettings: 'vd.aiSettings',
   pressureCalibration: 'visualized-deadline.pressureCalibration',
   pressureHistory: 'visualized-deadline.pressureHistory',
   lifeMapNodes: 'visualized-deadline.lifeMap.nodes',

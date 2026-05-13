@@ -20,7 +20,7 @@ export function TaskList({ tasks, onArchive, onDelete, onEdit }: TaskListProps) 
   }
 
   return (
-    <section className="rounded-[2rem] border border-white/70 bg-white/75 p-5 shadow-xl shadow-slate-200/60 backdrop-blur">
+    <section className={`relative overflow-visible rounded-[2rem] border border-white/70 bg-white/75 p-5 shadow-xl shadow-slate-200/60 backdrop-blur ${openMenuTaskId ? 'z-40' : 'z-10'}`}>
       <div className="flex items-center justify-between gap-4">
         <div>
           <p className="text-sm font-semibold text-slate-500">活动列表</p>
@@ -32,12 +32,12 @@ export function TaskList({ tasks, onArchive, onDelete, onEdit }: TaskListProps) 
       {tasks.length === 0 ? (
         <div className="mt-6 rounded-3xl border border-dashed border-slate-200 p-8 text-center text-slate-500">暂无进行中的项目。</div>
       ) : (
-        <ul className="mt-5 grid gap-3 lg:grid-cols-2">
+        <ul className="mt-5 grid overflow-visible gap-3 lg:grid-cols-2">
           {tasks.map((task) => {
             const isMenuOpen = openMenuTaskId === task.id;
 
             return (
-              <li key={task.id} className="relative rounded-3xl border border-white/80 bg-slate-50/80 p-4 shadow-sm shadow-slate-100/70">
+              <li key={task.id} className={`relative overflow-visible rounded-3xl border border-white/80 bg-slate-50/80 p-4 shadow-sm shadow-slate-100/70 ${isMenuOpen ? 'z-50' : 'z-0'}`}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
@@ -55,7 +55,7 @@ export function TaskList({ tasks, onArchive, onDelete, onEdit }: TaskListProps) 
                     </div>
                   </div>
 
-                  <div className="relative shrink-0">
+                  <div className="relative z-50 shrink-0 overflow-visible">
                     <button
                       type="button"
                       onClick={() => setOpenMenuTaskId(isMenuOpen ? undefined : task.id)}
@@ -66,7 +66,7 @@ export function TaskList({ tasks, onArchive, onDelete, onEdit }: TaskListProps) 
                       ⋯
                     </button>
                     {isMenuOpen ? (
-                      <div className="absolute right-0 top-12 z-20 w-32 rounded-2xl border border-white/80 bg-white/95 p-1.5 shadow-xl shadow-slate-200/70 backdrop-blur">
+                      <div className="absolute right-0 top-12 z-[120] w-32 rounded-2xl border border-white/80 bg-white/95 p-1.5 shadow-2xl shadow-slate-300/70 backdrop-blur">
                         <button type="button" onClick={() => runAction(() => onArchive(task, 'completed'))} className="w-full rounded-xl px-3 py-2 text-left text-sm font-medium text-emerald-600 hover:bg-emerald-50">
                           完成
                         </button>
