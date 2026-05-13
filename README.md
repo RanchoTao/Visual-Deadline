@@ -1,4 +1,5 @@
 # Visualized-Deadline
+Visualized Deadline is a Flysoon Labs project by Rancho Tao.
 
 **可视化 Deadline，非传统 Todo List。**
 
