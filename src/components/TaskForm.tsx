@@ -94,7 +94,7 @@ export function TaskForm({ task, onCancel, onSubmit }: TaskFormProps) {
 
       <div className="flex flex-wrap justify-end gap-3 pt-1">
         <button type="button" onClick={onCancel} className="rounded-full px-5 py-2.5 text-sm font-medium text-slate-500 hover:bg-slate-100">取消</button>
-        <button type="submit" className="rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-700">保存项目</button>
+        <button type="submit" className="rounded-full bg-white/85 px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">保存项目</button>
       </div>
     </form>
   );

@@ -47,7 +47,7 @@ export function ProfilePage({ profile, onProfileChange }: ProfilePageProps) {
           <p className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-400">我 · 系统设置</p>
           <h1 className="mt-2 text-4xl font-semibold tracking-tight text-slate-950">我</h1>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">个人资料、系统状态与数据安全都放在这里。当前信息只保存在当前浏览器的 飞升存储层中。</p>
-          <label className="mt-4 inline-flex cursor-pointer rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-700">
+          <label className="mt-4 inline-flex cursor-pointer rounded-full bg-white/85 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">
             选择头像
             <input type="file" accept="image/*" onChange={handleAvatarChange} className="sr-only" />
           </label>

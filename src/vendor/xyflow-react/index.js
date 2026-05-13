@@ -52,11 +52,11 @@ function nodeVisual(node) {
   const softColor = softenColor(node.data?.color);
   if (isCenter) {
     return {
-      className: isLife ? 'border-slate-300 bg-white/95 text-slate-950 ring-slate-200' : 'border-slate-500 text-white ring-slate-300',
-      style: { backgroundColor: isLife ? '#ffffff' : '#1e293b', borderColor: isLife ? '#cbd5e1' : '#0f172a', color: isLife ? '#0f172a' : '#f8fafc' },
+      className: 'border-slate-200 bg-white/95 text-slate-950 ring-slate-200',
+      style: { backgroundColor: '#ffffff', borderColor: '#cbd5e1', color: '#0f172a' },
       badgeStyle: { backgroundColor: isLife ? '#e2e8f0' : '#f8fafc', color: '#0f172a' },
-      titleColor: isLife ? '#020617' : '#f8fafc',
-      subtitleColor: isLife ? '#64748b' : '#cbd5e1',
+      titleColor: '#020617',
+      subtitleColor: '#64748b',
     };
   }
   return {
@@ -223,7 +223,7 @@ export function ReactFlow({ nodes = [], edges = [], onNodesChange, onNodeClick, 
     },
       React.createElement('button', { type: 'button', onClick: () => zoomBy(1.18), className: 'select-none rounded-xl bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100' }, '缩放 +'),
       React.createElement('button', { type: 'button', onClick: () => zoomBy(0.85), className: 'select-none rounded-xl bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100' }, '缩放 -'),
-      React.createElement('button', { type: 'button', onClick: fitToView, className: 'select-none rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700' }, '适应画布'),
+      React.createElement('button', { type: 'button', onClick: fitToView, className: 'select-none rounded-xl bg-white px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50' }, '适应画布'),
     ),
     React.createElement('div', {
       className: 'absolute left-0 top-0 h-full w-full origin-top-left select-none',

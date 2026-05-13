@@ -26,7 +26,7 @@ export function TaskPage({ tasks, activeTasks, achievements, pressure, onAddTask
           <h1 className="mt-2 text-4xl font-semibold tracking-tight text-slate-950 md:text-5xl">任务</h1>
           <p className="mt-3 max-w-2xl text-slate-600">完整任务操作中心：先看紧急重要矩阵，再处理进行中的项目。</p>
         </div>
-        <button type="button" onClick={onAddTask} className="rounded-full bg-slate-950 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-slate-900/10 hover:bg-slate-700">
+        <button type="button" onClick={onAddTask} className="rounded-full bg-white/85 px-6 py-3 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">
           添加项目
         </button>
       </header>

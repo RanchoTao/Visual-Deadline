@@ -38,7 +38,7 @@ export function PressureCalibration({ initialValue = 35, onSave }: PressureCalib
           </div>
         </div>
 
-        <button type="button" onClick={() => onSave(pressure)} className="mt-6 w-full rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-slate-900/10 hover:bg-slate-700">
+        <button type="button" onClick={() => onSave(pressure)} className="mt-6 w-full rounded-full bg-white/85 px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">
           保存并进入飞升
         </button>
       </section>

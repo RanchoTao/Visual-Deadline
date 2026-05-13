@@ -84,7 +84,7 @@ export function AITaskAnalysisPanel({ tasks, pressure }: AITaskAnalysisPanelProp
           <button type="button" onClick={openSettings} className="rounded-full bg-white/85 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">
             设置 API Key
           </button>
-          <button type="button" onClick={runAnalysis} disabled={analysisState === 'loading'} className="rounded-full bg-slate-950 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300">
+          <button type="button" onClick={runAnalysis} disabled={analysisState === 'loading'} className="rounded-full bg-white/85 px-5 py-2 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300">
             {report ? '重新分析' : '分析当前任务'}
           </button>
           {report ? <button type="button" onClick={() => { setReport(''); setAnalysisState('idle'); setErrorMessage(''); }} className="rounded-full px-4 py-2 text-sm font-semibold text-slate-500 hover:bg-slate-100">清除分析结果</button> : null}
@@ -139,7 +139,7 @@ export function AITaskAnalysisPanel({ tasks, pressure }: AITaskAnalysisPanelProp
 
             <div className="mt-6 flex justify-end gap-3">
               <button type="button" onClick={() => setIsSettingsOpen(false)} className="rounded-full px-5 py-2.5 text-sm font-semibold text-slate-500 hover:bg-slate-100">取消</button>
-              <button type="submit" className="rounded-full bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-700">保存设置</button>
+              <button type="submit" className="rounded-full bg-white/85 px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">保存设置</button>
             </div>
           </form>
         </ModalPortal>

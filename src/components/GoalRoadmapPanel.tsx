@@ -74,14 +74,14 @@ export function GoalRoadmapPanel({ goals, tasks, onSaveGoal }: GoalRoadmapPanelP
           {categories.map((item) => <option key={item} value={item}>{getActivityTypeLabel(item)}</option>)}
         </select>
         <input type="number" min="1" max="10" value={priority} onChange={(event) => setPriority(clampImportance(Number(event.target.value)))} className="rounded-2xl border border-slate-200/80 bg-white/85 px-4 py-3 text-sm outline-none" />
-        <button type="submit" className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-700">添加目标</button>
+        <button type="submit" className="rounded-2xl bg-white/85 px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">添加目标</button>
       </form>
 
       {goals.length ? (
         <div className="mt-4 grid gap-4 lg:grid-cols-[0.85fr_1.15fr]">
           <div className="space-y-2">
             {goals.map((goal) => (
-              <button key={goal.id} type="button" onClick={() => setSelectedGoalId(goal.id)} className={`w-full rounded-2xl px-4 py-3 text-left ring-1 ring-white/80 ${selectedGoal?.id === goal.id ? 'bg-slate-950 text-white' : 'bg-slate-50/80 text-slate-700 hover:bg-white'}`}>
+              <button key={goal.id} type="button" onClick={() => setSelectedGoalId(goal.id)} className={`w-full rounded-2xl px-4 py-3 text-left ring-1 ring-white/80 ${selectedGoal?.id === goal.id ? 'bg-white/95 text-slate-950 shadow-sm ring-slate-200' : 'bg-slate-50/80 text-slate-700 hover:bg-white'}`}>
                 <span className="block font-semibold">{goal.title}</span>
                 <span className="mt-1 block text-xs opacity-70">{getActivityTypeLabel(goal.category)} · 重要性 {goal.priority}/10{goal.targetDate ? ` · ${goal.targetDate}` : ''}</span>
               </button>

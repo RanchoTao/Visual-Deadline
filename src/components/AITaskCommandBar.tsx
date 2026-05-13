@@ -105,7 +105,7 @@ export function AITaskCommandBar({ tasks, onConfirmTasks }: AITaskCommandBarProp
           className="min-h-24 flex-1 rounded-[1.5rem] border border-slate-200/80 bg-white/85 px-4 py-3 text-sm leading-6 text-slate-700 outline-none placeholder:text-slate-400 focus:border-sky-200 focus:ring-4 focus:ring-sky-100/70"
           placeholder="例如：这周五前交数学分析作业，今晚跑步，周末整理数据结构笔记。"
         />
-        <button type="button" onClick={structureTasks} disabled={state === 'loading'} className="rounded-[1.5rem] bg-slate-950 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-slate-900/10 hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300 lg:w-36">
+        <button type="button" onClick={structureTasks} disabled={state === 'loading'} className="rounded-[1.5rem] bg-white/85 px-6 py-3 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300 lg:w-36">
           {state === 'loading' ? '整理中…' : '整理为任务'}
         </button>
       </div>
@@ -152,7 +152,7 @@ export function AITaskCommandBar({ tasks, onConfirmTasks }: AITaskCommandBarProp
           )}
           <div className="mt-5 flex justify-end gap-3">
             <button type="button" onClick={cancelDrafts} className="rounded-full px-4 py-2 text-sm font-semibold text-slate-500 hover:bg-slate-100">取消</button>
-            <button type="button" onClick={confirmDrafts} disabled={drafts.length === 0} className="rounded-full bg-slate-950 px-5 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300">确认新增</button>
+            <button type="button" onClick={confirmDrafts} disabled={drafts.length === 0} className="rounded-full bg-white/85 px-5 py-2 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300">确认新增</button>
           </div>
         </div>
       ) : null}

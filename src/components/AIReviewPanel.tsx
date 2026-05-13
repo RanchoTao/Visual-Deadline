@@ -54,7 +54,7 @@ export function AIReviewPanel({ tasks, pressureHistory }: AIReviewPanelProps) {
           <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">使用当前任务、完成/放弃记录和压力历史生成结构化复盘。不发送个人资料或无关隐私数据。</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={generateReview} disabled={state === 'loading'} className="rounded-full bg-slate-950 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300">
+          <button type="button" onClick={generateReview} disabled={state === 'loading'} className="rounded-full bg-white/85 px-5 py-2 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300">
             {report ? '重新生成' : '生成近期复盘'}
           </button>
           {report ? <button type="button" onClick={() => { setReport(''); setErrorMessage(''); setState('idle'); }} className="rounded-full px-4 py-2 text-sm font-semibold text-slate-500 hover:bg-slate-100">清除结果</button> : null}

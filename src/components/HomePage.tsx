@@ -42,9 +42,9 @@ export function HomePage({ pressure, pressureHistory, recommendedTasks, activeTa
           </div>
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <button type="button" onClick={onAddTask} className="rounded-3xl bg-slate-950 px-4 py-3 text-left text-sm font-semibold text-white shadow-sm hover:bg-slate-700">
+          <button type="button" onClick={onAddTask} className="rounded-3xl bg-white/85 px-4 py-3 text-left text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">
             添加项目
-            <span className="mt-1 block text-xs font-medium text-slate-300">把脑内占用移到系统里</span>
+            <span className="mt-1 block text-xs font-medium text-slate-400">把脑内占用移到系统里</span>
           </button>
           <button type="button" onClick={onRecalibrate} className="rounded-3xl bg-white/85 px-4 py-3 text-left text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">
             重新校准压力
