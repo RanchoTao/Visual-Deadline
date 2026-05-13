@@ -23,7 +23,7 @@ export function TodayFocusPanel({ tasks, onOpenTasks }: TodayFocusPanelProps) {
     <section className="rounded-[2rem] border border-white/70 bg-white/75 p-5 shadow-xl shadow-slate-200/60 backdrop-blur">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold text-slate-500">Today Focus</p>
+          <p className="text-sm font-semibold text-slate-500">今日推进界面</p>
           <h2 className="mt-1 text-2xl font-semibold text-slate-950">今日推进界面</h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">自动收束逾期、临近截止和高压力事项，减少每日选择成本。</p>
         </div>
@@ -46,7 +46,7 @@ export function TodayFocusPanel({ tasks, onOpenTasks }: TodayFocusPanelProps) {
                   <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-slate-500">重要性 {task.importance}/10</span>
                 </div>
                 <p className="mt-2 text-xs text-slate-500">{formatCountdown(task.deadline)}</p>
-                <p className="mt-3 text-xs text-slate-400">Task Progress {task.taskProgress ?? task.progress}% · Time Progress {displayProgress}%{isProgressAuto(task) ? ' · 自动估算' : ''}</p>
+                <p className="mt-3 text-xs text-slate-400">任务进度 {task.taskProgress ?? task.progress}% · 时间进度 {displayProgress}%{isProgressAuto(task) ? ' · 自动估算' : ''}</p>
               </article>
             );
           })}

@@ -3,9 +3,9 @@ Visualized Deadline is a Flysoon Labs project by Rancho Tao.
 
 **可视化 Deadline，非传统 Todo List。**
 
-Visualized-Deadline（VD）现在以 LifeOS Shell 的信息架构运行：它负责可视化 Deadline、认知压力、生活地图、社交关系、日志与个人系统设置。
+Visualized-Deadline（VD）现在以 飞升 Shell 的信息架构运行：它负责可视化 Deadline、认知压力、生活地图、社交关系、日志与个人系统设置。
 
-## v0.9：LifeOS Productization Foundation
+## v0.9：飞升 Productization Foundation
 
 - 顶部导航：在不刷新页面的情况下切换「首页 / 地图 / 社交 / 日志 / 我」。
 - VD 默认模块：保留压力指数、压力校准、优先级地图、活动列表、归档日志、成就和本地持久化。

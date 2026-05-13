@@ -68,7 +68,7 @@ export function AIReportRenderer({ content, variant = 'task-analysis' }: AIRepor
         <section key={`${section.title}-${index}`} className="rounded-[2rem] border border-white/80 bg-white/80 p-5 shadow-sm shadow-slate-200/60 ring-1 ring-white/70">
           <div className="mb-4 flex items-center justify-between gap-3">
             <h3 className="text-lg font-semibold text-slate-950">{displayTitle(section.title)}</h3>
-            <span className="rounded-full bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-400 ring-1 ring-white/80">VD Report</span>
+            <span className="rounded-full bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-400 ring-1 ring-white/80">飞升报告</span>
           </div>
           <div className="space-y-3">
             {section.blocks.map((block, blockIndex) => <ReportBlock key={blockIndex} block={block} />)}

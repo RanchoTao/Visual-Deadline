@@ -56,7 +56,7 @@ export function TaskList({ tasks, onArchive, onDelete, onEdit }: TaskListProps) 
                     </div>
                     <div className="mt-3 max-w-sm">
                       <ProgressBar progress={displayProgress} compact />
-                      <p className="mt-1 text-xs text-slate-400">Task Progress {taskProgress}% · Time Progress {timeProgress}%{progressIsAuto ? ' · 自动估算' : ''}</p>
+                      <p className="mt-1 text-xs text-slate-400">任务进度 {taskProgress}% · 时间进度 {timeProgress}%{progressIsAuto ? ' · 自动估算' : ''}</p>
                     </div>
                   </div>
 

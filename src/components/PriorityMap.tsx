@@ -102,7 +102,7 @@ function TaskDetailContent({ task }: { task: Task }) {
       </div>
       <div className="mt-4">
         <ProgressBar progress={displayProgress} />
-        <p className="mt-1 text-xs text-slate-400">Task Progress {taskProgress}% · Time Progress {timeProgress}%{progressIsAuto ? ' · 自动估算' : ''}</p>
+        <p className="mt-1 text-xs text-slate-400">任务进度 {taskProgress}% · 时间进度 {timeProgress}%{progressIsAuto ? ' · 自动估算' : ''}</p>
       </div>
     </>
   );
@@ -198,7 +198,7 @@ export function PriorityMap({ tasks }: PriorityMapProps) {
               <p className="mt-2 rounded-xl bg-sky-50 px-2.5 py-1.5 text-xs text-sky-700">{getRecommendationReason(hoverPositionedTask.task)}</p>
               <div className="mt-2">
                 <ProgressBar progress={getDisplayProgress(hoverPositionedTask.task)} compact />
-                <p className="mt-1 text-xs text-slate-400">Task Progress {getTaskProgress(hoverPositionedTask.task)}% · Time Progress {getTimeProgress(hoverPositionedTask.task)}%{isProgressAuto(hoverPositionedTask.task) ? ' · 自动估算' : ''}</p>
+                <p className="mt-1 text-xs text-slate-400">任务进度 {getTaskProgress(hoverPositionedTask.task)}% · 时间进度 {getTimeProgress(hoverPositionedTask.task)}%{isProgressAuto(hoverPositionedTask.task) ? ' · 自动估算' : ''}</p>
               </div>
             </div>
           ) : null}

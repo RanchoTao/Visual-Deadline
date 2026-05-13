@@ -622,13 +622,13 @@ function App() {
             <div className="pointer-events-none absolute -bottom-20 -left-14 h-48 w-48 rounded-full bg-violet-200/35 blur-3xl" />
             <div className="relative flex items-start justify-between gap-4">
               <div>
-                <p className="text-sm font-semibold tracking-[0.22em] text-slate-400">WELCOME BACK</p>
+                <p className="text-sm font-semibold tracking-[0.22em] text-slate-400">欢迎回来</p>
                 <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">{welcomeBackMessage.greeting}，{welcomeBackMessage.name}</h2>
               </div>
               <button type="button" onClick={() => setWelcomeBackMessage(undefined)} className="rounded-full bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-500 ring-1 ring-slate-200 hover:bg-slate-100" aria-label="关闭欢迎提示">关闭</button>
             </div>
             <div className="relative mt-5 space-y-3 text-sm leading-6 text-slate-600">
-              <p className="text-lg font-semibold text-slate-800">欢迎回到 Visualized Deadline。</p>
+              <p className="text-lg font-semibold text-slate-800">欢迎回到飞升。</p>
               <p className="rounded-2xl bg-slate-50/80 px-4 py-3 ring-1 ring-white/80">当前时间：{welcomeBackMessage.currentTime}</p>
               <p className="rounded-2xl bg-white/75 px-4 py-3 font-semibold text-slate-700 ring-1 ring-white/80">{welcomeBackMessage.detail}</p>
             </div>

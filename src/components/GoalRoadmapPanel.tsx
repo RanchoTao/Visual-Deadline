@@ -60,11 +60,11 @@ export function GoalRoadmapPanel({ goals, tasks, onSaveGoal }: GoalRoadmapPanelP
     <section className="rounded-[2rem] border border-white/70 bg-white/75 p-5 shadow-xl shadow-slate-200/60 backdrop-blur">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-sm font-semibold text-slate-500">Long Horizon Goals</p>
-          <h2 className="mt-1 text-2xl font-semibold text-slate-950">长期目标 / Life Progression</h2>
+          <p className="text-sm font-semibold text-slate-500">长期目标</p>
+          <h2 className="mt-1 text-2xl font-semibold text-slate-950">长期目标 / 人生推进</h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">记录非紧急但战略性的目标，并让 AI 只生成可编辑的结构建议，不自动创建计划。</p>
         </div>
-        <span className="rounded-full bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-500 ring-1 ring-white/80">{goals.length} goals</span>
+        <span className="rounded-full bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-500 ring-1 ring-white/80">{goals.length} 个目标</span>
       </div>
 
       <form onSubmit={submitGoal} className="mt-4 grid gap-3 lg:grid-cols-[1fr_0.8fr_0.7fr_0.6fr_auto]">
@@ -83,7 +83,7 @@ export function GoalRoadmapPanel({ goals, tasks, onSaveGoal }: GoalRoadmapPanelP
             {goals.map((goal) => (
               <button key={goal.id} type="button" onClick={() => setSelectedGoalId(goal.id)} className={`w-full rounded-2xl px-4 py-3 text-left ring-1 ring-white/80 ${selectedGoal?.id === goal.id ? 'bg-slate-950 text-white' : 'bg-slate-50/80 text-slate-700 hover:bg-white'}`}>
                 <span className="block font-semibold">{goal.title}</span>
-                <span className="mt-1 block text-xs opacity-70">{getActivityTypeLabel(goal.category)} · Priority {goal.priority}/10{goal.targetDate ? ` · ${goal.targetDate}` : ''}</span>
+                <span className="mt-1 block text-xs opacity-70">{getActivityTypeLabel(goal.category)} · 重要性 {goal.priority}/10{goal.targetDate ? ` · ${goal.targetDate}` : ''}</span>
               </button>
             ))}
           </div>
@@ -103,7 +103,7 @@ export function GoalRoadmapPanel({ goals, tasks, onSaveGoal }: GoalRoadmapPanelP
             ) : <p className="mt-4 rounded-2xl border border-dashed border-slate-200 p-5 text-sm text-slate-400">尚未生成路线图。</p>}
           </div>
         </div>
-      ) : <div className="mt-4 rounded-3xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-400">添加一个长期目标，开始把任务系统连接到 life progression。</div>}
+      ) : <div className="mt-4 rounded-3xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-400">添加一个长期目标，开始把任务系统连接到 人生推进。</div>}
     </section>
   );
 }

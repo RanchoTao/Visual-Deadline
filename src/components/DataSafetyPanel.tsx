@@ -61,7 +61,7 @@ export function DataSafetyPanel() {
       restoreData(result.data);
       saveAutoBackup();
       setBackupCount(getAvailableBackupCount());
-      setStatus(`导入成功：已迁移到 v0.7 架构并立即刷新界面。`);
+      setStatus(`导入成功：已迁移到 v1.0.1 架构并立即刷新界面。`);
       setStatusType('success');
     } catch {
       setStatus('读取文件失败，请确认浏览器允许访问该 JSON 备份。');
@@ -73,7 +73,7 @@ export function DataSafetyPanel() {
     <section className="rounded-[2rem] border border-white/70 bg-white/75 p-5 shadow-xl shadow-slate-200/60 backdrop-blur">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">数据安全 · v0.7</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">数据安全 · v1.0.1</p>
           <h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">备份与恢复中心</h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">统一导出任务、压力、人生地图、社交图谱、日志与设置；本地会自动保留滚动安全快照。</p>
         </div>
@@ -85,7 +85,7 @@ export function DataSafetyPanel() {
       </div>
       <div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto] md:items-center">
         <p className={`rounded-2xl px-4 py-3 text-sm ${statusType === 'error' ? 'bg-rose-50 text-rose-600 ring-1 ring-rose-100' : statusType === 'info' ? 'bg-sky-50 text-sky-700 ring-1 ring-sky-100' : 'bg-slate-50 text-slate-500 ring-1 ring-white/80'}`}>
-          {status || '系统已启用 v0.7 存储架构：集中读写、JSON 备份、导入校验与自动恢复。'}
+          {status || '系统已启用 v1.0.1 存储架构：集中读写、JSON 备份、导入校验与自动恢复。'}
         </p>
         <div className="rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white shadow-sm">{backupCount} 个本地快照</div>
       </div>

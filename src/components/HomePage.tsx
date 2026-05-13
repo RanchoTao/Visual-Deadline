@@ -1,3 +1,4 @@
+import { branding } from '../constants/branding';
 import type { Goal, GoalInput, PressureBreakdown, PressureHistoryRecord, Task } from '../types/task';
 import { MiniTaskMatrix } from './MiniTaskMatrix';
 import { GoalRoadmapPanel } from './GoalRoadmapPanel';
@@ -55,6 +56,17 @@ export function HomePage({ pressure, pressureHistory, recommendedTasks, activeTa
       <section className="rounded-[1.5rem] border border-white/70 bg-white/55 px-4 py-3 text-xs text-slate-400 shadow-sm shadow-slate-200/50 backdrop-blur">
         <span className="font-semibold text-slate-500">未来智能区：</span>
         本地总结、节奏洞察与行动建议暂不启用；当前版本不调用 AI 或云端服务。
+      </section>
+
+      <section className="rounded-[1.5rem] border border-white/60 bg-white/45 px-4 py-3 text-xs text-slate-400 shadow-sm shadow-slate-200/40 backdrop-blur" aria-label="产品品牌信息">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="font-semibold text-slate-500">{branding.organizationName}</span>
+            <span>{branding.productName} v{branding.version}</span>
+            <span>Built by {branding.author}</span>
+          </div>
+          <a href={branding.githubUrl} target="_blank" rel="noreferrer" className="font-semibold text-slate-500 underline-offset-4 hover:text-slate-700 hover:underline">GitHub</a>
+        </div>
       </section>
     </section>
   );

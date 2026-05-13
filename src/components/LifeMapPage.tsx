@@ -93,7 +93,7 @@ export function LifeMapPage() {
         <div>
           <p className="text-sm font-semibold tracking-[0.24em] text-slate-400">人生结构</p>
           <h1 className="mt-2 text-4xl font-semibold tracking-tight text-slate-950">人生树</h1>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">把 LifeOS 的长期结构固定成清晰的生活模块。总览保持稳定，点击模块进入该领域的内部树。</p>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">把飞升的长期结构固定成清晰的生活模块。总览保持稳定，点击模块进入该领域的内部树。</p>
         </div>
         {focusedModule ? <button type="button" onClick={() => setFocusedModuleId(undefined)} className="rounded-full bg-white/85 px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">返回人生总览</button> : null}
       </div>

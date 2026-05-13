@@ -42,7 +42,7 @@ interface ChatCompletionResponse {
 export async function requestChatCompletion(settings: AISettings, systemPrompt: string, userPrompt: string): Promise<string> {
   const normalized = normalizeAISettings(settings);
   if (!normalized.apiKey.trim()) throw new Error('缺少 API Key，请先完成 AI 设置。');
-  if (!normalized.baseUrl.trim()) throw new Error('缺少 Base URL，请检查 AI 设置。');
+  if (!normalized.baseUrl.trim()) throw new Error('缺少服务地址，请检查 AI 设置。');
   if (!normalized.model.trim()) throw new Error('缺少模型名称，请检查 AI 设置。');
 
   const endpoint = `${normalized.baseUrl.replace(/\/+$/, '')}/chat/completions`;

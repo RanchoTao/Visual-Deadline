@@ -20,7 +20,7 @@ export function DeveloperToolsPanel() {
   }
 
   function clearAllLocalData() {
-    const confirmed = window.confirm('确定要清除所有 VD 本地数据并重启吗？任务、压力、人生树、社交图谱、备份快照与设置都会被删除。');
+    const confirmed = window.confirm('确定要清除所有飞升本地数据并重启吗？任务、压力、人生树、社交图谱、备份快照与设置都会被删除。');
     if (!confirmed) return;
     appStorageKeys.forEach((key) => clearValue(key));
     reloadPage();
@@ -52,7 +52,7 @@ export function DeveloperToolsPanel() {
       <div className="mt-4 grid gap-3 md:grid-cols-3">
         <button type="button" onClick={clearAllLocalData} className="rounded-3xl bg-rose-50 px-4 py-3 text-left text-sm font-semibold text-rose-600 ring-1 ring-rose-100 hover:bg-rose-100/70">
           清除本地数据并重启
-          <span className="mt-1 block text-xs font-medium text-rose-400">仅清除 VD 使用的 localStorage 键</span>
+          <span className="mt-1 block text-xs font-medium text-rose-400">仅清除飞升使用的本地存储键</span>
         </button>
         <button type="button" onClick={resetOnboarding} className="rounded-3xl bg-white/85 px-4 py-3 text-left text-sm font-semibold text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50">
           重置初始问答
@@ -60,7 +60,7 @@ export function DeveloperToolsPanel() {
         </button>
         <button type="button" onClick={toggleKeyList} className="rounded-3xl bg-white/85 px-4 py-3 text-left text-sm font-semibold text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50">
           查看本地存储键
-          <span className="mt-1 block text-xs font-medium text-slate-400">显示当前 VD 键是否存在</span>
+          <span className="mt-1 block text-xs font-medium text-slate-400">显示当前飞升键是否存在</span>
         </button>
       </div>
 
