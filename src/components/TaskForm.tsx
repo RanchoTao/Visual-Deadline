@@ -9,7 +9,7 @@ interface TaskFormProps {
   onSubmit: (task: TaskInput) => void;
 }
 
-const activityTypes: ActivityType[] = ['task', 'schedule', 'study', 'fitness', 'social', 'recovery', 'entertainment', 'other'];
+const activityTypes: ActivityType[] = ['task', 'schedule', 'study', 'research', 'fitness', 'exercise', 'work', 'life', 'social', 'recovery', 'entertainment', 'other'];
 
 const defaultValues: TaskInput = {
   title: '',
@@ -17,6 +17,7 @@ const defaultValues: TaskInput = {
   importance: 6,
   deadline: toDatetimeLocalValue(new Date(Date.now() + 24 * 60 * 60 * 1000)),
   progress: 0,
+  progressMode: 'auto',
   activityType: 'task',
   lifecycleStatus: 'active',
 };
@@ -40,6 +41,7 @@ export function TaskForm({ task, onCancel, onSubmit }: TaskFormProps) {
       deadline: values.deadline || undefined,
       importance: clampImportance(values.importance),
       progress: clampProgress(values.progress),
+      progressMode: values.progressMode,
     });
   }
 
@@ -64,8 +66,8 @@ export function TaskForm({ task, onCancel, onSubmit }: TaskFormProps) {
 
         <div className="rounded-3xl bg-slate-50/70 p-3 ring-1 ring-white/80">
           <div className="flex items-center justify-between gap-3"><label className="text-sm font-medium text-slate-600" htmlFor="progress">当前进度</label><span className="text-lg font-semibold text-slate-900">{values.progress}%</span></div>
-          <input id="progress" type="range" min="0" max="100" value={values.progress} onChange={(event) => setValues({ ...values, progress: clampProgress(Number(event.target.value)) })} className="mt-3 w-full accent-slate-800" />
-          <input aria-label="直接输入当前进度" type="number" min="0" max="100" value={values.progress} onChange={(event) => setValues({ ...values, progress: clampProgress(Number(event.target.value)) })} className="mt-2 w-full rounded-2xl border border-slate-200/80 bg-white/80 px-3 py-2 text-sm outline-none" />
+          <input id="progress" type="range" min="0" max="100" value={values.progress} onChange={(event) => setValues({ ...values, progress: clampProgress(Number(event.target.value)), progressMode: 'manual' })} className="mt-3 w-full accent-slate-800" />
+          <input aria-label="直接输入当前进度" type="number" min="0" max="100" value={values.progress} onChange={(event) => setValues({ ...values, progress: clampProgress(Number(event.target.value)), progressMode: 'manual' })} className="mt-2 w-full rounded-2xl border border-slate-200/80 bg-white/80 px-3 py-2 text-sm outline-none" />
         </div>
 
         <div className="rounded-3xl bg-slate-50/70 p-3 ring-1 ring-white/80">

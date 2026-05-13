@@ -1,7 +1,7 @@
 import { type CSSProperties, useEffect, useMemo, useState } from 'react';
 import type { Task } from '../types/task';
 import { formatCountdown, formatDeadline } from '../utils/date';
-import { getActivityTypeLabel, getImportancePosition, getPulseDuration, getRecommendationReason, getUrgencyPosition, getUrgencyScore, isTaskActive, isTaskComplete } from '../utils/taskScoring';
+import { getActivityTypeLabel, getDisplayProgress, getTaskProgress, getImportancePosition, getPulseDuration, getRecommendationReason, getUrgencyPosition, getUrgencyScore, getTimeProgress, isProgressAuto, isTaskActive, isTaskComplete } from '../utils/taskScoring';
 import { ProgressBar } from './ProgressBar';
 
 interface PriorityMapProps {
@@ -79,6 +79,11 @@ function taskPointTone(task: Task): string {
 }
 
 function TaskDetailContent({ task }: { task: Task }) {
+  const displayProgress = getDisplayProgress(task);
+  const taskProgress = getTaskProgress(task);
+  const timeProgress = getTimeProgress(task);
+  const progressIsAuto = isProgressAuto(task);
+
   return (
     <>
       <div className="flex items-start justify-between gap-3">
@@ -96,7 +101,8 @@ function TaskDetailContent({ task }: { task: Task }) {
         <p className="rounded-2xl bg-sky-50 px-3 py-2 text-sky-700">{getRecommendationReason(task)}</p>
       </div>
       <div className="mt-4">
-        <ProgressBar progress={task.progress} />
+        <ProgressBar progress={displayProgress} />
+        <p className="mt-1 text-xs text-slate-400">Task Progress {taskProgress}% · Time Progress {timeProgress}%{progressIsAuto ? ' · 自动估算' : ''}</p>
       </div>
     </>
   );
@@ -191,7 +197,8 @@ export function PriorityMap({ tasks }: PriorityMapProps) {
               <p className="mt-2 text-xs text-slate-600">{formatCountdown(hoverPositionedTask.task.deadline)}</p>
               <p className="mt-2 rounded-xl bg-sky-50 px-2.5 py-1.5 text-xs text-sky-700">{getRecommendationReason(hoverPositionedTask.task)}</p>
               <div className="mt-2">
-                <ProgressBar progress={hoverPositionedTask.task.progress} compact />
+                <ProgressBar progress={getDisplayProgress(hoverPositionedTask.task)} compact />
+                <p className="mt-1 text-xs text-slate-400">Task Progress {getTaskProgress(hoverPositionedTask.task)}% · Time Progress {getTimeProgress(hoverPositionedTask.task)}%{isProgressAuto(hoverPositionedTask.task) ? ' · 自动估算' : ''}</p>
               </div>
             </div>
           ) : null}
