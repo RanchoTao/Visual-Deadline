@@ -4,14 +4,13 @@ import { useLocalStorage } from '../hooks/useLocalStorage';
 import { storageKeys } from '../storage';
 import type { SocialPersonData } from '../types/task';
 
-const CURRENT_SOCIAL_LAYOUT_VERSION = 6;
+const CURRENT_SOCIAL_LAYOUT_VERSION = 8;
 const CENTER = { x: 720, y: 560 };
 const DEFAULT_PERSON_COLOR = '#d8e2dc';
 const CENTER_NODE_COLOR = '#1e293b';
 const MAX_SOCIAL_DISTANCE = 1400;
 const NODE_WIDTH = 132;
 const NODE_HEIGHT = 62;
-const MIN_NODE_GAP = 118;
 
 type SocialNode = Node<SocialPersonData>;
 type LegacySocialData = Partial<SocialPersonData> & { details?: string; nickname?: string };
@@ -63,16 +62,6 @@ function isValidSocialPosition(position: unknown): position is SocialNode['posit
   return Math.hypot(candidate.x + NODE_WIDTH / 2 - CENTER.x, candidate.y + NODE_HEIGHT / 2 - CENTER.y) <= MAX_SOCIAL_DISTANCE;
 }
 
-function daysSince(date: string): number {
-  if (!date) return 365;
-  const timestamp = new Date(date).getTime();
-  if (!Number.isFinite(timestamp)) return 365;
-  return Math.max(0, Math.floor((Date.now() - timestamp) / 86400000));
-}
-
-function recencyScore(date: string): number {
-  return Math.max(0, 100 - Math.min(180, daysSince(date)) * 0.55);
-}
 
 function clusterFor(data: Partial<SocialPersonData>) {
   const source = `${data.roleCategory ?? ''} ${data.relationshipType ?? ''}`.toLowerCase();
@@ -86,53 +75,59 @@ function normalizeRoleCategory(data?: LegacySocialData): string {
 }
 
 function relationshipStrength(data: SocialPersonData): number {
-  return Math.round(
-    clampScore(data.subjectiveFavorability) * 0.2 +
-    clampScore(data.familiarity) * 0.18 +
-    clampScore(data.trust) * 0.2 +
-    clampScore(data.interactionFrequency) * 0.14 +
-    recencyScore(data.lastInteractionDate) * 0.1 +
-    clampScore(data.emotionalCloseness) * 0.13 +
-    clampScore(data.influenceWeight) * 0.05,
-  );
+  return clampScore(data.subjectiveFavorability);
+}
+
+function socialRing(score: number): { label: string; radius: number } {
+  const radius = socialRadius(score);
+  if (score >= 80) return { label: '核心关系', radius };
+  if (score >= 60) return { label: '亲近关系', radius };
+  if (score >= 40) return { label: '熟悉关系', radius };
+  if (score >= 20) return { label: '普通关系', radius };
+  return { label: '外围关系', radius };
+}
+
+function socialRadius(score: number): number {
+  return 160 + (100 - clampScore(score)) * 5.2;
 }
 
 function targetPosition(node: SocialNode, index: number): SocialNode['position'] {
   const data = node.data ?? normalizeSocialData(undefined);
   const cluster = socialClusters.find((item) => item.id === data.cluster) ?? clusterFor(data);
-  const strength = relationshipStrength(data);
-  const influence = clampScore(data.influenceWeight);
-  const radius = 170 + (1 - strength / 100) * 560 - influence * 0.55 + (index % 4) * 16;
-  const angle = normalizeAngle(data.angle) ?? cluster.angle + stableOffset(node.id, 0.72);
+  const score = clampScore(data.subjectiveFavorability);
+  const radius = socialRadius(score) + stableOffset(`${node.id}-radius`, 34);
+  const angle = normalizeAngle(data.angle) ?? cluster.angle + stableOffset(`${node.id}-angle`, 0.66) + (index % 4 - 1.5) * 0.06;
   return {
     x: Math.round(CENTER.x + Math.cos(angle) * radius - NODE_WIDTH / 2),
     y: Math.round(CENTER.y + Math.sin(angle) * radius - NODE_HEIGHT / 2),
   };
 }
 
-function relaxCollisions(nodes: SocialNode[]): SocialNode[] {
-  const relaxed = nodes.map((node) => ({ ...node, position: { ...node.position } }));
-  for (let iteration = 0; iteration < 34; iteration += 1) {
-    for (let a = 0; a < relaxed.length; a += 1) {
-      for (let b = a + 1; b < relaxed.length; b += 1) {
-        const left = relaxed[a];
-        const right = relaxed[b];
-        const dx = right.position.x - left.position.x;
-        const dy = right.position.y - left.position.y;
-        const distance = Math.max(1, Math.hypot(dx, dy));
-        if (distance >= MIN_NODE_GAP) continue;
-        const push = (MIN_NODE_GAP - distance) / 2;
-        const ux = dx / distance;
-        const uy = dy / distance;
-        left.position.x = Math.round(left.position.x - ux * push);
-        left.position.y = Math.round(left.position.y - uy * push);
-        right.position.x = Math.round(right.position.x + ux * push);
-        right.position.y = Math.round(right.position.y + uy * push);
-      }
+function avoidCollisions(nodes: SocialNode[]): SocialNode[] {
+  const placed: SocialNode[] = [];
+  for (const node of nodes) {
+    if (node.id === 'me') {
+      placed.push(node);
+      continue;
     }
+    let position = { ...node.position };
+    let angle = angleFromPosition(position) ?? node.data?.angle ?? 0;
+    let radius = Math.hypot(position.x + NODE_WIDTH / 2 - CENTER.x, position.y + NODE_HEIGHT / 2 - CENTER.y);
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const overlaps = placed.some((placedNode) => Math.abs(position.x - placedNode.position.x) < NODE_WIDTH + 18 && Math.abs(position.y - placedNode.position.y) < NODE_HEIGHT + 18);
+      if (!overlaps) break;
+      angle += 0.18 + stableOffset(`${node.id}-collision-${attempt}`, 0.06);
+      radius += 12;
+      position = {
+        x: Math.round(CENTER.x + Math.cos(angle) * radius - NODE_WIDTH / 2),
+        y: Math.round(CENTER.y + Math.sin(angle) * radius - NODE_HEIGHT / 2),
+      };
+    }
+    placed.push({ ...node, position });
   }
-  return relaxed;
+  return placed;
 }
+
 
 function meNode(): SocialNode {
   return {
@@ -183,7 +178,7 @@ function normalizeNodes(nodes: unknown): SocialNode[] {
     const position = data.manualPosition && isValidSocialPosition(node.position) ? node.position : targetPosition({ id: String(node.id), position: { x: 0, y: 0 }, data: { ...data, angle } }, index);
     return { id: String(node.id), position, data: { ...data, angle } };
   });
-  return [meNode(), ...relaxCollisions(prepared)];
+  return [meNode(), ...avoidCollisions(prepared)];
 }
 
 function getSocialData(node: SocialNode): SocialPersonData {
@@ -194,14 +189,14 @@ function buildRelationshipEdges(nodes: SocialNode[]): Edge<{ familiarity: number
   return nodes.filter((node) => node.id !== 'me').map((node) => ({ id: `me-${node.id}`, source: 'me', target: node.id, data: { familiarity: relationshipStrength(getSocialData(node)) } }));
 }
 
-const metricFields: { key: keyof SocialPersonData; label: string }[] = [
-  { key: 'subjectiveFavorability', label: '好感度' },
-  { key: 'familiarity', label: '熟悉度' },
-  { key: 'trust', label: '信任' },
-  { key: 'interactionFrequency', label: '互动频率' },
-  { key: 'emotionalCloseness', label: '情感亲近' },
-  { key: 'influenceWeight', label: '影响权重' },
-];
+const favorabilityField: { key: keyof SocialPersonData; label: string } = { key: 'subjectiveFavorability', label: '好感度' };
+
+function formatLastInteraction(value?: string): string {
+  if (!value) return '未记录';
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) return '未记录';
+  return new Intl.DateTimeFormat('zh-CN', { month: 'short', day: 'numeric' }).format(new Date(timestamp));
+}
 
 export function SocialPage() {
   const [storedNodes, setStoredNodes] = useLocalStorage<SocialNode[]>(storageKeys.socialNodes, seedNodes());
@@ -209,7 +204,14 @@ export function SocialPage() {
   const normalizedNodes = useMemo(() => normalizeNodes(storedNodes), [storedNodes]);
   const relationshipEdges = useMemo(() => buildRelationshipEdges(normalizedNodes), [normalizedNodes]);
   const [editingNode, setEditingNode] = useState<SocialNode | undefined>();
+  const [contactSort, setContactSort] = useState<'name' | 'favorability'>('name');
   const contacts = normalizedNodes.filter((node) => node.id !== 'me');
+  const sortedContacts = [...contacts].sort((a, b) => {
+    const aData = getSocialData(a);
+    const bData = getSocialData(b);
+    if (contactSort === 'favorability') return clampScore(bData.subjectiveFavorability) - clampScore(aData.subjectiveFavorability) || aData.name.localeCompare(bData.name, 'zh-CN');
+    return aData.name.localeCompare(bData.name, 'zh-CN');
+  });
   const clusterCounts = socialClusters.map((cluster) => ({ ...cluster, count: contacts.filter((node) => node.data?.cluster === cluster.id).length })).filter((cluster) => cluster.count > 0);
 
   useEffect(() => {
@@ -228,7 +230,8 @@ export function SocialPage() {
         const changedNode = changedNodes.find((item) => item.id === node.id);
         if (!changedNode) return node;
         const angle = angleFromPosition(changedNode.position) ?? node.data?.angle;
-        return { ...node, position: changedNode.position, data: { ...getSocialData(node), angle, manualPosition: true } };
+        const data = { ...getSocialData(node), angle, manualPosition: true };
+        return { ...node, position: targetPosition({ ...node, data }, currentNodes.findIndex((item) => item.id === node.id)), data };
       });
     });
   }
@@ -249,7 +252,7 @@ export function SocialPage() {
   function saveNode() {
     if (!editingNode) return;
     const sanitizedData = getSocialData(editingNode);
-    const sanitizedNode = { ...editingNode, data: sanitizedData, position: editingNode.id === 'me' ? meNode().position : editingNode.position };
+    const sanitizedNode = { ...editingNode, data: sanitizedData, position: editingNode.id === 'me' ? meNode().position : targetPosition({ ...editingNode, data: sanitizedData }, normalizedNodes.findIndex((node) => node.id === editingNode.id)) };
     setStoredNodes((nodes) => normalizeNodes(nodes).map((node) => (node.id === sanitizedNode.id ? sanitizedNode : node)));
     setEditingNode(undefined);
   }
@@ -265,9 +268,9 @@ export function SocialPage() {
       <div className="rounded-[2rem] border border-white/70 bg-white/75 p-6 shadow-xl shadow-slate-200/60 backdrop-blur">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-400">Social Memory Map · v0.8</p>
+            <p className="text-sm font-semibold tracking-[0.24em] text-slate-400">社交图谱</p>
             <h1 className="mt-2 text-4xl font-semibold tracking-tight text-slate-950">社交</h1>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">多因素嵌入会综合好感、熟悉、信任、互动、亲近与影响力来形成距离和软聚类。</p>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">好感度决定关系距离；拖动联系人只改变围绕“我”的方向。</p>
           </div>
           <button type="button" onClick={addPerson} className="rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white shadow-sm hover:bg-slate-700">添加联系人</button>
         </div>
@@ -277,16 +280,79 @@ export function SocialPage() {
       </div>
 
       <div className="relative h-[72vh] min-h-[560px] overflow-hidden rounded-[2rem] border border-white/70 bg-white/75 p-3 shadow-xl shadow-slate-200/60 backdrop-blur md:min-h-[680px]">
-        <div className="pointer-events-none absolute left-5 top-5 z-10 max-w-md rounded-2xl bg-white/85 px-4 py-3 text-xs leading-5 text-slate-500 shadow-sm ring-1 ring-white/80 backdrop-blur">距离由多因素强度决定；颜色代表自动聚类；拖动节点可固定手动位置。Ctrl/⌘ + 滚轮或按钮缩放。</div>
+        <div className="pointer-events-none absolute left-5 top-5 z-10 max-w-md rounded-2xl bg-white/85 px-4 py-3 text-xs leading-5 text-slate-500 shadow-sm ring-1 ring-white/80 backdrop-blur">好感度决定距离；拖动只改变方向，不改变亲近程度。Ctrl/⌘ + 滚轮或按钮缩放。</div>
         {contacts.length === 0 ? <div className="pointer-events-none absolute inset-x-0 top-24 z-10 text-center text-sm font-medium text-slate-400">添加对你重要的人，构建你的关系地图。</div> : null}
         <ReactFlow nodes={normalizedNodes} edges={relationshipEdges} onNodesChange={handleNodesChange} onNodeClick={(_, node) => setEditingNode(node)} selectedNodeId={editingNode?.id} fitView className="rounded-[1.5rem] bg-slate-50/80"><Background /><Controls /></ReactFlow>
       </div>
+      <section className="rounded-[2rem] border border-white/70 bg-white/75 p-5 shadow-xl shadow-slate-200/60 backdrop-blur">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-slate-500">通讯录</p>
+            <h2 className="mt-1 text-2xl font-semibold text-slate-950">所有联系人</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-500">所有社交节点的列表视图，方便查找、编辑和复盘。微信通讯录导入：未来支持。</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" onClick={() => setContactSort('name')} className={`rounded-full px-3 py-1.5 text-xs font-semibold ring-1 ring-white/80 ${contactSort === 'name' ? 'bg-slate-950 text-white' : 'bg-slate-50 text-slate-500'}`}>按姓名</button>
+            <button type="button" onClick={() => setContactSort('favorability')} className={`rounded-full px-3 py-1.5 text-xs font-semibold ring-1 ring-white/80 ${contactSort === 'favorability' ? 'bg-slate-950 text-white' : 'bg-slate-50 text-slate-500'}`}>按好感度</button>
+            <span className="rounded-full bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-500 ring-1 ring-white/80">{contacts.length} 人</span>
+          </div>
+        </div>
 
-      {editingNode ? <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/15 px-4 backdrop-blur-sm"><section className="max-h-[calc(100vh-3rem)] w-full max-w-3xl overflow-y-auto rounded-[2rem] border border-white/80 bg-white/95 p-5 shadow-2xl shadow-slate-300/60"><h2 className="text-2xl font-semibold text-slate-950">{editingNode.id === 'me' ? '编辑中心节点' : '编辑关系'}</h2><p className="mt-2 rounded-2xl bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-500">社交图谱会根据多维指标重新计算软聚类与距离；手动拖动的位置会被保留。</p><div className="mt-4 grid gap-4 md:grid-cols-2">
-        <label className="text-sm font-medium text-slate-600">{editingNode.id === 'me' ? '昵称' : '姓名'}<input value={editingNode.data?.name ?? ''} onChange={(event) => updateEditingData('name', event.target.value)} className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3" /></label>
-        {editingNode.id === 'me' ? <><label className="text-sm font-medium text-slate-600">当前社交状态<input value={editingNode.data?.currentSocialState ?? ''} onChange={(event) => updateEditingData('currentSocialState', event.target.value)} className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3" /></label><label className="text-sm font-medium text-slate-600 md:col-span-2">简介<textarea value={editingNode.data?.bio ?? ''} onChange={(event) => updateEditingData('bio', event.target.value)} className="mt-2 min-h-24 w-full rounded-2xl border border-slate-200 px-4 py-3" /></label></> : <><label className="text-sm font-medium text-slate-600">关系类型<input value={editingNode.data?.relationshipType ?? ''} onChange={(event) => updateEditingData('relationshipType', event.target.value)} placeholder="朋友、导师、家人……" className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3" /></label><label className="text-sm font-medium text-slate-600">角色/分类<input value={editingNode.data?.roleCategory ?? ''} onChange={(event) => updateEditingData('roleCategory', event.target.value)} placeholder="同学、家人、线上朋友……" className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3" /></label><label className="text-sm font-medium text-slate-600">最近互动时间<input type="date" value={editingNode.data?.lastInteractionDate ?? ''} onChange={(event) => updateEditingData('lastInteractionDate', event.target.value)} className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3" /></label></>}
-        {editingNode.id !== 'me' ? metricFields.map((field) => <label key={field.key} className="text-sm font-medium text-slate-600 md:col-span-2">{field.label}<div className="mt-2 flex items-center gap-3"><input type="range" min="0" max="100" value={clampScore(editingNode.data?.[field.key])} onChange={(event) => updateEditingData(field.key, event.target.value)} className="w-full accent-slate-900" /><input type="number" min="0" max="100" value={clampScore(editingNode.data?.[field.key])} onChange={(event) => updateEditingData(field.key, String(clampScore(event.target.value)))} className="w-24 rounded-2xl border border-slate-200 px-3 py-2" /></div></label>) : null}
-        <label className="text-sm font-medium text-slate-600">节点颜色<input type="color" value={editingNode.data?.color ?? DEFAULT_PERSON_COLOR} onChange={(event) => updateEditingData('color', event.target.value)} className="mt-2 h-12 w-24 rounded-2xl border border-slate-200 bg-white p-1" /></label><label className="text-sm font-medium text-slate-600 md:col-span-2">关系备注<textarea value={editingNode.data?.notes ?? ''} onChange={(event) => updateEditingData('notes', event.target.value)} placeholder="记忆、互动提醒、情绪观察、共同话题、未来跟进……" className="mt-2 min-h-28 w-full rounded-2xl border border-slate-200 px-4 py-3" /></label></div><div className="mt-6 flex flex-wrap justify-between gap-3"><button type="button" disabled={editingNode.id === 'me'} onClick={deleteNode} className="rounded-full px-4 py-2 text-sm font-semibold text-rose-500 hover:bg-rose-50 disabled:cursor-not-allowed disabled:text-slate-300">删除</button><div className="flex gap-3"><button type="button" onClick={() => setEditingNode(undefined)} className="rounded-full px-4 py-2 text-sm font-semibold text-slate-500 hover:bg-slate-100">取消</button><button type="button" onClick={saveNode} className="rounded-full bg-slate-950 px-5 py-2 text-sm font-semibold text-white">保存</button></div></div></section></div> : null}
+        {contacts.length === 0 ? (
+          <div className="mt-5 rounded-3xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-400">暂无联系人。添加联系人后会出现在这里。</div>
+        ) : (
+          <div className="mt-5 overflow-hidden rounded-[1.5rem] border border-slate-100 bg-white/70">
+            <div className="hidden grid-cols-[1fr_1fr_0.75fr_0.9fr_1.4fr_auto] gap-3 border-b border-slate-100 px-4 py-3 text-xs font-semibold text-slate-400 md:grid">
+              <span>姓名</span><span>关系</span><span>好感度</span><span>最近互动</span><span>备注</span><span>操作</span>
+            </div>
+            <div className="divide-y divide-slate-100">
+              {sortedContacts.map((node) => {
+                const data = getSocialData(node);
+                const favorability = clampScore(data.subjectiveFavorability);
+                return (
+                  <article key={node.id} className="grid gap-3 px-4 py-4 text-sm md:grid-cols-[1fr_1fr_0.75fr_0.9fr_1.4fr_auto] md:items-center">
+                    <button type="button" onClick={() => setEditingNode(node)} className="text-left font-semibold text-slate-950 hover:text-sky-700">{data.name}</button>
+                    <div className="text-slate-500"><span className="rounded-full bg-slate-50 px-2.5 py-1 text-xs font-semibold ring-1 ring-white/80">{data.roleCategory || data.relationshipType}</span></div>
+                    <div className="font-semibold text-slate-700">{favorability}/100</div>
+                    <div className="text-slate-500">{formatLastInteraction(data.lastInteractionDate)}</div>
+                    <p className="line-clamp-2 text-slate-500">{data.notes || '暂无备注'}</p>
+                    <button type="button" onClick={() => setEditingNode(node)} className="rounded-full bg-slate-950 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">编辑</button>
+                  </article>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </section>
+
+      {editingNode ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/15 px-4 backdrop-blur-sm">
+          <section className="w-full max-w-2xl rounded-[2rem] border border-white/80 bg-white/95 p-5 shadow-2xl shadow-slate-300/60">
+            <h2 className="text-2xl font-semibold text-slate-950">{editingNode.id === 'me' ? '编辑中心节点' : '编辑关系'}</h2>
+            <p className="mt-2 rounded-2xl bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-500">表单只保留当前最必要的信息；旧数据中的熟悉度、信任等字段会继续保留在本地存储中。</p>
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <label className="text-sm font-medium text-slate-600">
+                {editingNode.id === 'me' ? '昵称' : '姓名'}
+                <input value={editingNode.data?.name ?? ''} onChange={(event) => updateEditingData('name', event.target.value)} className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3" />
+              </label>
+              {editingNode.id === 'me' ? (
+                <>
+                  <label className="text-sm font-medium text-slate-600">当前社交状态<input value={editingNode.data?.currentSocialState ?? ''} onChange={(event) => updateEditingData('currentSocialState', event.target.value)} className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3" /></label>
+                  <label className="text-sm font-medium text-slate-600 md:col-span-2">简介<textarea value={editingNode.data?.bio ?? ''} onChange={(event) => updateEditingData('bio', event.target.value)} className="mt-2 min-h-24 w-full rounded-2xl border border-slate-200 px-4 py-3" /></label>
+                </>
+              ) : (
+                <>
+                  <label className="text-sm font-medium text-slate-600">角色/分类<input value={editingNode.data?.roleCategory ?? ''} onChange={(event) => updateEditingData('roleCategory', event.target.value)} placeholder="同学、家人、线上朋友……" className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3" /></label>
+                  <label className="text-sm font-medium text-slate-600 md:col-span-2">{favorabilityField.label}<div className="mt-2 flex items-center gap-3"><input type="range" min="0" max="100" value={clampScore(editingNode.data?.[favorabilityField.key])} onChange={(event) => updateEditingData(favorabilityField.key, event.target.value)} className="w-full accent-slate-900" /><input type="number" min="0" max="100" value={clampScore(editingNode.data?.[favorabilityField.key])} onChange={(event) => updateEditingData(favorabilityField.key, String(clampScore(event.target.value)))} className="w-24 rounded-2xl border border-slate-200 px-3 py-2" /></div><p className="mt-2 text-xs text-slate-400">{socialRing(clampScore(editingNode.data?.subjectiveFavorability)).label}</p></label>
+                </>
+              )}
+              <label className="text-sm font-medium text-slate-600">节点颜色<input type="color" value={editingNode.data?.color ?? DEFAULT_PERSON_COLOR} onChange={(event) => updateEditingData('color', event.target.value)} className="mt-2 h-12 w-24 rounded-2xl border border-slate-200 bg-white p-1" /></label>
+              <label className="text-sm font-medium text-slate-600 md:col-span-2">关系备注<textarea value={editingNode.data?.notes ?? ''} onChange={(event) => updateEditingData('notes', event.target.value)} placeholder="记忆、互动提醒、共同话题、未来跟进……" className="mt-2 min-h-24 w-full rounded-2xl border border-slate-200 px-4 py-3" /></label>
+            </div>
+            <div className="mt-6 flex flex-wrap justify-between gap-3"><button type="button" disabled={editingNode.id === 'me'} onClick={deleteNode} className="rounded-full px-4 py-2 text-sm font-semibold text-rose-500 hover:bg-rose-50 disabled:cursor-not-allowed disabled:text-slate-300">删除</button><div className="flex gap-3"><button type="button" onClick={() => setEditingNode(undefined)} className="rounded-full px-4 py-2 text-sm font-semibold text-slate-500 hover:bg-slate-100">取消</button><button type="button" onClick={saveNode} className="rounded-full bg-slate-950 px-5 py-2 text-sm font-semibold text-white">保存</button></div></div>
+          </section>
+        </div>
+      ) : null}
     </section>
   );
 }

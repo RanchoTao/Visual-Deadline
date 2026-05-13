@@ -9,7 +9,7 @@ interface TaskFormProps {
   onSubmit: (task: TaskInput) => void;
 }
 
-const activityTypes: ActivityType[] = ['task', 'schedule', 'study', 'fitness', 'social', 'recovery', 'entertainment', 'other'];
+const activityTypes: ActivityType[] = ['task', 'schedule', 'study', 'research', 'fitness', 'exercise', 'work', 'life', 'social', 'recovery', 'entertainment', 'other'];
 
 const defaultValues: TaskInput = {
   title: '',
