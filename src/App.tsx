@@ -25,6 +25,7 @@ import {
   migrateLegacyImportance,
   normalizeActivityType,
   normalizeLifecycleStatus,
+  normalizeProgressMode,
 } from './utils/taskScoring';
 import { appendPressureHistoryRecord, createPressureHistoryRecord, normalizePressureHistory } from './utils/pressureHistory';
 import { hasValue, loadValue, savePressure, saveValue, storageKeys } from './storage';
@@ -48,6 +49,7 @@ type LegacyTask = Partial<Omit<Task, 'schemaVersion' | 'activityType' | 'lifecyc
   activityType?: ActivityType | string;
   lifecycleStatus?: LifecycleStatus | string;
   status?: 'todo' | 'doing' | 'done';
+  progressMode?: 'manual' | 'auto' | string;
   schemaVersion?: number;
 };
 
@@ -107,6 +109,7 @@ function normalizeTaskInput(input: TaskInput): TaskInput {
     importance: clampImportance(input.importance),
     deadline: input.deadline,
     progress: clampProgress(input.progress),
+    progressMode: normalizeProgressMode(input.progressMode, clampProgress(input.progress), input.deadline),
     activityType: normalizeActivityType(input.activityType),
     lifecycleStatus,
   };
@@ -127,6 +130,7 @@ function normalizeStoredTask(task: LegacyTask): Task {
     importance: isCurrentSchema ? clampImportance(task.importance) : migrateLegacyImportance(task.importance),
     deadline: task.deadline || undefined,
     progress,
+    progressMode: normalizeProgressMode(task.progressMode, progress, task.deadline || undefined),
     activityType: normalizeActivityType(task.activityType),
     lifecycleStatus: migratedLifecycleStatus,
     completedAt,
@@ -435,6 +439,7 @@ function App() {
             ...item,
             lifecycleStatus,
             progress: lifecycleStatus === 'completed' ? 100 : item.progress,
+            progressMode: lifecycleStatus === 'completed' ? 'manual' : item.progressMode,
             completedAt: lifecycleStatus === 'completed' ? now : item.completedAt,
             abandonedAt: lifecycleStatus === 'abandoned' ? now : item.abandonedAt,
             updatedAt: now,

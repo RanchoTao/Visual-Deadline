@@ -1,4 +1,5 @@
 import type { PressureHistoryRecord, Task } from '../types/task';
+import { getDisplayProgress, getTimeProgress, isProgressAuto } from '../utils/taskScoring';
 
 export const reviewSystemPrompt = `You are the review engine of Visualized Deadline (VD).
 
@@ -9,6 +10,9 @@ Rules:
 - Do not invent facts not present in the data.
 - Do not provide fake psychological diagnosis.
 - Do not create a chat thread.
+- Task displayProgress may be automatic time-based progress.
+- auto progress means time elapsed toward deadline, not confirmed user completion.
+- Use auto progress as deadline pressure / time consumption signal, not proof of actual completion.
 - Return a report in Chinese Markdown with exactly these sections:
 ## 近期状态
 ## 已完成事项
@@ -25,6 +29,9 @@ function taskSummary(task: Task) {
     importance: task.importance,
     deadline: task.deadline,
     progress: task.progress,
+    displayProgress: getDisplayProgress(task),
+    progressMode: isProgressAuto(task) ? 'auto' : 'manual',
+    timeProgress: getTimeProgress(task),
     activityType: task.activityType,
     lifecycleStatus: task.lifecycleStatus,
     createdAt: task.createdAt,

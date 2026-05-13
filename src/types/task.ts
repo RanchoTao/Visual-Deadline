@@ -4,6 +4,8 @@ export type ActivityType = 'task' | 'schedule' | 'entertainment' | 'recovery' | 
 
 export type LifecycleStatus = 'active' | 'completed' | 'abandoned';
 
+export type ProgressMode = 'manual' | 'auto';
+
 export interface Task {
   id: string;
   title: string;
@@ -11,6 +13,7 @@ export interface Task {
   importance: Importance;
   deadline?: string;
   progress: number;
+  progressMode?: ProgressMode;
   activityType: ActivityType;
   lifecycleStatus: LifecycleStatus;
   completedAt?: string;

@@ -1,9 +1,10 @@
 import type { PressureBreakdown, Task } from '../types/task';
+import { getDisplayProgress, getTimeProgress, isProgressAuto } from '../utils/taskScoring';
 
 export interface TaskAnalysisPayload {
   currentTime: string;
   pressure?: PressureBreakdown;
-  tasks: Array<Pick<Task, 'id' | 'title' | 'description' | 'importance' | 'deadline' | 'progress' | 'activityType' | 'lifecycleStatus' | 'createdAt' | 'updatedAt'>>;
+  tasks: Array<Pick<Task, 'id' | 'title' | 'description' | 'importance' | 'deadline' | 'progress' | 'activityType' | 'lifecycleStatus' | 'createdAt' | 'updatedAt'> & { displayProgress: number; progressMode: 'manual' | 'auto'; timeProgress: number }>;
 }
 
 export const taskAnalysisSystemPrompt = `You are the cognitive analysis engine of Visualized Deadline (VD), an AI-native task and life-structure management system.
@@ -32,6 +33,9 @@ Rules:
 - Do not give generic motivational advice.
 - Be concise, structured, analytical, realistic, and execution-oriented.
 - Do not modify tasks directly.
+- Each task includes raw progress, displayProgress, progressMode, and timeProgress.
+- auto progress means time elapsed toward deadline, not confirmed user completion.
+- Do not treat automatic displayProgress as proof that work was actually completed; use it as a deadline pressure / time consumption signal.
 
 Return the analysis in Chinese.
 
@@ -71,6 +75,9 @@ export function createTaskAnalysisPayload(tasks: Task[], pressure?: PressureBrea
       importance: task.importance,
       deadline: task.deadline,
       progress: task.progress,
+      displayProgress: getDisplayProgress(task),
+      progressMode: isProgressAuto(task) ? 'auto' : 'manual',
+      timeProgress: getTimeProgress(task),
       activityType: task.activityType,
       lifecycleStatus: task.lifecycleStatus,
       createdAt: task.createdAt,
@@ -90,6 +97,11 @@ ${payload.pressure ? JSON.stringify(payload.pressure, null, 2) : 'Not provided'}
 
 Tasks:
 ${JSON.stringify(payload.tasks, null, 2)}
+
+Progress note:
+- progress is user-entered raw progress.
+- displayProgress is what VD shows in the UI.
+- progressMode "auto" means displayProgress/timeProgress is elapsed time toward the deadline, not confirmed completion.
 
 Return the structured Chinese report using the required format.
 

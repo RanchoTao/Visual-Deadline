@@ -11,6 +11,36 @@ export function clampProgress(progress?: number): number {
   return Math.min(100, Math.max(0, Math.round(progress)));
 }
 
+export function normalizeProgressMode(progressMode: unknown, progress: number, deadline?: string): 'manual' | 'auto' {
+  if (progressMode === 'manual') return 'manual';
+  if (progressMode === 'auto') return deadline ? 'auto' : 'manual';
+  return progress === 0 && Boolean(deadline) ? 'auto' : 'manual';
+}
+
+export function getTimeProgress(task: Task, now = new Date()): number {
+  const rawProgress = clampProgress(task.progress);
+  if (task.lifecycleStatus !== 'active') return rawProgress;
+  if (!task.deadline || !task.createdAt) return rawProgress;
+
+  const start = new Date(task.createdAt).getTime();
+  const end = new Date(task.deadline).getTime();
+  const current = now.getTime();
+
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return rawProgress;
+  if (current <= start) return 0;
+  if (current >= end) return 100;
+
+  return clampProgress(((current - start) / (end - start)) * 100);
+}
+
+export function isProgressAuto(task: Task): boolean {
+  return normalizeProgressMode(task.progressMode, clampProgress(task.progress), task.deadline) === 'auto';
+}
+
+export function getDisplayProgress(task: Task, now = new Date()): number {
+  return isProgressAuto(task) ? getTimeProgress(task, now) : clampProgress(task.progress);
+}
+
 export function clampImportance(importance?: number): Importance {
   if (typeof importance !== 'number' || Number.isNaN(importance)) return 5;
 

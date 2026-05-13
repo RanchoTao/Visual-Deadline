@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { LifecycleStatus, Task } from '../types/task';
 import { formatCountdown, formatDeadline } from '../utils/date';
-import { getActivityTypeLabel } from '../utils/taskScoring';
+import { getActivityTypeLabel, getDisplayProgress, isProgressAuto } from '../utils/taskScoring';
 import { ProgressBar } from './ProgressBar';
 
 interface TaskListProps {
@@ -35,6 +35,8 @@ export function TaskList({ tasks, onArchive, onDelete, onEdit }: TaskListProps) 
         <ul className="mt-5 grid overflow-visible gap-3 lg:grid-cols-2">
           {tasks.map((task) => {
             const isMenuOpen = openMenuTaskId === task.id;
+            const displayProgress = getDisplayProgress(task);
+            const progressIsAuto = isProgressAuto(task);
 
             return (
               <li key={task.id} className={`relative overflow-visible rounded-3xl border border-white/80 bg-slate-50/80 p-4 shadow-sm shadow-slate-100/70 ${isMenuOpen ? 'z-50' : 'z-0'}`}>
@@ -51,7 +53,8 @@ export function TaskList({ tasks, onArchive, onDelete, onEdit }: TaskListProps) 
                       <span className="rounded-full bg-white px-2.5 py-1">截止 {formatDeadline(task.deadline)}</span>
                     </div>
                     <div className="mt-3 max-w-sm">
-                      <ProgressBar progress={task.progress} compact />
+                      <ProgressBar progress={displayProgress} compact />
+                      <p className="mt-1 text-xs text-slate-400">进度 {displayProgress}%{progressIsAuto ? ' · 自动估算' : ''}</p>
                     </div>
                   </div>
 
