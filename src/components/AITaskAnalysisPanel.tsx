@@ -104,8 +104,8 @@ export function AITaskAnalysisPanel({ tasks, pressure }: AITaskAnalysisPanelProp
       {report ? <article className="mt-4 whitespace-pre-wrap rounded-[1.5rem] bg-white/90 p-5 text-sm leading-7 text-slate-700 shadow-inner ring-1 ring-white/80">{report}</article> : null}
 
       {isSettingsOpen ? (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-slate-950/35 px-4 py-6 backdrop-blur-md">
-          <form onSubmit={saveSettings} className="my-auto max-h-[calc(100vh-3rem)] w-full max-w-2xl overflow-y-auto rounded-[2rem] border border-white/80 bg-white/95 p-5 shadow-2xl shadow-slate-950/20">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/20 px-4 py-6 backdrop-blur-sm">
+          <form onSubmit={saveSettings} className="max-h-[calc(100vh-3rem)] w-full max-w-5xl overflow-y-auto rounded-[2rem] border border-white/80 bg-white/90 p-5 shadow-2xl shadow-slate-300/60">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-sm font-semibold text-slate-500">AI 设置</p>

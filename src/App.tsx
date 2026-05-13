@@ -476,7 +476,7 @@ function App() {
   }
 
   const taskFormOverlay = isFormOpen ? (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/15 px-4 py-6 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/20 px-4 py-6 backdrop-blur-sm">
       <section className="max-h-[calc(100vh-3rem)] w-full max-w-5xl overflow-y-auto rounded-[2rem] border border-white/80 bg-white/90 p-5 shadow-2xl shadow-slate-300/60">
         <div className="mb-4 flex items-center justify-between gap-4">
           <div>
