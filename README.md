@@ -4,7 +4,7 @@
 
 <div align="center">
 
-# Visual-Deadline
+# Visual Deadline
 
 ### Visualize pressure, not just tasks.
 
