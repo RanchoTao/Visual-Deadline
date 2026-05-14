@@ -9,46 +9,67 @@ export interface AIReportSection {
   blocks: AIReportBlock[];
 }
 
-function cleanInlineMarkdown(text: string): string {
+function stripMarkdownSyntax(text: string): string {
   return text
-    .replace(/\*\*(.*?)\*\*/g, '$1')
-    .replace(/__(.*?)__/g, '$1')
+    .replace(/\r\n/g, '\n')
+    .replace(/^\s{0,3}#{1,6}\s*/gm, '')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    .replace(/\*\*/g, '')
+    .replace(/__/g, '')
     .replace(/`([^`]+)`/g, '$1')
+    .replace(/`/g, '')
+    .replace(/\s+([，。；：、？！])/g, '$1');
+}
+
+function removeListMarker(text: string): string {
+  return text
+    .trim()
+    .replace(/^[-*+•]\s+/, '')
+    .replace(/^\d+[.)、]\s+/, '')
+    .replace(/^\[[ xX]]\s+/, '')
     .trim();
 }
 
+export function cleanInlineMarkdown(text: string): string {
+  return removeListMarker(stripMarkdownSyntax(text)).trim();
+}
+
 export function cleanAIReportText(text: string): string {
-  return text
-    .replace(/\r\n/g, '\n')
+  return stripMarkdownSyntax(text)
     .split('\n')
-    .map((line) => cleanInlineMarkdown(line).replace(/^#{1,6}\s*/, '').trimEnd())
+    .map((line) => cleanInlineMarkdown(line).trimEnd())
     .join('\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
 
 function isHeading(line: string): boolean {
-  return /^#{1,4}\s+/.test(line.trim());
+  const trimmed = line.trim();
+  if (/^#{1,6}\s+/.test(trimmed)) return true;
+  if (/^\*\*[^*]{2,80}\*\*\s*:?$/.test(trimmed)) return true;
+  if (/^\d+[.)、]\s*\*\*[^*]{2,80}\*\*\s*:?$/.test(trimmed)) return true;
+  return false;
 }
 
 function normalizeHeading(line: string): string {
-  return cleanInlineMarkdown(line.replace(/^#{1,4}\s+/, ''));
+  return cleanInlineMarkdown(line.replace(/^#{1,6}\s+/, '')).replace(/[：:]$/, '');
 }
 
 function isBullet(line: string): boolean {
-  return /^[-*]\s+/.test(line.trim());
+  return /^\s*[-*+•]\s+/.test(line) || /^\s*\[[ xX]]\s+/.test(line);
 }
 
 function normalizeBullet(line: string): string {
-  return cleanInlineMarkdown(line.trim().replace(/^[-*]\s+/, ''));
+  return cleanInlineMarkdown(line);
 }
 
 function isNumbered(line: string): boolean {
-  return /^\d+[.)]\s+/.test(line.trim());
+  return /^\s*\d+[.)、]\s+/.test(line.trim());
 }
 
 function normalizeNumbered(line: string): string {
-  return cleanInlineMarkdown(line.trim().replace(/^\d+[.)]\s+/, ''));
+  return cleanInlineMarkdown(line);
 }
 
 function isTableRow(line: string): boolean {
@@ -73,7 +94,7 @@ function parseTable(lines: string[], startIndex: number): { block: AIReportBlock
 }
 
 function appendParagraph(blocks: AIReportBlock[], paragraphLines: string[]): void {
-  const text = paragraphLines.map(cleanInlineMarkdown).join(' ').trim();
+  const text = paragraphLines.map(cleanInlineMarkdown).filter(Boolean).join(' ').trim();
   if (text) blocks.push({ type: 'paragraph', text });
 }
 
@@ -109,10 +130,11 @@ function parseBlocks(lines: string[]): AIReportBlock[] {
       flushParagraph();
       const items: string[] = [];
       while (index < lines.length && isBullet(lines[index])) {
-        items.push(normalizeBullet(lines[index]));
+        const item = normalizeBullet(lines[index]);
+        if (item) items.push(item);
         index += 1;
       }
-      blocks.push({ type: 'bulletList', items });
+      if (items.length) blocks.push({ type: 'bulletList', items });
       continue;
     }
 
@@ -120,10 +142,11 @@ function parseBlocks(lines: string[]): AIReportBlock[] {
       flushParagraph();
       const items: string[] = [];
       while (index < lines.length && isNumbered(lines[index])) {
-        items.push(normalizeNumbered(lines[index]));
+        const item = normalizeNumbered(lines[index]);
+        if (item) items.push(item);
         index += 1;
       }
-      blocks.push({ type: 'numberedList', items });
+      if (items.length) blocks.push({ type: 'numberedList', items });
       continue;
     }
 
@@ -143,7 +166,7 @@ export function parseAIReportSections(text: string): AIReportSection[] {
 
   const flushSection = () => {
     const blocks = parseBlocks(currentLines);
-    if (blocks.length) sections.push({ title: cleanInlineMarkdown(currentTitle), blocks });
+    if (blocks.length) sections.push({ title: normalizeHeading(currentTitle), blocks });
     currentLines = [];
   };
 
