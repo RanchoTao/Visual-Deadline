@@ -66,16 +66,22 @@ export function isUnfinishedPressureTask(task: Task): boolean {
   return task.lifecycleStatus === 'active' && task.progress < 100;
 }
 
+function getRemainingProgressFactor(task: Task): number {
+  const progress = typeof task.progress === 'number' && Number.isFinite(task.progress) ? task.progress : 0;
+  return Math.max(0, Math.min(1, 1 - progress / 100));
+}
+
 export function calculateTaskPressure(task: Task, now: string | number | Date = new Date(), weights: PressureModelWeights = defaultPressureModelWeights): number {
   const urgency = calculateUrgency(task.deadline, now);
   const importanceTerm = weights.importanceWeight * task.importance;
   const urgencyTerm = weights.urgencyWeight * urgency;
   const interactionTerm = weights.interactionWeight * task.importance * urgency;
+  const remainingProgressFactor = getRemainingProgressFactor(task);
 
-  // Default VD v1 model: taskPressure = importance × urgency.
-  // The additive terms are intentionally present for future personalization:
-  // α × importance + β × urgency + γ × interactionTerm.
-  return roundToHundredth(importanceTerm + urgencyTerm + interactionTerm);
+  // VD v1 reliability model: taskWeight = importance × urgency × (1 - progress).
+  // The additive terms remain available for later personalization, but the
+  // user's visible calibration always responds to progress immediately.
+  return roundToHundredth((importanceTerm + urgencyTerm + interactionTerm) * remainingProgressFactor);
 }
 
 export function calculateRawPressure(tasks: Task[], now: string | number | Date = new Date(), weights: PressureModelWeights = defaultPressureModelWeights): number {
@@ -96,7 +102,7 @@ export function createTaskSnapshotAtCalibration(tasks: Task[], now: string | num
 }
 
 export function calibratePressure(tasks: Task[], subjectivePressure: number, now: string | number | Date = new Date(), weights: PressureModelWeights = defaultPressureModelWeights): PressureCalibrationSnapshot {
-  const safeSubjectivePressure = Math.max(0, Math.round(subjectivePressure));
+  const safeSubjectivePressure = Math.min(10, Math.max(1, Math.round(subjectivePressure)));
   const calibratedAt = new Date(normalizeDateTime(now) ?? Date.now()).toISOString();
   const rawPressureAtCalibration = calculateRawPressure(tasks, calibratedAt, weights);
   const pressureCoefficient = rawPressureAtCalibration <= 0 ? DEFAULT_PRESSURE_COEFFICIENT : safeSubjectivePressure / rawPressureAtCalibration;

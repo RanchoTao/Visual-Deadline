@@ -54,8 +54,15 @@ export function clampImportance(importance?: number): Importance {
 }
 
 export function clampPressure(pressure?: number): number {
-  if (typeof pressure !== 'number' || Number.isNaN(pressure)) return 35;
+  if (typeof pressure !== 'number' || Number.isNaN(pressure)) return 5;
   return Math.min(100, Math.max(0, Math.round(pressure)));
+}
+
+export function clampSubjectivePressure(pressure?: number): number {
+  if (typeof pressure !== 'number' || Number.isNaN(pressure)) return 5;
+  const rounded = Math.round(pressure);
+  if (rounded > 10) return Math.min(10, Math.max(1, Math.round(rounded / 10)));
+  return Math.min(10, Math.max(1, rounded));
 }
 
 export function migrateLegacyImportance(importance?: number): Importance {
@@ -182,10 +189,10 @@ function roundToFourDecimals(value: number): number {
 }
 
 function getPressureState(rawPressure: number): PressureState {
-  if (rawPressure > 100) return 'burnout';
-  if (rawPressure >= 81) return 'overload';
-  if (rawPressure >= 61) return 'high';
-  if (rawPressure >= 31) return 'manageable';
+  if (rawPressure > 10) return 'burnout';
+  if (rawPressure >= 8) return 'overload';
+  if (rawPressure >= 6) return 'high';
+  if (rawPressure >= 3) return 'manageable';
   return 'steady';
 }
 
@@ -202,9 +209,9 @@ export function calculateRecoveryRelief(tasks: Task[]): number {
 }
 
 export function createPressureCalibration(referencePressure: number, sourceTasksOrRawPressure: Task[] | number, taskCount = 0, capturedAt = new Date().toISOString()): PressureCalibrationSnapshot {
-  if (Array.isArray(sourceTasksOrRawPressure)) return calibratePressure(sourceTasksOrRawPressure, clampPressure(referencePressure), capturedAt);
+  if (Array.isArray(sourceTasksOrRawPressure)) return calibratePressure(sourceTasksOrRawPressure, clampSubjectivePressure(referencePressure), capturedAt);
 
-  const safeReferencePressure = clampPressure(referencePressure);
+  const safeReferencePressure = clampSubjectivePressure(referencePressure);
   const safeRawPressure = Math.max(0, sourceTasksOrRawPressure);
   const pressureCoefficient = safeRawPressure > 0 ? safeReferencePressure / safeRawPressure : DEFAULT_PRESSURE_RATIO;
 
@@ -226,7 +233,7 @@ export function createPressureCalibration(referencePressure: number, sourceTasks
 
 export function normalizePressureCalibration(calibration?: Partial<PressureCalibrationSnapshot> | null, legacyReferencePressure = 35): PressureCalibrationSnapshot {
   const legacyCalibration = calibration as Partial<PressureCalibrationSnapshot> & { baselinePressure?: number; initialTotalTaskLoad?: number } | null | undefined;
-  const lastSubjectivePressure = clampPressure(calibration?.lastSubjectivePressure ?? calibration?.referencePressure ?? legacyCalibration?.baselinePressure ?? legacyReferencePressure);
+  const lastSubjectivePressure = clampSubjectivePressure(calibration?.lastSubjectivePressure ?? calibration?.referencePressure ?? legacyCalibration?.baselinePressure ?? legacyReferencePressure);
   const storedRawPressure = calibration?.rawPressureAtCalibration ?? calibration?.referenceTaskLoad ?? legacyCalibration?.initialTotalTaskLoad;
   const rawPressureAtCalibration = typeof storedRawPressure === 'number' && Number.isFinite(storedRawPressure) ? Math.max(0, storedRawPressure) : Math.max(MIN_REFERENCE_TASK_LOAD, lastSubjectivePressure / DEFAULT_PRESSURE_RATIO);
   const pressureCoefficient = typeof calibration?.pressureCoefficient === 'number' && Number.isFinite(calibration.pressureCoefficient) && calibration.pressureCoefficient > 0
@@ -284,7 +291,7 @@ export function calculatePressureIndex(tasks: Task[], calibration?: Partial<Pres
     currentTaskLoad: roundToTenth(currentTaskLoad),
     recoveryRelief: roundToTenth(recoveryRelief),
     rawPressure: roundedRawPressure,
-    displayPressure: state === 'burnout' ? roundedRawPressure : Math.min(100, roundedRawPressure),
+    displayPressure: state === 'burnout' ? roundedRawPressure : Math.min(10, roundedRawPressure),
     state,
     label: labels[state],
     recommendation: recommendations[state],
