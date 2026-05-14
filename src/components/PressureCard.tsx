@@ -50,7 +50,7 @@ function miniPath(records: PressureHistoryRecord[]): string {
   if (records.length < 2) return '';
   const width = 220;
   const height = 74;
-  const maxPressure = Math.max(10, ...records.map((record) => record.pressure));
+  const maxPressure = Math.max(100, ...records.map((record) => record.pressure));
   return records
     .map((record, index) => {
       const x = (index / (records.length - 1)) * width;
@@ -63,7 +63,7 @@ function miniPath(records: PressureHistoryRecord[]): string {
 export function PressureCard({ pressure, history, onRecalibrate }: PressureCardProps) {
   const [timelineOpen, setTimelineOpen] = useState(false);
   const animatedPressure = useAnimatedNumber(pressure.displayPressure);
-  const meterWidth = Math.min(100, pressure.rawPressure * 10);
+  const meterWidth = Math.min(100, pressure.rawPressure);
   const recentHistory = history.filter((record) => isRecentPressureRecord(record, new Date(), 30)).slice(-32);
   const path = miniPath(recentHistory);
 

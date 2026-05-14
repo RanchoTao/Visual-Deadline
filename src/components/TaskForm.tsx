@@ -54,9 +54,9 @@ export function TaskForm({ task, onCancel, onSubmit }: TaskFormProps) {
 
       <div className="grid gap-3 lg:grid-cols-[1.1fr_1.1fr_1.1fr_1fr]">
         <div className="rounded-3xl bg-slate-50/70 p-3 ring-1 ring-white/80">
-          <div className="flex items-center justify-between gap-3"><label className="text-sm font-medium text-slate-600" htmlFor="importance">你有多在意这件事？</label><span className="text-lg font-semibold text-slate-900">{values.importance}</span></div>
+          <div className="flex items-center justify-between gap-3"><label className="text-sm font-medium text-slate-600" htmlFor="importance">重要性</label><span className="text-lg font-semibold text-slate-900">{values.importance}</span></div>
           <input id="importance" type="range" min="1" max="10" value={values.importance} onChange={(event) => setValues({ ...values, importance: clampImportance(Number(event.target.value)) })} className="mt-3 w-full accent-slate-800" />
-          <div className="mt-2 flex justify-between text-xs text-slate-400"><span>无所谓</span><span>非常重要</span></div>
+          <input aria-label="直接输入重要性" type="number" min="1" max="10" value={values.importance} onChange={(event) => setValues({ ...values, importance: clampImportance(Number(event.target.value)) })} className="mt-2 w-full rounded-2xl border border-slate-200/80 bg-white/80 px-3 py-2 text-sm outline-none" />
         </div>
 
         <div className="rounded-3xl bg-slate-50/70 p-3 ring-1 ring-white/80">
@@ -67,7 +67,7 @@ export function TaskForm({ task, onCancel, onSubmit }: TaskFormProps) {
         <div className="rounded-3xl bg-slate-50/70 p-3 ring-1 ring-white/80">
           <div className="flex items-center justify-between gap-3"><label className="text-sm font-medium text-slate-600" htmlFor="progress">当前进度</label><span className="text-lg font-semibold text-slate-900">{values.progress}%</span></div>
           <input id="progress" type="range" min="0" max="100" value={values.progress} onChange={(event) => setValues({ ...values, progress: clampProgress(Number(event.target.value)), progressMode: 'manual' })} className="mt-3 w-full accent-slate-800" />
-          <div className="mt-2 h-2 overflow-hidden rounded-full bg-white"><div className="h-full rounded-full bg-slate-800 transition-all" style={{ width: `${values.progress}%` }} /></div>
+          <input aria-label="直接输入当前进度" type="number" min="0" max="100" value={values.progress} onChange={(event) => setValues({ ...values, progress: clampProgress(Number(event.target.value)), progressMode: 'manual' })} className="mt-2 w-full rounded-2xl border border-slate-200/80 bg-white/80 px-3 py-2 text-sm outline-none" />
         </div>
 
         <div className="rounded-3xl bg-slate-50/70 p-3 ring-1 ring-white/80">
