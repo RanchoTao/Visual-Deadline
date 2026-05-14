@@ -35,6 +35,44 @@ export function Controls() {
   }, 'Ctrl/⌘ + 滚轮缩放 · 按钮缩放 · 拖动画布/节点');
 }
 
+
+function softenColor(color) {
+  if (typeof color !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(color)) return color || '#e2e8f0';
+  const amount = 0.72;
+  const r = parseInt(color.slice(1, 3), 16);
+  const g = parseInt(color.slice(3, 5), 16);
+  const b = parseInt(color.slice(5, 7), 16);
+  const mix = (value) => Math.round(value + (255 - value) * amount).toString(16).padStart(2, '0');
+  return `#${mix(r)}${mix(g)}${mix(b)}`;
+}
+
+function nodeVisual(node) {
+  const isCenter = node.id === 'me';
+  const isLife = node.type === 'life';
+  const softColor = softenColor(node.data?.color);
+  if (isCenter) {
+    return {
+      className: 'border-slate-200 bg-white/95 text-slate-950 ring-slate-200',
+      style: { backgroundColor: '#ffffff', borderColor: '#cbd5e1', color: '#0f172a' },
+      badgeStyle: { backgroundColor: isLife ? '#e2e8f0' : '#f8fafc', color: '#0f172a' },
+      titleColor: '#020617',
+      subtitleColor: '#64748b',
+    };
+  }
+  return {
+    className: 'border-white/80 bg-white/95 text-slate-950 ring-white/80',
+    style: { borderColor: softColor, color: '#020617' },
+    badgeStyle: { backgroundColor: softColor, color: '#0f172a' },
+    titleColor: '#020617',
+    subtitleColor: '#64748b',
+  };
+}
+
+function orthogonalPath(x1, y1, x2, y2) {
+  const midY = Math.round((y1 + y2) / 2);
+  return `M ${x1} ${y1} V ${midY} H ${x2} V ${y2}`;
+}
+
 function isReasonablePosition(position) {
   return Number.isFinite(position?.x) && Number.isFinite(position?.y) && Math.abs(position.x) < 10000 && Math.abs(position.y) < 10000;
 }
@@ -185,7 +223,7 @@ export function ReactFlow({ nodes = [], edges = [], onNodesChange, onNodeClick, 
     },
       React.createElement('button', { type: 'button', onClick: () => zoomBy(1.18), className: 'select-none rounded-xl bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100' }, '缩放 +'),
       React.createElement('button', { type: 'button', onClick: () => zoomBy(0.85), className: 'select-none rounded-xl bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100' }, '缩放 -'),
-      React.createElement('button', { type: 'button', onClick: fitToView, className: 'select-none rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700' }, '适应画布'),
+      React.createElement('button', { type: 'button', onClick: fitToView, className: 'select-none rounded-xl bg-white px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50' }, '适应画布'),
     ),
     React.createElement('div', {
       className: 'absolute left-0 top-0 h-full w-full origin-top-left select-none',
@@ -203,10 +241,13 @@ export function ReactFlow({ nodes = [], edges = [], onNodesChange, onNodeClick, 
           const familiarity = Math.min(100, Math.max(0, Number(edge.data?.familiarity ?? 50)));
           const opacity = 0.22 + familiarity / 220;
           const strokeWidth = 1 + familiarity / 60;
+          if (edge.data?.route === 'orthogonal') return React.createElement('path', { key: edge.id, d: orthogonalPath(x1, y1, x2, y2), fill: 'none', stroke: `rgba(100,116,139,${opacity})`, strokeWidth, strokeLinecap: 'round', strokeLinejoin: 'round' });
           return React.createElement('line', { key: edge.id, x1, y1, x2, y2, stroke: `rgba(100,116,139,${opacity})`, strokeWidth, strokeLinecap: 'round' });
         }),
       ),
-      nodes.map((node) => React.createElement('button', {
+      nodes.map((node) => {
+        const visual = nodeVisual(node);
+        return React.createElement('button', {
         key: node.id,
         type: 'button',
         onClick: (event) => {
@@ -232,15 +273,16 @@ export function ReactFlow({ nodes = [], edges = [], onNodesChange, onNodeClick, 
         },
         onPointerUp: () => { setDocumentDragging(false); setDraggingId(null); },
         onPointerCancel: () => { setDocumentDragging(false); setDraggingId(null); },
-        className: `absolute flex w-[8.25rem] cursor-grab select-none items-center gap-2 rounded-2xl border bg-white/95 px-2.5 py-2 text-left shadow-lg shadow-slate-200/60 ring-1 backdrop-blur transition hover:-translate-y-0.5 hover:shadow-xl active:cursor-grabbing ${selectedNodeId === node.id ? 'ring-2 ring-slate-400' : ''} ${node.id === 'me' ? 'border-slate-500 text-white ring-slate-300' : 'border-white/80 text-slate-950 ring-white/80'}`,
-        style: { left: node.position.x, top: node.position.y, backgroundColor: node.id === 'me' ? '#1e293b' : undefined, borderColor: node.id === 'me' ? '#0f172a' : node.data?.color ?? undefined, color: node.id === 'me' ? '#f8fafc' : undefined, userSelect: 'none', WebkitUserSelect: 'none', touchAction: 'none' },
+        className: `absolute flex w-[8.25rem] cursor-grab select-none items-center gap-2 rounded-2xl border px-2.5 py-2 text-left shadow-lg shadow-slate-200/60 ring-1 backdrop-blur transition hover:-translate-y-0.5 hover:shadow-xl active:cursor-grabbing ${selectedNodeId === node.id ? 'ring-2 ring-slate-400' : ''} ${visual.className}`,
+        style: { left: node.position.x, top: node.position.y, ...visual.style, userSelect: 'none', WebkitUserSelect: 'none', touchAction: 'none' },
       },
-        React.createElement('span', { className: 'flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-xs font-bold shadow-inner', style: { backgroundColor: node.id === 'me' ? '#f8fafc' : node.data?.color ?? '#e2e8f0', color: node.id === 'me' ? '#0f172a' : '#0f172a' } }, node.data?.avatarInitial || (node.data?.name || node.data?.label || node.data?.title || '未').slice(0, 1)),
+        React.createElement('span', { className: 'flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-xs font-bold shadow-inner', style: visual.badgeStyle }, node.data?.avatarInitial || (node.data?.name || node.data?.label || node.data?.title || '未').slice(0, 1)),
         React.createElement('span', { className: 'min-w-0 flex-1' },
-          React.createElement('span', { className: 'block truncate text-sm font-semibold', style: { color: node.id === 'me' ? '#f8fafc' : '#020617' } }, node.data?.name || node.data?.label || node.data?.title || '未命名联系人'),
-          node.data?.relationshipType ? React.createElement('span', { className: 'mt-0.5 block truncate text-[11px]', style: { color: node.id === 'me' ? '#cbd5e1' : '#64748b' } }, node.data.roleCategory || node.data.relationshipType) : node.data?.description ? React.createElement('span', { className: 'mt-0.5 block truncate text-[11px]', style: { color: '#64748b' } }, node.data.description) : null,
+          React.createElement('span', { className: 'block truncate text-sm font-semibold', style: { color: visual.titleColor } }, node.data?.name || node.data?.label || node.data?.title || '未命名联系人'),
+          node.data?.relationshipType ? React.createElement('span', { className: 'mt-0.5 block truncate text-[11px]', style: { color: visual.subtitleColor } }, node.data.roleCategory || node.data.relationshipType) : node.data?.description ? React.createElement('span', { className: 'mt-0.5 block truncate text-[11px]', style: { color: '#64748b' } }, node.data.description) : null,
         ),
-      )),
+      );
+      }),
     ),
   );
 }

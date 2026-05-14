@@ -12,9 +12,9 @@ export function PressureCalibration({ initialValue = 35, onSave }: PressureCalib
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/10 px-4 backdrop-blur-sm">
       <section className="w-full max-w-lg rounded-[2rem] border border-white/80 bg-white/90 p-6 shadow-2xl shadow-slate-300/60">
-        <p className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-400">Pressure Calibration</p>
+        <p className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-400">压力校准</p>
         <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">你近期主观生活压力有多大？</h2>
-        <p className="mt-3 text-sm leading-6 text-slate-500">凭直觉拖动即可。VD 会把它作为压力基线，再叠加 Deadline 与活动状态。</p>
+        <p className="mt-3 text-sm leading-6 text-slate-500">凭直觉拖动即可。飞升会把它作为压力基线，再叠加截止时间与活动状态。</p>
 
         <div className="mt-8 rounded-3xl bg-slate-50/90 p-5 ring-1 ring-white/80">
           <div className="flex items-end justify-between gap-4">
@@ -38,8 +38,8 @@ export function PressureCalibration({ initialValue = 35, onSave }: PressureCalib
           </div>
         </div>
 
-        <button type="button" onClick={() => onSave(pressure)} className="mt-6 w-full rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-slate-900/10 hover:bg-slate-700">
-          保存并进入 VD
+        <button type="button" onClick={() => onSave(pressure)} className="mt-6 w-full rounded-full bg-white/85 px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">
+          保存并进入飞升
         </button>
       </section>
     </div>

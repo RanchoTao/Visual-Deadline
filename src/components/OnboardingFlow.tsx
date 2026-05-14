@@ -75,7 +75,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
       <section className="max-h-[calc(100vh-3rem)] w-full max-w-4xl overflow-y-auto rounded-[2rem] border border-white/80 bg-white/95 p-6 shadow-2xl shadow-slate-300/60">
         <div className="mb-6 flex items-center justify-between gap-4">
           <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-400">LifeOS Onboarding · {step}/3</p>
+            <p className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-400">飞升初始问答 · {step}/3</p>
             <div className="mt-3 h-2 w-48 overflow-hidden rounded-full bg-slate-100">
               <div className="h-full rounded-full bg-slate-700 transition-all" style={{ width: `${(step / 3) * 100}%` }} />
             </div>
@@ -88,7 +88,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
             <p className="mt-3 text-sm leading-6 text-slate-500">先只写名称，不必整理。把你现在能想到的事情先倒出来。</p>
             <form onSubmit={addRoughTitle} className="mt-6 flex gap-3">
               <input value={roughTitle} onChange={(event) => setRoughTitle(event.target.value)} className="min-w-0 flex-1 rounded-2xl border border-slate-200/80 bg-slate-50/80 px-4 py-3 outline-none transition focus:border-sky-200 focus:ring-4 focus:ring-sky-100/70" placeholder="例如：准备答辩材料" autoFocus />
-              <button type="submit" className="rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white shadow-sm hover:bg-slate-700">加入</button>
+              <button type="submit" className="rounded-full bg-white/85 px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">加入</button>
             </form>
             <div className="mt-5 flex flex-wrap gap-2">
               {roughTitles.map((title, index) => (
@@ -96,7 +96,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
               ))}
             </div>
             <div className="mt-8 flex justify-end">
-              <button type="button" disabled={!canContinueDump} onClick={continueToPressure} className="rounded-full bg-slate-950 px-6 py-3 text-sm font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:bg-slate-300">继续校准压力</button>
+              <button type="button" disabled={!canContinueDump} onClick={continueToPressure} className="rounded-full bg-white/85 px-6 py-3 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300">继续校准压力</button>
             </div>
           </div>
         ) : null}
@@ -115,7 +115,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
             </div>
             <div className="mt-8 flex justify-between gap-3">
               <button type="button" onClick={() => setStep(1)} className="rounded-full px-5 py-3 text-sm font-semibold text-slate-500 hover:bg-slate-100">返回</button>
-              <button type="button" onClick={() => setStep(3)} className="rounded-full bg-slate-950 px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-slate-700">补充任务信息</button>
+              <button type="button" onClick={() => setStep(3)} className="rounded-full bg-white/85 px-6 py-3 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">补充任务信息</button>
             </div>
           </div>
         ) : null}
@@ -140,7 +140,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
             </div>
             <div className="mt-8 flex justify-between gap-3">
               <button type="button" onClick={() => setStep(2)} className="rounded-full px-5 py-3 text-sm font-semibold text-slate-500 hover:bg-slate-100">返回</button>
-              <button type="button" onClick={completeOnboarding} className="rounded-full bg-slate-950 px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-slate-700">进入 LifeOS</button>
+              <button type="button" onClick={completeOnboarding} className="rounded-full bg-white/85 px-6 py-3 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">进入飞升</button>
             </div>
           </div>
         ) : null}

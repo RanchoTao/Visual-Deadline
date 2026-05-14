@@ -69,7 +69,7 @@ export function PressureTimeline({ records }: PressureTimelineProps) {
           <h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">个人压力时间线</h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">记录压力随时间的变化，帮助你观察节奏，而不是只看此刻。</p>
         </div>
-        <div className="flex flex-wrap gap-2">{granularityLabels.map((item) => <span key={item.label} className={`rounded-full px-3 py-1.5 text-xs font-semibold ring-1 ${item.active ? 'bg-slate-900 text-white ring-slate-900' : 'bg-slate-50 text-slate-400 ring-white/80'}`}>{item.label}</span>)}</div>
+        <div className="flex flex-wrap gap-2">{granularityLabels.map((item) => <span key={item.label} className={`rounded-full px-3 py-1.5 text-xs font-semibold ring-1 ${item.active ? 'bg-white text-slate-700 ring-slate-200 shadow-sm' : 'bg-slate-50 text-slate-400 ring-white/80'}`}>{item.label}</span>)}</div>
       </div>
 
       {recentRecords.length < 2 ? (

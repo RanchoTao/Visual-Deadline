@@ -3,12 +3,46 @@ import type { ActivityType, Achievement, Importance, LifecycleStatus, PressureBr
 const MS_PER_HOUR = 60 * 60 * 1000;
 const MS_PER_DAY = 24 * MS_PER_HOUR;
 
-export const activityTypes: ActivityType[] = ['task', 'schedule', 'entertainment', 'recovery', 'study', 'fitness', 'social', 'other'];
+export const activityTypes: ActivityType[] = ['task', 'schedule', 'entertainment', 'recovery', 'study', 'research', 'fitness', 'exercise', 'work', 'life', 'social', 'other'];
 const lifecycleStatuses: LifecycleStatus[] = ['active', 'completed', 'abandoned'];
 
 export function clampProgress(progress?: number): number {
   if (typeof progress !== 'number' || Number.isNaN(progress)) return 0;
   return Math.min(100, Math.max(0, Math.round(progress)));
+}
+
+export function normalizeProgressMode(progressMode: unknown, progress: number, deadline?: string): 'manual' | 'auto' {
+  if (progressMode === 'manual') return 'manual';
+  if (progressMode === 'auto') return deadline ? 'auto' : 'manual';
+  return progress === 0 && Boolean(deadline) ? 'auto' : 'manual';
+}
+
+export function getTaskProgress(task: Task): number {
+  return clampProgress(task.taskProgress ?? task.progress);
+}
+
+export function getTimeProgress(task: Task, now = new Date()): number {
+  const rawProgress = getTaskProgress(task);
+  if (task.lifecycleStatus !== 'active') return rawProgress;
+  if (!task.deadline || !task.createdAt) return rawProgress;
+
+  const start = new Date(task.createdAt).getTime();
+  const end = new Date(task.deadline).getTime();
+  const current = now.getTime();
+
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return rawProgress;
+  if (current <= start) return 0;
+  if (current >= end) return 100;
+
+  return clampProgress(((current - start) / (end - start)) * 100);
+}
+
+export function isProgressAuto(task: Task): boolean {
+  return normalizeProgressMode(task.progressMode, clampProgress(task.progress), task.deadline) === 'auto';
+}
+
+export function getDisplayProgress(task: Task, now = new Date()): number {
+  return isProgressAuto(task) ? getTimeProgress(task, now) : getTaskProgress(task);
 }
 
 export function clampImportance(importance?: number): Importance {
@@ -29,6 +63,13 @@ export function migrateLegacyImportance(importance?: number): Importance {
 }
 
 export function normalizeActivityType(activityType?: string): ActivityType {
+  const aliases: Record<string, ActivityType> = {
+    research: 'research',
+    exercise: 'exercise',
+    work: 'work',
+    life: 'life',
+  };
+  if (activityType && aliases[activityType]) return aliases[activityType];
   return activityTypes.includes(activityType as ActivityType) ? (activityType as ActivityType) : 'task';
 }
 
@@ -43,7 +84,11 @@ export function getActivityTypeLabel(activityType: ActivityType): string {
     entertainment: '娱乐',
     recovery: '恢复',
     study: '学习',
-    fitness: '运动',
+    research: '研究',
+    fitness: '健身',
+    exercise: '运动',
+    work: '工作',
+    life: '生活',
     social: '社交',
     other: '其他',
   };
@@ -256,12 +301,16 @@ export function getPressureInterpretation(totalPressure: number): string {
 }
 
 export const achievementCatalog: Omit<Achievement, 'unlockedAt'>[] = [
-  { id: 'first-entry', title: '初次进入 VD', description: '你开始把 Deadline 与压力外化成可以观察的系统。' },
-  { id: 'first-task-created', title: '第一次创建任务', description: '第一项压力源已被记录，不再只停留在脑内。' },
-  { id: 'first-task-completed', title: '第一次完成任务', description: '完成带来的释放会被计入你的节奏。' },
-  { id: 'first-low-value-abandoned', title: '第一次放弃低价值任务', description: '主动卸载低价值事项，也是推进系统稳定的一部分。' },
-  { id: 'first-manageable-pressure', title: '第一次压力降到可控区', description: '你的压力指数回到可观察、可调整的范围。' },
-  { id: 'first-three-completed', title: '第一次完成 3 个任务', description: '连续完成正在形成可见的秩序感。' },
-  { id: 'first-seven-day-progress', title: '第一次完成 7 天内任务推进', description: '你在一周窗口内完成了推进，节奏开始被看见。' },
-  { id: 'first-recovery-relief', title: '第一次使用恢复/娱乐活动降低压力', description: '恢复不是逃避，它是让系统继续运转的维护。' },
+  { id: 'first-entry', title: '初见飞升', description: '你开始把任务、时间与压力放进一个可观察的系统。' },
+  { id: 'first-task-created', title: '第一颗任务星', description: '第一个事项已被记录，注意力从脑内转移到系统中。' },
+  { id: 'first-task-completed', title: '截止线生还者', description: '你完成了一项任务，系统记录下这次从截止线中回收的秩序。' },
+  { id: 'first-manageable-pressure', title: '压力校准者', description: '你完成了一次压力校准，让指数更接近真实体感。' },
+  { id: 'ai-first-connection', title: 'AI 初连接', description: '你完成了本地 AI 服务配置，后续分析将由你选择的模型提供。' },
+  { id: 'ai-report-generated', title: '认知报告生成', description: '你生成了第一份结构化认知报告，用外部视角审视当前任务。' },
+  { id: 'roadmap-generated', title: '路线图生成', description: '你为长期目标生成了第一份路线图建议，但任务仍由你决定是否创建。' },
+  { id: 'social-graph-opened', title: '社交图谱开启', description: '你打开了关系地图，开始把重要关系从记忆中整理出来。' },
+  { id: 'life-tree-opened', title: '人生树展开', description: '你进入人生树视图，开始观察长期结构而不只处理短期事项。' },
+  { id: 'first-three-completed', title: '三连完成', description: '你已经完成三项任务，稳定推进开始形成可见轨迹。' },
+  { id: 'first-seven-day-progress', title: '七日推进', description: '你在七日窗口内完成推进，短周期节奏被系统记录下来。' },
+  { id: 'first-low-value-abandoned', title: '断舍离', description: '你主动放弃低价值事项，为真正重要的任务释放空间。' },
 ];

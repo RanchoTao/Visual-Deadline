@@ -61,7 +61,7 @@ export function DataSafetyPanel() {
       restoreData(result.data);
       saveAutoBackup();
       setBackupCount(getAvailableBackupCount());
-      setStatus(`导入成功：已迁移到 v0.7 架构并立即刷新界面。`);
+      setStatus(`导入成功：已迁移到 v1.0.1 架构并立即刷新界面。`);
       setStatusType('success');
     } catch {
       setStatus('读取文件失败，请确认浏览器允许访问该 JSON 备份。');
@@ -73,21 +73,21 @@ export function DataSafetyPanel() {
     <section className="rounded-[2rem] border border-white/70 bg-white/75 p-5 shadow-xl shadow-slate-200/60 backdrop-blur">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Data Safety · v0.7</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">数据安全 · v1.0.1</p>
           <h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">备份与恢复中心</h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">统一导出任务、压力、人生地图、社交图谱、日志与设置；本地会自动保留滚动安全快照。</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={handleExport} className="rounded-full bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-700">Export Data</button>
-          <button type="button" onClick={handleImportClick} className="rounded-full bg-white/85 px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">Import Data</button>
+          <button type="button" onClick={handleExport} className="rounded-full bg-white/85 px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">导出数据</button>
+          <button type="button" onClick={handleImportClick} className="rounded-full bg-white/85 px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">导入数据</button>
           <input ref={fileInputRef} type="file" accept="application/json,.json" onChange={handleImport} className="sr-only" />
         </div>
       </div>
       <div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto] md:items-center">
         <p className={`rounded-2xl px-4 py-3 text-sm ${statusType === 'error' ? 'bg-rose-50 text-rose-600 ring-1 ring-rose-100' : statusType === 'info' ? 'bg-sky-50 text-sky-700 ring-1 ring-sky-100' : 'bg-slate-50 text-slate-500 ring-1 ring-white/80'}`}>
-          {status || '系统已启用 v0.7 存储架构：集中读写、JSON 备份、导入校验与自动恢复。'}
+          {status || '系统已启用 v1.0.1 存储架构：集中读写、JSON 备份、导入校验与自动恢复。'}
         </p>
-        <div className="rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white shadow-sm">{backupCount} 个本地快照</div>
+        <div className="rounded-2xl bg-white/85 px-4 py-3 text-sm font-semibold text-slate-600 shadow-sm ring-1 ring-slate-200">{backupCount} 个本地快照</div>
       </div>
     </section>
   );
