@@ -1,7 +1,7 @@
 import { useMemo, useState, type FormEvent } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { storageKeys } from '../storage';
-import type { PressureBreakdown, Task } from '../types/task';
+import type { AIArtifactInput, PressureBreakdown, Task } from '../types/task';
 import { defaultAISettings, getProviderDefaults, normalizeAISettings, requestChatCompletion, type AIProvider, type AISettings } from '../services/aiClient';
 import { buildTaskAnalysisUserPrompt, createTaskAnalysisPayload, taskAnalysisSystemPrompt } from '../services/taskAnalysisPrompt';
 import { AIReportRenderer } from './AIReportRenderer';
@@ -11,7 +11,7 @@ interface AITaskAnalysisPanelProps {
   tasks: Task[];
   pressure?: PressureBreakdown;
   onAIConnected?: () => void;
-  onAIReportGenerated?: () => void;
+  onAIReportGenerated?: (artifact: AIArtifactInput) => void;
 }
 
 type AnalysisState = 'idle' | 'loading' | 'success' | 'error';
@@ -70,7 +70,16 @@ export function AITaskAnalysisPanel({ tasks, pressure, onAIConnected, onAIReport
       const result = await requestChatCompletion(settings, taskAnalysisSystemPrompt, userPrompt);
       setReport(result);
       setAnalysisState('success');
-      onAIReportGenerated?.();
+      onAIReportGenerated?.({
+        kind: 'task-analysis',
+        title: '认知压力报告',
+        content: result,
+        relatedTaskIds: tasks.map((task) => task.id),
+        relatedGoalIds: [],
+        pressure: pressure?.rawPressure,
+        model: settings.model,
+        metadata: { provider: settings.provider, taskCount: tasks.length },
+      });
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'AI 分析请求失败，请稍后重试。');
       setAnalysisState('error');
@@ -92,7 +101,7 @@ export function AITaskAnalysisPanel({ tasks, pressure, onAIConnected, onAIReport
           <button type="button" onClick={runAnalysis} disabled={analysisState === 'loading'} className="rounded-full bg-white/85 px-5 py-2 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300">
             {report ? '重新分析' : '分析当前任务'}
           </button>
-          {report ? <button type="button" onClick={() => { setReport(''); setAnalysisState('idle'); setErrorMessage(''); }} className="rounded-full px-4 py-2 text-sm font-semibold text-slate-500 hover:bg-slate-100">清除分析结果</button> : null}
+          {report ? <button type="button" onClick={() => { setReport(''); setAnalysisState('idle'); setErrorMessage(''); }} className="rounded-full px-4 py-2 text-sm font-semibold text-slate-500 hover:bg-slate-100">隐藏本次结果</button> : null}
         </div>
       </div>
 
@@ -121,7 +130,7 @@ export function AITaskAnalysisPanel({ tasks, pressure, onAIConnected, onAIReport
               <button type="button" onClick={() => setIsSettingsOpen(false)} className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-500 hover:bg-slate-200">关闭</button>
             </div>
 
-            <p className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-500 ring-1 ring-white/80">API Key 仅保存在当前浏览器本地，用于直接请求你选择的模型服务。飞升不会上传或保存你的 API Key 到服务器。</p>
+            <p className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-500 ring-1 ring-white/80">API Key 仅保存在当前浏览器本地，用于直接请求你选择的模型服务。VD 不会上传或保存你的 API Key 到服务器。</p>
             <p className="mt-2 rounded-2xl bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-700 ring-1 ring-amber-100">任务数据会直接发送给你选择的 AI 服务商用于生成分析。请不要填写不愿发送给第三方模型的敏感内容。</p>
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">

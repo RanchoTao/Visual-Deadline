@@ -97,7 +97,7 @@ export function AIReportRenderer({ content, variant = 'task-analysis' }: AIRepor
               <p className="text-[11px] font-semibold tracking-[0.22em] text-slate-400">认知分析</p>
               <h3 className="mt-1 text-xl font-semibold tracking-tight text-slate-950">{displayTitle(section.title)}</h3>
             </div>
-            <span className="rounded-full bg-white/80 px-3 py-1.5 text-[11px] font-semibold text-slate-400 shadow-sm ring-1 ring-white/80">飞升报告</span>
+            <span className="rounded-full bg-white/80 px-3 py-1.5 text-[11px] font-semibold text-slate-400 shadow-sm ring-1 ring-white/80">VD 报告</span>
           </div>
           <div className="space-y-3">
             {section.blocks.map((block, blockIndex) => <ReportBlock key={blockIndex} block={block} />)}

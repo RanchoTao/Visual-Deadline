@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { PressureBreakdown, PressureHistoryRecord } from '../types/task';
 import { PressureTimeline } from './PressureTimeline';
 import { isRecentPressureRecord } from '../utils/pressureHistory';
@@ -17,6 +17,35 @@ const stateTone: Record<PressureBreakdown['state'], string> = {
   burnout: 'bg-rose-50 text-rose-700 ring-rose-100',
 };
 
+
+function useAnimatedNumber(value: number, duration = 720): number {
+  const [displayValue, setDisplayValue] = useState(value);
+  const previousValue = useRef(value);
+
+  useEffect(() => {
+    const startValue = previousValue.current;
+    const targetValue = value;
+    const startedAt = performance.now();
+    let frameId = 0;
+
+    function tick(now: number) {
+      const progress = Math.min(1, (now - startedAt) / duration);
+      const easedProgress = 1 - (1 - progress) ** 3;
+      setDisplayValue(Math.round(startValue + (targetValue - startValue) * easedProgress));
+      if (progress < 1) {
+        frameId = requestAnimationFrame(tick);
+        return;
+      }
+      previousValue.current = targetValue;
+    }
+
+    frameId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frameId);
+  }, [duration, value]);
+
+  return displayValue;
+}
+
 function miniPath(records: PressureHistoryRecord[]): string {
   if (records.length < 2) return '';
   const width = 220;
@@ -33,6 +62,7 @@ function miniPath(records: PressureHistoryRecord[]): string {
 
 export function PressureCard({ pressure, history, onRecalibrate }: PressureCardProps) {
   const [timelineOpen, setTimelineOpen] = useState(false);
+  const animatedPressure = useAnimatedNumber(pressure.displayPressure);
   const meterWidth = Math.min(100, pressure.rawPressure);
   const recentHistory = history.filter((record) => isRecentPressureRecord(record, new Date(), 30)).slice(-32);
   const path = miniPath(recentHistory);
@@ -43,12 +73,12 @@ export function PressureCard({ pressure, history, onRecalibrate }: PressureCardP
         <div className="min-w-0">
           <p className="text-sm font-semibold text-slate-500">实时压力指数</p>
           <div className="mt-2 flex flex-wrap items-end gap-3">
-            <span className="text-5xl font-semibold tracking-tight text-slate-950">{pressure.displayPressure}</span>
+            <span className="text-5xl font-semibold tracking-tight text-slate-950 tabular-nums transition-colors duration-500">{pressure.state === 'burnout' ? pressure.displayPressure : animatedPressure}</span>
             <span className={`mb-1 rounded-full px-3 py-1 text-sm font-medium ring-1 ${stateTone[pressure.state]}`}>{pressure.label}</span>
           </div>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">{pressure.recommendation}</p>
 
-          <div className="mt-5 h-2.5 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full transition-all duration-700 ${pressure.state === 'burnout' ? 'bg-rose-300' : 'bg-slate-700'}`} style={{ width: `${meterWidth}%` }} /></div>
+          <div className="mt-5 h-2.5 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full transition-all duration-1000 ease-out ${pressure.state === 'burnout' ? 'bg-rose-300' : 'bg-slate-700'}`} style={{ width: `${meterWidth}%` }} /></div>
           <div className="mt-4 rounded-3xl bg-slate-50/80 p-4 ring-1 ring-white/80">
             <p className="text-sm font-semibold text-slate-600">压力 ≈ 当前任务负载 × 个体压力映射系数 - 恢复释放</p>
             <p className="mt-2 text-xs leading-5 text-slate-500">系统把校准时的主观压力视为当时任务集合的感受，用它映射此刻压力。</p>

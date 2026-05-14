@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import type { Goal, GoalInput, Task } from '../types/task';
+import type { AIArtifactInput, Goal, GoalInput, Task } from '../types/task';
 import { defaultAISettings, normalizeAISettings, requestChatCompletion, type AISettings } from '../services/aiClient';
 import { buildGoalRoadmapUserPrompt, goalRoadmapSystemPrompt, parseGoalRoadmapResponse } from '../services/goals/roadmapPrompt';
 import { useLocalStorage } from '../hooks/useLocalStorage';
@@ -11,7 +11,7 @@ interface GoalRoadmapPanelProps {
   tasks: Task[];
   onSaveGoal: (input: GoalInput, goalId?: string) => void;
   onDeleteGoal: (goalId: string) => void;
-  onRoadmapGenerated?: () => void;
+  onRoadmapGenerated?: (artifact: AIArtifactInput) => void;
 }
 
 const categories = ['study', 'research', 'fitness', 'work', 'life', 'social', 'other'] as const;
@@ -104,10 +104,18 @@ export function GoalRoadmapPanel({ goals, tasks, onSaveGoal, onDeleteGoal, onRoa
       const content = await requestChatCompletion(settings, goalRoadmapSystemPrompt, buildGoalRoadmapUserPrompt(goal, tasks));
       const result = parseGoalRoadmapResponse(content);
       onSaveGoal({ ...createGoalInput(goal), roadmapSuggestions: result.roadmapSuggestions }, goal.id);
-      onRoadmapGenerated?.();
+      onRoadmapGenerated?.({
+        kind: 'goal-roadmap',
+        title: `路线图：${goal.title}`,
+        content: result.roadmapSuggestions.join('\n'),
+        relatedTaskIds: tasks.filter((task) => goal.linkedTaskIds.includes(task.id) || task.linkedGoalIds?.includes(goal.id)).map((task) => task.id),
+        relatedGoalIds: [goal.id],
+        model: settings.model,
+        metadata: { provider: settings.provider, goalTitle: goal.title, notes: result.notes },
+      });
       setRoadmapState({});
     } catch (error) {
-      setRoadmapState({ errorGoalId: goal.id, message: error instanceof Error ? error.message : '目标路线图生成失败。' });
+      setRoadmapState({ errorGoalId: goal.id, message: error instanceof Error ? error.message : '目标导航失败。' });
     }
   }
 
@@ -117,35 +125,44 @@ export function GoalRoadmapPanel({ goals, tasks, onSaveGoal, onDeleteGoal, onRoa
   }
 
   return (
-    <section className="rounded-[2rem] border border-white/70 bg-white/75 p-5 shadow-xl shadow-slate-200/60 backdrop-blur">
+    <section className="rounded-[2.25rem] border border-white/70 bg-white/70 p-6 shadow-xl shadow-slate-200/50 backdrop-blur md:p-8">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-sm font-semibold text-slate-500">长期目标</p>
           <h2 className="mt-1 text-2xl font-semibold text-slate-950">长期目标 / 人生推进</h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">记录非紧急但战略性的目标，并让 AI 生成可编辑的路线图建议，不自动创建任务。</p>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">把长期方向安静地放进系统：少一点表格感，多一点未来生活规划。</p>
         </div>
         <span className="rounded-full bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-500 ring-1 ring-white/80">{goals.length} 个目标</span>
       </div>
 
-      <form onSubmit={submitGoal} className="mt-4 grid gap-3 lg:grid-cols-[1fr_0.8fr_0.7fr_1fr_auto]">
-        <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="例如：2027 年完成论文投稿 / 语言考试 110 分" className="rounded-2xl border border-slate-200/80 bg-white/85 px-4 py-3 text-sm outline-none focus:border-sky-200 focus:ring-4 focus:ring-sky-100/70" />
-        <input type="date" value={targetDate} onChange={(event) => setTargetDate(event.target.value)} className="rounded-2xl border border-slate-200/80 bg-white/85 px-4 py-3 text-sm outline-none" />
-        <select value={category} onChange={(event) => setCategory(normalizeActivityType(event.target.value))} className="rounded-2xl border border-slate-200/80 bg-white/85 px-4 py-3 text-sm outline-none">
-          {categories.map((item) => <option key={item} value={item}>{getActivityTypeLabel(item)}</option>)}
-        </select>
-        <label className="rounded-2xl border border-slate-200/80 bg-white/85 px-4 py-2 text-xs font-semibold text-slate-500">
-          重要性：{priority}/10
-          <input type="range" min="1" max="10" value={priority} onChange={(event) => setPriority(clampImportance(Number(event.target.value)))} className="mt-2 w-full accent-slate-500" />
+      <form onSubmit={submitGoal} className="mt-8 grid gap-4 rounded-[1.75rem] bg-slate-50/55 p-4 ring-1 ring-white/80 lg:grid-cols-[1.1fr_0.7fr_0.65fr_0.85fr_auto] md:p-5">
+        <label className="space-y-2 text-xs font-semibold text-slate-400">
+          未来方向
+          <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="" className="w-full rounded-2xl border border-transparent bg-white/85 px-4 py-3.5 text-sm text-slate-800 outline-none transition focus:border-sky-100 focus:ring-4 focus:ring-sky-100/60" />
         </label>
-        <div className="flex gap-2">
-          <button type="submit" className="rounded-2xl bg-white/85 px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">{isEditing ? '保存目标' : '添加目标'}</button>
-          {isEditing ? <button type="button" onClick={resetForm} className="rounded-2xl px-4 py-3 text-sm font-semibold text-slate-500 hover:bg-slate-100">取消</button> : null}
+        <label className="space-y-2 text-xs font-semibold text-slate-400">
+          时间锚点
+          <input type="text" inputMode="numeric" value={targetDate} onChange={(event) => setTargetDate(event.target.value)} placeholder="" className="w-full rounded-2xl border border-transparent bg-white/85 px-4 py-3.5 text-sm text-slate-800 outline-none transition focus:border-sky-100 focus:ring-4 focus:ring-sky-100/60" />
+        </label>
+        <label className="space-y-2 text-xs font-semibold text-slate-400">
+          领域
+          <select value={category} onChange={(event) => setCategory(normalizeActivityType(event.target.value))} className="w-full rounded-2xl border border-transparent bg-white/85 px-4 py-3.5 text-sm text-slate-700 outline-none transition focus:border-sky-100 focus:ring-4 focus:ring-sky-100/60">
+            {categories.map((item) => <option key={item} value={item}>{getActivityTypeLabel(item)}</option>)}
+          </select>
+        </label>
+        <label className="space-y-2 rounded-2xl bg-white/75 px-4 py-3 text-xs font-semibold text-slate-400">
+          重要性 · {priority}/10
+          <input type="range" min="1" max="10" value={priority} onChange={(event) => setPriority(clampImportance(Number(event.target.value)))} className="w-full accent-slate-500" />
+        </label>
+        <div className="flex items-end gap-2">
+          <button type="submit" className="rounded-2xl bg-slate-950 px-5 py-3.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800">{isEditing ? '保存' : '添加'}</button>
+          {isEditing ? <button type="button" onClick={resetForm} className="rounded-2xl px-4 py-3.5 text-sm font-semibold text-slate-500 hover:bg-white/70">取消</button> : null}
         </div>
       </form>
 
       {goals.length ? (
-        <div className="mt-4 grid gap-4 lg:grid-cols-[0.85fr_1.15fr]">
-          <div className="space-y-2">
+        <div className="mt-7 grid gap-5 lg:grid-cols-[0.85fr_1.15fr]">
+          <div className="space-y-3">
             {goals.map((goal) => {
               const isSelected = selectedGoal?.id === goal.id;
               const isLoading = roadmapState.loadingGoalId === goal.id;
@@ -186,7 +203,7 @@ export function GoalRoadmapPanel({ goals, tasks, onSaveGoal, onDeleteGoal, onRoa
             ) : <p className="mt-4 rounded-2xl border border-dashed border-slate-200 p-5 text-sm text-slate-400">尚未生成路线图。点击“生成路线图”后，只会保存结构建议，不会自动创建任务。</p>}
           </div>
         </div>
-      ) : <div className="mt-4 rounded-3xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-400">添加一个长期目标，开始把任务系统连接到人生推进。</div>}
+      ) : <div className="mt-7 rounded-3xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-400">添加一个长期目标，开始把任务系统连接到人生推进。</div>}
     </section>
   );
 }

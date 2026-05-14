@@ -125,7 +125,6 @@ export function MiniTaskMatrix({ tasks, onOpenTasks }: MiniTaskMatrixProps) {
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
         <span>{hiddenCount > 0 ? `仅显示最紧急的 ${MAX_VISIBLE_TASKS} 项，完整列表在任务页。` : `当前显示 ${visibleTasks.length} 项截止压力任务。`}</span>
         {visibleTasks[0] ? <span className="rounded-full bg-slate-50 px-2.5 py-1 ring-1 ring-white/80">最近截止：{visibleTasks[0].title} · {formatCountdown(visibleTasks[0].deadline)}</span> : null}
-        <button type="button" onClick={onOpenTasks} className="font-semibold text-slate-700 hover:text-slate-950">查看完整任务系统 →</button>
       </div>
     </section>
   );

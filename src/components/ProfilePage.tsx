@@ -9,7 +9,7 @@ interface ProfilePageProps {
 }
 
 const profileFields: { key: keyof UserProfile; label: string; placeholder: string; multiline?: boolean }[] = [
-  { key: 'nickname', label: '昵称', placeholder: '你希望飞升如何称呼你' },
+  { key: 'nickname', label: '昵称', placeholder: '你希望 VD 如何称呼你' },
   { key: 'height', label: '身高', placeholder: '例如：175 cm' },
   { key: 'weight', label: '体重', placeholder: '例如：68 kg' },
   { key: 'identity', label: '身份', placeholder: '例如：学生 / 研究者 / 创作者' },
@@ -46,7 +46,7 @@ export function ProfilePage({ profile, onProfileChange }: ProfilePageProps) {
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-400">我 · 系统设置</p>
           <h1 className="mt-2 text-4xl font-semibold tracking-tight text-slate-950">我</h1>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">个人资料、系统状态与数据安全都放在这里。当前信息只保存在当前浏览器的 飞升存储层中。</p>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">个人资料、系统状态与数据安全都放在这里。当前信息只保存在当前浏览器的 VD 存储层中。</p>
           <label className="mt-4 inline-flex cursor-pointer rounded-full bg-white/85 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">
             选择头像
             <input type="file" accept="image/*" onChange={handleAvatarChange} className="sr-only" />

@@ -23,7 +23,7 @@ export function collectCurrentData(): VisualizedDeadlineData {
     pressure: safeLoad(loadPressure, { baselinePressure: null, calibration: null, history: [] }),
     social: safeLoad(loadSocial, { nodes: [], layoutVersion: 0 }),
     lifeMap: safeLoad(loadLifeMap, { nodes: [], layoutVersion: 0 }),
-    logs: safeLoad(loadLogs, { achievements: [] }),
+    logs: safeLoad(loadLogs, { achievements: [], aiArtifacts: [] }),
     settings: safeLoad(loadSettings, { profile: null, onboardingComplete: false }),
     metadata: { source: 'browser-local', futureSafe: true },
   };
