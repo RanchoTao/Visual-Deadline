@@ -1,8 +1,10 @@
 export type Importance = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 
-export type ActivityType = 'task' | 'schedule' | 'entertainment' | 'recovery' | 'study' | 'fitness' | 'social' | 'other';
+export type ActivityType = 'task' | 'schedule' | 'entertainment' | 'recovery' | 'study' | 'research' | 'fitness' | 'exercise' | 'work' | 'life' | 'social' | 'other';
 
 export type LifecycleStatus = 'active' | 'completed' | 'abandoned';
+
+export type ProgressMode = 'manual' | 'auto';
 
 export interface Task {
   id: string;
@@ -11,6 +13,14 @@ export interface Task {
   importance: Importance;
   deadline?: string;
   progress: number;
+  taskProgress?: number;
+  timeProgress?: number;
+  estimatedDuration?: number;
+  progressMode?: ProgressMode;
+  decomposition?: string[];
+  stages?: string[];
+  milestoneSuggestions?: string[];
+  linkedGoalIds?: string[];
   activityType: ActivityType;
   lifecycleStatus: LifecycleStatus;
   completedAt?: string;
@@ -70,7 +80,28 @@ export interface Achievement {
   unlockedAt: string;
 }
 
-export type LifeOSModule = 'home' | 'map' | 'social' | 'log' | 'me';
+export interface Goal {
+  id: string;
+  title: string;
+  targetDate?: string;
+  category: ActivityType;
+  priority: Importance;
+  linkedTaskIds: string[];
+  roadmapSuggestions?: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GoalInput {
+  title: string;
+  targetDate?: string;
+  category: ActivityType;
+  priority: Importance;
+  linkedTaskIds?: string[];
+  roadmapSuggestions?: string[];
+}
+
+export type LifeOSModule = 'home' | 'task' | 'map' | 'social' | 'log' | 'me';
 
 export interface UserProfile {
   nickname: string;

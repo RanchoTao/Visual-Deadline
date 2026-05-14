@@ -3,12 +3,46 @@ import type { ActivityType, Achievement, Importance, LifecycleStatus, PressureBr
 const MS_PER_HOUR = 60 * 60 * 1000;
 const MS_PER_DAY = 24 * MS_PER_HOUR;
 
-export const activityTypes: ActivityType[] = ['task', 'schedule', 'entertainment', 'recovery', 'study', 'fitness', 'social', 'other'];
+export const activityTypes: ActivityType[] = ['task', 'schedule', 'entertainment', 'recovery', 'study', 'research', 'fitness', 'exercise', 'work', 'life', 'social', 'other'];
 const lifecycleStatuses: LifecycleStatus[] = ['active', 'completed', 'abandoned'];
 
 export function clampProgress(progress?: number): number {
   if (typeof progress !== 'number' || Number.isNaN(progress)) return 0;
   return Math.min(100, Math.max(0, Math.round(progress)));
+}
+
+export function normalizeProgressMode(progressMode: unknown, progress: number, deadline?: string): 'manual' | 'auto' {
+  if (progressMode === 'manual') return 'manual';
+  if (progressMode === 'auto') return deadline ? 'auto' : 'manual';
+  return progress === 0 && Boolean(deadline) ? 'auto' : 'manual';
+}
+
+export function getTaskProgress(task: Task): number {
+  return clampProgress(task.taskProgress ?? task.progress);
+}
+
+export function getTimeProgress(task: Task, now = new Date()): number {
+  const rawProgress = getTaskProgress(task);
+  if (task.lifecycleStatus !== 'active') return rawProgress;
+  if (!task.deadline || !task.createdAt) return rawProgress;
+
+  const start = new Date(task.createdAt).getTime();
+  const end = new Date(task.deadline).getTime();
+  const current = now.getTime();
+
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return rawProgress;
+  if (current <= start) return 0;
+  if (current >= end) return 100;
+
+  return clampProgress(((current - start) / (end - start)) * 100);
+}
+
+export function isProgressAuto(task: Task): boolean {
+  return normalizeProgressMode(task.progressMode, clampProgress(task.progress), task.deadline) === 'auto';
+}
+
+export function getDisplayProgress(task: Task, now = new Date()): number {
+  return isProgressAuto(task) ? getTimeProgress(task, now) : getTaskProgress(task);
 }
 
 export function clampImportance(importance?: number): Importance {
@@ -29,6 +63,13 @@ export function migrateLegacyImportance(importance?: number): Importance {
 }
 
 export function normalizeActivityType(activityType?: string): ActivityType {
+  const aliases: Record<string, ActivityType> = {
+    research: 'research',
+    exercise: 'exercise',
+    work: 'work',
+    life: 'life',
+  };
+  if (activityType && aliases[activityType]) return aliases[activityType];
   return activityTypes.includes(activityType as ActivityType) ? (activityType as ActivityType) : 'task';
 }
 
@@ -43,7 +84,11 @@ export function getActivityTypeLabel(activityType: ActivityType): string {
     entertainment: '娱乐',
     recovery: '恢复',
     study: '学习',
-    fitness: '运动',
+    research: '研究',
+    fitness: '健身',
+    exercise: '运动',
+    work: '工作',
+    life: '生活',
     social: '社交',
     other: '其他',
   };

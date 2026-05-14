@@ -22,7 +22,7 @@ export function RecommendationCard({ tasks }: RecommendationCardProps) {
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-sm font-semibold text-sky-700">当前最值得关注</p>
-          <h2 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">Top 3 推荐项目</h2>
+          <h2 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">前三项推荐项目</h2>
         </div>
         <span className="rounded-full bg-white/80 px-4 py-2 text-sm font-semibold text-sky-700 shadow-sm">{tasks.length} 项</span>
       </div>

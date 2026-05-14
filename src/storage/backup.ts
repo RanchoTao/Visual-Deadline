@@ -19,6 +19,7 @@ export function collectCurrentData(): VisualizedDeadlineData {
 
   return {
     tasks: safeLoad(loadTasks, []),
+    goals: safeLoad(() => loadValue(storageKeys.goals, []), []),
     pressure: safeLoad(loadPressure, { baselinePressure: null, calibration: null, history: [] }),
     social: safeLoad(loadSocial, { nodes: [], layoutVersion: 0 }),
     lifeMap: safeLoad(loadLifeMap, { nodes: [], layoutVersion: 0 }),
@@ -61,6 +62,7 @@ export function loadLatestBackup(): VisualizedDeadlineExport | null {
 
 export function restoreData(data: VisualizedDeadlineData): void {
   saveTasks(data.tasks);
+  saveValue(storageKeys.goals, data.goals);
   savePressure(data.pressure);
   saveSocial(data.social);
   saveLifeMap(data.lifeMap);
