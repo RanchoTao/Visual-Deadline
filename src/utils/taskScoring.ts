@@ -1,3 +1,4 @@
+import { calculateRawPressure, calculateRealtimePressure, calculateTaskPressure, calculateUrgency, calibratePressure } from '../lib/pressureEngine';
 import type { ActivityType, Achievement, Importance, LifecycleStatus, PressureBreakdown, PressureCalibrationSnapshot, PressureState, Task } from '../types/task';
 
 const MS_PER_HOUR = 60 * 60 * 1000;
@@ -100,45 +101,19 @@ export function getLifecycleStatusLabel(status: LifecycleStatus): string {
 }
 
 export function getUrgencyScore(deadline?: string, now = new Date()): number {
-  if (!deadline) return 0;
-
-  const deadlineTime = new Date(deadline).getTime();
-  if (Number.isNaN(deadlineTime)) return 0;
-
-  const diff = deadlineTime - now.getTime();
-
-  if (diff < 0) return 50;
-  if (diff <= MS_PER_DAY) return 40;
-  if (diff <= 3 * MS_PER_DAY) return 30;
-  if (diff <= 7 * MS_PER_DAY) return 20;
-  return 10;
+  return Math.round(calculateUrgency(deadline, now) * 10);
 }
 
 export function getUrgencyWeight(deadline?: string, now = new Date()): number {
-  if (!deadline) return 0.45;
-
-  const deadlineTime = new Date(deadline).getTime();
-  if (Number.isNaN(deadlineTime)) return 0.45;
-
-  const diff = deadlineTime - now.getTime();
-
-  if (diff < 0) return 2;
-  if (diff <= 6 * MS_PER_HOUR) return 1.75;
-  if (diff <= MS_PER_DAY) return 1.45;
-  if (diff <= 3 * MS_PER_DAY) return 1.15;
-  if (diff <= 7 * MS_PER_DAY) return 0.85;
-  if (diff <= 30 * MS_PER_DAY) return 0.55;
-  return 0.35;
+  return calculateUrgency(deadline, now);
 }
 
 export function getItemPressure(task: Task, now = new Date()): number {
-  const urgencyWeight = getUrgencyWeight(task.deadline, now);
-  const importanceWeight = 0.8 + task.importance / 2;
-  return urgencyWeight * importanceWeight;
+  return calculateTaskPressure(task, now);
 }
 
 export function getTaskScore(task: Task, now = new Date()): number {
-  return task.importance * 10 + getUrgencyScore(task.deadline, now);
+  return calculateTaskPressure(task, now) * 10 + task.importance;
 }
 
 export function isTaskComplete(task: Task): boolean {
@@ -195,11 +170,15 @@ export function getPulseDuration(task: Task): number {
   return 4.2;
 }
 
-const DEFAULT_PRESSURE_RATIO = 6;
+const DEFAULT_PRESSURE_RATIO = 1;
 const MIN_REFERENCE_TASK_LOAD = 1;
 
 function roundToTenth(value: number): number {
   return Math.round(value * 10) / 10;
+}
+
+function roundToFourDecimals(value: number): number {
+  return Math.round(value * 10000) / 10000;
 }
 
 function getPressureState(rawPressure: number): PressureState {
@@ -211,7 +190,7 @@ function getPressureState(rawPressure: number): PressureState {
 }
 
 export function calculateTaskLoad(tasks: Task[], now = new Date()): number {
-  return tasks.filter(isTaskActive).reduce((sum, task) => sum + getItemPressure(task, now), 0);
+  return calculateRawPressure(tasks, now);
 }
 
 export function calculateRecoveryRelief(tasks: Task[]): number {
@@ -222,35 +201,55 @@ export function calculateRecoveryRelief(tasks: Task[]): number {
   }, 0);
 }
 
-export function createPressureCalibration(referencePressure: number, referenceTaskLoad: number, taskCount: number, capturedAt = new Date().toISOString()): PressureCalibrationSnapshot {
+export function createPressureCalibration(referencePressure: number, sourceTasksOrRawPressure: Task[] | number, taskCount = 0, capturedAt = new Date().toISOString()): PressureCalibrationSnapshot {
+  if (Array.isArray(sourceTasksOrRawPressure)) return calibratePressure(sourceTasksOrRawPressure, clampPressure(referencePressure), capturedAt);
+
   const safeReferencePressure = clampPressure(referencePressure);
-  const safeReferenceTaskLoad = Math.max(0, referenceTaskLoad);
-  const pressureRatio = safeReferenceTaskLoad > 0 ? safeReferencePressure / safeReferenceTaskLoad : DEFAULT_PRESSURE_RATIO;
+  const safeRawPressure = Math.max(0, sourceTasksOrRawPressure);
+  const pressureCoefficient = safeRawPressure > 0 ? safeReferencePressure / safeRawPressure : DEFAULT_PRESSURE_RATIO;
 
   return {
+    lastSubjectivePressure: safeReferencePressure,
+    rawPressureAtCalibration: roundToTenth(safeRawPressure),
+    pressureCoefficient: roundToFourDecimals(pressureCoefficient),
+    calibratedAt: capturedAt,
+    taskSnapshotAtCalibration: [],
+    modelVersion: 'importance-urgency-v1',
     referencePressure: safeReferencePressure,
-    referenceTaskLoad: roundToTenth(safeReferenceTaskLoad),
-    pressureRatio: roundToTenth(pressureRatio),
+    referenceTaskLoad: roundToTenth(safeRawPressure),
+    pressureRatio: roundToFourDecimals(pressureCoefficient),
     taskCount,
     capturedAt,
-    note: 'referencePressure describes how the calibrated task set felt; current pressure = currentTaskLoad × pressureRatio - recoveryRelief. Future versions may personalize urgency/importance weights from behavior.',
+    note: 'subjective pressure calibrates the current raw task pressure: realtimePressure = currentRawPressure × pressureCoefficient - recoveryRelease.',
   };
 }
 
 export function normalizePressureCalibration(calibration?: Partial<PressureCalibrationSnapshot> | null, legacyReferencePressure = 35): PressureCalibrationSnapshot {
   const legacyCalibration = calibration as Partial<PressureCalibrationSnapshot> & { baselinePressure?: number; initialTotalTaskLoad?: number } | null | undefined;
-  const referencePressure = clampPressure(calibration?.referencePressure ?? legacyCalibration?.baselinePressure ?? legacyReferencePressure);
-  const storedReferenceTaskLoad = calibration?.referenceTaskLoad ?? legacyCalibration?.initialTotalTaskLoad;
-  const referenceTaskLoad = typeof storedReferenceTaskLoad === 'number' && Number.isFinite(storedReferenceTaskLoad) ? Math.max(0, storedReferenceTaskLoad) : Math.max(MIN_REFERENCE_TASK_LOAD, referencePressure / DEFAULT_PRESSURE_RATIO);
-  const pressureRatio = typeof calibration?.pressureRatio === 'number' && Number.isFinite(calibration.pressureRatio) && calibration.pressureRatio > 0 ? calibration.pressureRatio : referencePressure / Math.max(MIN_REFERENCE_TASK_LOAD, referenceTaskLoad);
+  const lastSubjectivePressure = clampPressure(calibration?.lastSubjectivePressure ?? calibration?.referencePressure ?? legacyCalibration?.baselinePressure ?? legacyReferencePressure);
+  const storedRawPressure = calibration?.rawPressureAtCalibration ?? calibration?.referenceTaskLoad ?? legacyCalibration?.initialTotalTaskLoad;
+  const rawPressureAtCalibration = typeof storedRawPressure === 'number' && Number.isFinite(storedRawPressure) ? Math.max(0, storedRawPressure) : Math.max(MIN_REFERENCE_TASK_LOAD, lastSubjectivePressure / DEFAULT_PRESSURE_RATIO);
+  const pressureCoefficient = typeof calibration?.pressureCoefficient === 'number' && Number.isFinite(calibration.pressureCoefficient) && calibration.pressureCoefficient > 0
+    ? calibration.pressureCoefficient
+    : typeof calibration?.pressureRatio === 'number' && Number.isFinite(calibration.pressureRatio) && calibration.pressureRatio > 0
+      ? calibration.pressureRatio
+      : lastSubjectivePressure / Math.max(MIN_REFERENCE_TASK_LOAD, rawPressureAtCalibration);
+  const calibratedAt = calibration?.calibratedAt || calibration?.capturedAt || new Date().toISOString();
 
   return {
-    referencePressure,
-    referenceTaskLoad: roundToTenth(referenceTaskLoad),
-    pressureRatio: roundToTenth(pressureRatio),
-    taskCount: typeof calibration?.taskCount === 'number' ? Math.max(0, calibration.taskCount) : 0,
-    capturedAt: calibration?.capturedAt || new Date().toISOString(),
-    note: calibration?.note || 'Migrated pressure calibration. Subjective pressure is treated as a calibration sample, not a permanent base layer.',
+    lastSubjectivePressure,
+    rawPressureAtCalibration: roundToTenth(rawPressureAtCalibration),
+    pressureCoefficient: roundToFourDecimals(pressureCoefficient),
+    calibratedAt,
+    taskSnapshotAtCalibration: Array.isArray(calibration?.taskSnapshotAtCalibration) ? calibration.taskSnapshotAtCalibration : [],
+    modelVersion: calibration?.modelVersion || 'importance-urgency-v1',
+    modelWeights: calibration?.modelWeights,
+    referencePressure: lastSubjectivePressure,
+    referenceTaskLoad: roundToTenth(rawPressureAtCalibration),
+    pressureRatio: roundToFourDecimals(pressureCoefficient),
+    taskCount: typeof calibration?.taskCount === 'number' ? Math.max(0, calibration.taskCount) : Array.isArray(calibration?.taskSnapshotAtCalibration) ? calibration.taskSnapshotAtCalibration.length : 0,
+    capturedAt: calibratedAt,
+    note: calibration?.note || 'Migrated pressure calibration. Subjective pressure is treated as a calibration sample for the current raw task pressure.',
   };
 }
 
@@ -258,7 +257,7 @@ export function calculatePressureIndex(tasks: Task[], calibration?: Partial<Pres
   const normalizedCalibration = normalizePressureCalibration(calibration, legacyReferencePressure);
   const currentTaskLoad = calculateTaskLoad(tasks, now);
   const recoveryRelief = calculateRecoveryRelief(tasks);
-  const rawPressure = Math.max(0, currentTaskLoad * normalizedCalibration.pressureRatio - recoveryRelief);
+  const rawPressure = calculateRealtimePressure(tasks, normalizedCalibration.pressureCoefficient, recoveryRelief, now);
   const roundedRawPressure = Math.round(rawPressure);
   const state = getPressureState(roundedRawPressure);
 
@@ -279,9 +278,9 @@ export function calculatePressureIndex(tasks: Task[], calibration?: Partial<Pres
   };
 
   return {
-    referencePressure: normalizedCalibration.referencePressure,
-    referenceTaskLoad: normalizedCalibration.referenceTaskLoad,
-    pressureRatio: normalizedCalibration.pressureRatio,
+    referencePressure: normalizedCalibration.lastSubjectivePressure,
+    referenceTaskLoad: normalizedCalibration.rawPressureAtCalibration,
+    pressureRatio: normalizedCalibration.pressureCoefficient,
     currentTaskLoad: roundToTenth(currentTaskLoad),
     recoveryRelief: roundToTenth(recoveryRelief),
     rawPressure: roundedRawPressure,
@@ -301,16 +300,20 @@ export function getPressureInterpretation(totalPressure: number): string {
 }
 
 export const achievementCatalog: Omit<Achievement, 'unlockedAt'>[] = [
-  { id: 'first-entry', title: '初见飞升', description: '你开始把任务、时间与压力放进一个可观察的系统。' },
-  { id: 'first-task-created', title: '第一颗任务星', description: '第一个事项已被记录，注意力从脑内转移到系统中。' },
-  { id: 'first-task-completed', title: '截止线生还者', description: '你完成了一项任务，系统记录下这次从截止线中回收的秩序。' },
-  { id: 'first-manageable-pressure', title: '压力校准者', description: '你完成了一次压力校准，让指数更接近真实体感。' },
-  { id: 'ai-first-connection', title: 'AI 初连接', description: '你完成了本地 AI 服务配置，后续分析将由你选择的模型提供。' },
-  { id: 'ai-report-generated', title: '认知报告生成', description: '你生成了第一份结构化认知报告，用外部视角审视当前任务。' },
-  { id: 'roadmap-generated', title: '路线图生成', description: '你为长期目标生成了第一份路线图建议，但任务仍由你决定是否创建。' },
-  { id: 'social-graph-opened', title: '社交图谱开启', description: '你打开了关系地图，开始把重要关系从记忆中整理出来。' },
-  { id: 'life-tree-opened', title: '人生树展开', description: '你进入人生树视图，开始观察长期结构而不只处理短期事项。' },
-  { id: 'first-three-completed', title: '三连完成', description: '你已经完成三项任务，稳定推进开始形成可见轨迹。' },
-  { id: 'first-seven-day-progress', title: '七日推进', description: '你在七日窗口内完成推进，短周期节奏被系统记录下来。' },
+  { id: 'first-entry', title: '初见', description: '你第一次把生活压力放进 VD。系统开始记住你如何活着。' },
+  { id: 'first-task-completed', title: '闭环', description: '一件事被完成。不是胜利，只是一个回路终于合上。' },
+  { id: 'first-manageable-pressure', title: '首次校准', description: '你承认了此刻的压力，并让系统重新贴近真实体感。' },
+  { id: 'ai-first-connection', title: '流水线', description: '外部模型接入。你的任务开始进入另一条认知流水线。' },
+  { id: 'ai-report-generated', title: '第三人称', description: '你第一次从旁观者视角看见自己的任务结构。' },
+  { id: 'roadmap-generated', title: '为您导航', description: '长期目标获得路线。方向不等于命运，但至少不再是一团雾。' },
+  { id: 'social-graph-opened', title: '我爱的人们', description: '你打开关系图谱，把那些重要的人从记忆噪声里重新标出来。' },
+  { id: 'life-tree-opened', title: '系统已启动', description: '你进入人生结构视图。VD 开始像系统一样观察你的生活。' },
+  { id: 'first-six-in-day', title: '六发左轮', description: '同一天连续闭环 6 件事。效率有时像武器，也像风险。' },
+  { id: 'seven-day-streak', title: '七日杀', description: '你连续 7 天回到 VD。习惯开始留下可追踪的痕迹。' },
   { id: 'first-low-value-abandoned', title: '断舍离', description: '你主动放弃低价值事项，为真正重要的任务释放空间。' },
+  { id: 'last-survivor', title: '最后生还者', description: '你在最后一小时内完成了高重要性任务。活下来了，但系统记住了这次贴线。' },
+  { id: 'knife-edge-streak', title: '刀尖舔血', description: '连续 10 次在最后一小时闭环。你不是在管理时间，你是在和时间互相威胁。' },
+  { id: 'rotting', title: '摆烂', description: '逾期任务超过 5 个。系统不审判，只记录这段坍缩。' },
+  { id: 'hedonism', title: '享乐主义', description: '娱乐型事项达到 5 个。恢复、逃避和快乐有时长得很像。' },
+  { id: 'pressure-cooker', title: '高压锅', description: '压力连续 3 天停留在 100 以上。你需要的可能不是更努力，而是泄压阀。' },
 ];

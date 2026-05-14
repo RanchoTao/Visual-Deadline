@@ -1,167 +1,360 @@
 <p align="center">
-  <img src="./visualdeadline-banner.png" alt="Visualized Deadline banner" />
+  <img src="./visualdeadline-banner.png" alt="Visual Deadline banner" />
 </p>
 
-# Visual-Deadline
-Visualized Deadline is a Flysoon Labs project by Rancho Tao.
+<div align="center">
 
-**可视化 Deadline，非传统 Todo List。**
+# Visual Deadline
 
-Visualized-Deadline（VD）现在以 飞升 Shell 的信息架构运行：它负责可视化 Deadline、认知压力、生活地图、社交关系、日志与个人系统设置。
+### Visualize pressure, not just tasks.
 
-## v0.9：飞升 Productization Foundation
+A pressure-aware, visualization-driven life operating system for deadlines, priorities, relationships, achievements, and AI-assisted self-management.
 
-- 顶部导航：在不刷新页面的情况下切换「首页 / 地图 / 社交 / 日志 / 我」。
-- VD 默认模块：保留压力指数、压力校准、优先级地图、活动列表、归档日志、成就和本地持久化。
-- 人生地图：使用本地可编辑节点图谱，以“我”为中心连接 Academic、Research、Fitness、Finance、Social、Content、Health 等生活领域。
-- 社交：使用本地可编辑的有向关系图谱，以“我”为中心连接联系人节点。
-- 我：本地编辑 nickname、height、weight、identity、skills、longTermGoals、currentStage，并集中放置数据安全、隐私与未来同步入口。
-- 日志：独立展示已完成 / 已放弃项目、时间戳和活动类型，同时 VD 内仍保留小日志预览。
-- 首次进入：先进行快速任务倾倒，再校准主观压力，最后补全任务信息。
-- 当前关注：最多展示 3 个推荐活动，帮助用户选择而不是替用户决定。
-- 表单体验：新建 / 编辑项目使用居中大弹窗，不再静默插入页面。
-- 复盘记录：归档项目支持展开、删除与填写「复盘记录」。
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](./LICENSE)
+[![Built with React](https://img.shields.io/badge/React-visual_system-61DAFB?logo=react&logoColor=black)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict_system-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Vite](https://img.shields.io/badge/Vite-fast_shell-646CFF?logo=vite&logoColor=white)](https://vite.dev/)
+[![Local First](https://img.shields.io/badge/Privacy-local--first-14B8A6)](./SECURITY.md)
+[![Roadmap](https://img.shields.io/badge/Roadmap-ambitious-8B5CF6)](./ROADMAP.md)
 
-## 压力模型
+</div>
 
-VD 不再把主观压力当作永久背景压力叠加到任务压力上。用户在引导或重新校准时输入的主观压力代表“当前这组任务给我的总体压力感”。
+---
 
-校准时记录：
+## What is VD?
+
+**Visual Deadline (VD)** is not a traditional todo list. It is a **life operating system** that makes invisible pressure visible.
+
+Most task apps ask: “What do you need to do?” VD asks a deeper question:
+
+> **What is applying pressure to your life, where is that pressure coming from, and what should move first?**
+
+VD combines visualized deadlines, pressure calculation, task importance, life structure mapping, social relationship graphs, achievement loops, and future AI assistance into a single shell-based information architecture.
+
+It is designed for people whose work and life cannot be represented as a flat checklist: students, researchers, builders, founders, creators, operators, and anyone managing many overlapping life systems.
+
+---
+
+## Philosophy
+
+<div align="center">
+
+### “Visualize pressure, not just tasks.”
+
+</div>
+
+Tasks are not equal. A tiny task due tomorrow can create more pressure than a large project due next month. A neglected relationship can drain more mental energy than an unfinished assignment. A “low priority” administrative task can become dangerous when it silently approaches a deadline.
+
+VD treats personal productivity as a **dynamic pressure field**:
+
+- deadlines generate urgency;
+- importance changes the cost of delay;
+- recovery reduces load;
+- relationships create social obligations;
+- achievements reinforce momentum;
+- maps reveal structure that lists hide.
+
+The long-term goal is to become a local-first, extensible system for understanding life pressure across work, study, health, finance, relationships, and personal growth.
+
+---
+
+## Why VD Exists
+
+Traditional todo apps often fail when life becomes complex:
+
+| Traditional todo lists | Visual Deadline |
+| --- | --- |
+| Flat task rows | Spatial pressure fields |
+| Manual priority labels | Calculated urgency × importance |
+| Completion-focused | Pressure-aware and recovery-aware |
+| Isolated tasks | Life domains, social graphs, logs, achievements |
+| Productivity as throughput | Life management as structure, clarity, and momentum |
+
+VD exists because people do not only need more reminders. They need a way to **see the shape of their obligations** before those obligations become anxiety.
+
+---
+
+## Core Features
+
+### Pressure Engine
+
+- Calculates active task pressure from urgency and importance.
+- Supports subjective pressure calibration so the model adapts to the user.
+- Separates recovery and entertainment activities from pressure-generating tasks.
+- Highlights overload and burnout-risk states when raw pressure exceeds healthy ranges.
+
+### Visual Deadline System
+
+- Turns task timing into a visual pressure map.
+- Makes near, important, and neglected items visually harder to ignore.
+- Helps users decide what to move next instead of simply sorting a list.
+
+### Life Map
+
+- Maps life domains such as Academic, Research, Fitness, Finance, Social, Content, and Health.
+- Uses a graph-centered model with “me” at the center.
+- Supports local editing for personal structure visualization.
+
+### Social Graph
+
+- Models social relationships as editable graph nodes and directed connections.
+- Captures social context such as relationship type, familiarity, trust, emotional closeness, influence, and interaction frequency.
+- Creates the foundation for future social pressure and relationship maintenance systems.
+
+### Logs, Archive, and Review
+
+- Tracks completed and abandoned activities.
+- Supports review notes for archived items.
+- Turns past actions into a personal operating history instead of a forgotten task graveyard.
+
+### Achievement System
+
+- Rewards first-use milestones and meaningful behavioral progress.
+- Encourages healthy pressure reduction, completion, pruning, and recovery.
+- Provides early scaffolding for future progression and identity systems.
+
+### Local-First Data Safety
+
+- Stores user data in the browser by default.
+- Supports structured backup export and import.
+- Uses schema-aware backup envelopes for future migration to IndexedDB, SQLite, encrypted sync, or account systems.
+
+### Future AI-Assisted Life Management
+
+VD is designed to eventually support AI agents that can:
+
+- summarize pressure sources;
+- recommend next actions;
+- detect overloaded life domains;
+- generate weekly reviews;
+- identify neglected relationships;
+- simulate schedule and deadline outcomes.
+
+---
+
+## Screenshots
+
+> Replace these placeholders with polished captures as the product evolves.
+
+| Daily Control Center | Pressure Calibration | Life Map |
+| --- | --- | --- |
+| ![Daily control center placeholder](./screenshots/daily-control-center-placeholder.png) | ![Pressure calibration placeholder](./screenshots/pressure-calibration-placeholder.png) | ![Life map placeholder](./screenshots/life-map-placeholder.png) |
+
+| Social Graph | Archive & Review | Profile Shell |
+| --- | --- | --- |
+| ![Social graph placeholder](./screenshots/social-graph-placeholder.png) | ![Archive placeholder](./screenshots/archive-placeholder.png) | ![Profile shell placeholder](./screenshots/profile-shell-placeholder.png) |
+
+## Demo GIF Placeholders
+
+| Demo | Purpose |
+| --- | --- |
+| `./gifs/pressure-rising-demo.gif` | Show deadline pressure increasing over time. |
+| `./gifs/life-map-navigation.gif` | Show shell navigation between Home, Map, Social, Logs, and Me. |
+| `./gifs/social-pressure-graph.gif` | Show relationship nodes becoming visually active based on interaction recency. |
+| `./gifs/ai-weekly-review.gif` | Show a future AI assistant summarizing pressure and next moves. |
+
+More demo ideas are documented in [`docs/DEMO_GIF_IDEAS.md`](./docs/DEMO_GIF_IDEAS.md).
+
+---
+
+## Architecture Overview
+
+VD is currently a Vite + React + TypeScript application with a local-first browser data model.
 
 ```text
-referencePressure = 用户输入的主观压力
-referenceTaskLoad = 当前进行中任务负载之和
-pressureRatio = referencePressure / referenceTaskLoad
+Visual Deadline
+├── src/                    # Product source code
+│   ├── App.tsx             # Shell, views, state orchestration
+│   ├── main.tsx            # React entrypoint
+│   └── styles.css          # Visual system and responsive UI
+├── docs/                   # Product, growth, and branding documentation
+├── screenshots/            # Static README and release screenshots
+├── gifs/                   # Demo GIFs and launch assets
+├── assets/                 # Brand assets, diagrams, icons, media
+├── plugins/                # Future plugin packages and examples
+├── shell/                  # Future shell information architecture experiments
+├── ai/                     # Future AI prompts, agents, evals, and workflows
+└── roadmap/                # Detailed roadmap artifacts and research notes
 ```
 
-日常估算：
+The architecture is intentionally organized around future expansion:
+
+- **Product shell first**: VD is not a single widget; it is a navigable life system.
+- **Local-first persistence**: user trust starts with data that remains under user control.
+- **Graph-ready domains**: life, social, task, and pressure systems can eventually converge into a life graph.
+- **Plugin-ready boundaries**: future integrations can attach without rewriting the core experience.
+
+A fuller structure proposal is available in [`docs/REPOSITORY_STRUCTURE.md`](./docs/REPOSITORY_STRUCTURE.md).
+
+---
+
+## Installation
+
+### Requirements
+
+- Node.js 18+
+- npm
+
+### Clone and install
+
+```bash
+git clone https://github.com/<your-org-or-username>/Visualized-Deadline.git
+cd Visualized-Deadline
+npm install
+```
+
+---
+
+## Quick Start
+
+```bash
+npm run dev
+```
+
+Vite will print a local development URL, usually:
 
 ```text
-currentPressure = currentTaskLoad × pressureRatio - recoveryRelief
+http://localhost:5173
 ```
 
-其中：
+Build the production bundle:
 
-- `currentTaskLoad` 来自进行中任务的 `urgencyWeight × importanceWeight`。
-- `pressureRatio` 是个体压力映射系数，来自最近一次校准样本。
-- `recoveryRelief` 来自恢复 / 娱乐活动的轻微释放。
-- 如果校准时没有进行中任务，系统会使用安全默认系数，避免除以 0。
-- raw pressure 超过 100 时会显示 100+ 的 burnout risk 状态。
+```bash
+npm run build
+```
 
-压力状态分区：
+Preview the production build locally:
 
-- 0-30：平稳
-- 31-60：可控
-- 61-80：高压
-- 81-100：过载
-- >100：压力爆表 / Burnout Risk
+```bash
+npm run preview
+```
 
-## 本地存储 keys
+---
 
-- `visualized-deadline.tasks`：任务与活动项目。
-- `visualized-deadline.baselinePressure`：旧版本兼容键；现在只作为迁移参考，不再作为叠加型背景压力。
-- `visualized-deadline.achievements`：已解锁成就。
-- `visualized-deadline.profile`：本地个人主页资料与头像 data URL。
-- `visualized-deadline.onboardingComplete`：首次引导是否完成。
-- `visualized-deadline.pressureCalibration`：保存 `referencePressure`、`referenceTaskLoad` 与 `pressureRatio` 的校准快照。
-- `visualized-deadline.lifeMap.nodes` / `visualized-deadline.lifeMap.edges`：人生地图节点与连接。
-- `visualized-deadline.social.nodes` / `visualized-deadline.social.edges`：社交图谱节点与有向连接。
-
-## 成就列表
-
-- 初次进入 VD
-- 第一次创建任务
-- 第一次完成任务
-- 第一次放弃低价值任务
-- 第一次压力降到可控区
-- 第一次完成 3 个任务
-- 第一次完成 7 天内任务推进
-- 第一次使用恢复/娱乐活动降低压力
-
-## 技术栈
+## Current Technical Stack
 
 - React
 - TypeScript
 - Vite
 - Tailwind CSS
 - localStorage
-- @xyflow/react（当前仓库内以 local file dependency 形式提供图谱交互基础）
+- `@xyflow/react` for graph interaction foundations
 
-## 快速开始
+---
 
-```powershell
-npm install
-npm run dev
-```
+## Pressure Model
 
-默认开发服务器会在终端输出本地访问地址，通常是：
-
-```powershell
-http://localhost:5173
-```
-
-## 可用脚本
-
-```powershell
-npm run dev
-```
-
-启动 Vite 本地开发服务器。
-
-```powershell
-npm run build
-```
-
-执行 TypeScript 编译检查并构建生产资源。
-
-```powershell
-npm run preview
-```
-
-预览生产构建结果。
-
-## GitHub Pages 部署
-
-本项目已配置 GitHub Actions 工作流。推送到 `main` 分支后，工作流会自动安装依赖、构建项目，并把 `dist` 部署到 GitHub Pages。
-
-Vite 的 `base` 已设置为 `/Visualized-Deadline/`，适配仓库 Pages 地址。
-
-## 数据兼容
-
-旧版本 `localStorage` 任务会被自动兼容：
-
-- 旧的 1-5 重要性会迁移到 1-10。
-- 缺失的 `progress` 会补为 0。
-- 缺失的 `activityType` 会补为 `task`。
-- 缺失的 `lifecycleStatus` 会补为 `active`。
-- 旧的 `done` 状态会视为 100% 进度和已完成。
-- 如果没有 `onboardingComplete`，但已有旧任务或压力基线，会视为已完成引导，避免阻塞旧数据。
-- 如果缺少 `pressureRatio` 或 `referenceTaskLoad`，会从旧压力值生成安全默认映射，避免除以 0。
-- 如果没有成就、头像、人生地图、社交图谱数据，会使用安全默认值初始化。
-
-## v0.7：Data Safety & Persistence Foundation
-
-v0.7 将持久化逻辑集中到 `src/storage/`，业务组件不再直接调用浏览器存储 API。当前实现提供：
-
-- 统一存储模块：`tasks`、`pressure`、`social`、`lifeMap`、`logs`、`settings`、`backup`、`schema`。
-- JSON 导出格式：`schemaVersion`、`exportedAt`、`app` 与 `data` 固定封装，便于未来 IndexedDB、SQLite、云同步或账号系统复用。
-- JSON 导入：校验 JSON、应用名和架构版本；不兼容版本会给出友好错误，不会导致应用崩溃。
-- 自动备份：重要状态写入后刷新 `vd_backup_latest`，并保留 `vd_backup_1` 到 `vd_backup_3` 的滚动快照。
-- 恢复安全：读取本地数据失败时会尝试从最近备份恢复，并通过“备份与恢复中心”提示用户。
-
-导出的文件名格式为：
+VD does not treat subjective pressure as a permanent background value. During onboarding or recalibration, the user’s subjective pressure represents how stressful the current active task set feels.
 
 ```text
-VD-backup-YYYY-MM-DD-HH-mm.json
+referencePressure = user-entered subjective pressure
+referenceTaskLoad = sum of active task load
+pressureRatio = referencePressure / referenceTaskLoad
 ```
 
-## v0.8-v0.9：Product Structure + Social Graph Reconstruction
+Daily estimate:
 
-后续产品化基础已按 Web-first 方向整理：
+```text
+currentPressure = currentTaskLoad × pressureRatio - recoveryRelief
+```
 
-- 信息架构调整为「首页 / 地图 / 社交 / 日志 / 我」，其中「我」承担资料、系统状态、数据安全与未来隐私/同步入口。
-- 首页变为 daily control center：优先展示当前压力、推荐项目、状态摘要、快捷动作、最近日志与未来 AI 协同占位。
-- 社交图谱升级为多因素关系嵌入：好感度、熟悉度、信任、互动频率、最近互动、角色分类、情感亲近与影响权重都会参与距离、聚类和视觉分组。
-- 图谱节点改为更紧凑的圆角卡片，保留头像占位、姓名、角色信息，并修复中心节点对比度。
-- 图谱交互保持本地轻量：普通触控板滚动回到页面滚动，图谱缩放只通过 Ctrl/Cmd + 滚轮或显式按钮触发。
-- PWA 准备仅做基础：viewport/theme 元信息、移动优先间距、触控交互和本地优先隐私占位；暂不实现安装、后端、认证或云同步。
+Where:
+
+- `currentTaskLoad` comes from `urgencyWeight × importanceWeight`.
+- `pressureRatio` is the user-specific mapping from task load to felt pressure.
+- `recoveryRelief` comes from recovery or entertainment activities.
+- If calibration has no active task load, VD uses a safe default to avoid division by zero.
+- If raw pressure exceeds 100, VD can show a `100+` burnout-risk state.
+
+Pressure bands:
+
+| Range | State |
+| --- | --- |
+| 0–30 | Stable |
+| 31–60 | Manageable |
+| 61–80 | High pressure |
+| 81–100 | Overloaded |
+| >100 | Burnout risk |
+
+---
+
+## Local Storage Keys
+
+<details>
+<summary>View current browser storage keys</summary>
+
+- `visualized-deadline.tasks`: tasks and activity items.
+- `visualized-deadline.baselinePressure`: legacy compatibility key.
+- `visualized-deadline.achievements`: unlocked achievements.
+- `visualized-deadline.profile`: local profile data and avatar data URL.
+- `visualized-deadline.onboardingComplete`: onboarding completion state.
+- `visualized-deadline.pressureCalibration`: pressure calibration snapshot.
+- `visualized-deadline.lifeMap.nodes` / `visualized-deadline.lifeMap.edges`: life map graph data.
+- `visualized-deadline.social.nodes` / `visualized-deadline.social.edges`: social graph data.
+
+</details>
+
+---
+
+## Roadmap
+
+VD’s roadmap is ambitious, but staged. The project is moving from a local-first visual deadline prototype toward a productized life operating system.
+
+- **v0.x Foundations**: stabilize shell, data safety, pressure model, graph views, onboarding, export/import.
+- **v1.0 Productization**: polished UX, reliable releases, public demo assets, accessibility, responsive layouts.
+- **AI Integration**: pressure summaries, weekly reviews, next-action suggestions, overloaded-domain detection.
+- **Plugin Ecosystem**: integration APIs, plugin manifests, community examples, safe permission model.
+- **Social Systems**: relationship health indicators, interaction reminders, social pressure mapping.
+- **Life Graph**: unified graph of tasks, domains, people, goals, achievements, and time.
+- **World-Model Ideas**: simulations that show how decisions affect future pressure.
+
+Read the complete roadmap in [`ROADMAP.md`](./ROADMAP.md).
+
+---
+
+## Contributing
+
+VD welcomes contributors who care about product design, visualization, local-first software, AI-assisted tools, and emotionally intelligent productivity systems.
+
+Good first contribution areas:
+
+- improve onboarding copy;
+- refine pressure visualization;
+- design screenshot and GIF assets;
+- improve accessibility;
+- add tests around data migration;
+- propose plugin API boundaries;
+- document user workflows.
+
+Please read [`CONTRIBUTING.md`](./CONTRIBUTING.md) before opening a pull request.
+
+---
+
+## Security and Privacy
+
+VD is designed around a local-first trust model. The current app stores personal data in the user’s browser and provides backup/export foundations for future portability.
+
+If you discover a vulnerability or privacy issue, please follow [`SECURITY.md`](./SECURITY.md).
+
+---
+
+## Branding and Growth
+
+- Branding language: [`docs/BRANDING.md`](./docs/BRANDING.md)
+- Open-source growth strategy: [`docs/GROWTH_STRATEGY.md`](./docs/GROWTH_STRATEGY.md)
+- Demo GIF ideas: [`docs/DEMO_GIF_IDEAS.md`](./docs/DEMO_GIF_IDEAS.md)
+- Repository structure proposal: [`docs/REPOSITORY_STRUCTURE.md`](./docs/REPOSITORY_STRUCTURE.md)
+
+---
+
+## Acknowledgements
+
+VD is inspired by modern open-source product craft and developer experience from projects and ecosystems such as MineContext, Next.js, Supabase, shadcn/ui, OpenInterpreter, and LangChain.
+
+The project also draws from ideas in time management, cognitive load theory, personal knowledge management, graph visualization, local-first software, and human-centered AI.
+
+---
+
+## License
+
+Visual Deadline is licensed under the [Apache License 2.0](./LICENSE).

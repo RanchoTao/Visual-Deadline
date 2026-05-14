@@ -24,7 +24,7 @@ function createDraftTask(title: string): TaskInput {
 function calculateInitialTaskLoad(tasks: TaskInput[]): number {
   return tasks.reduce((sum, task) => {
     if (task.lifecycleStatus !== 'active') return sum;
-    return sum + getUrgencyWeight(task.deadline) * (0.8 + task.importance / 2);
+    return sum + getUrgencyWeight(task.deadline) * task.importance;
   }, 0);
 }
 
@@ -75,7 +75,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
       <section className="max-h-[calc(100vh-3rem)] w-full max-w-4xl overflow-y-auto rounded-[2rem] border border-white/80 bg-white/95 p-6 shadow-2xl shadow-slate-300/60">
         <div className="mb-6 flex items-center justify-between gap-4">
           <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-400">飞升初始问答 · {step}/3</p>
+            <p className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-400">VD 初始问答 · {step}/3</p>
             <div className="mt-3 h-2 w-48 overflow-hidden rounded-full bg-slate-100">
               <div className="h-full rounded-full bg-slate-700 transition-all" style={{ width: `${(step / 3) * 100}%` }} />
             </div>
@@ -140,7 +140,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
             </div>
             <div className="mt-8 flex justify-between gap-3">
               <button type="button" onClick={() => setStep(2)} className="rounded-full px-5 py-3 text-sm font-semibold text-slate-500 hover:bg-slate-100">返回</button>
-              <button type="button" onClick={completeOnboarding} className="rounded-full bg-white/85 px-6 py-3 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">进入飞升</button>
+              <button type="button" onClick={completeOnboarding} className="rounded-full bg-white/85 px-6 py-3 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">进入 VD</button>
             </div>
           </div>
         ) : null}
