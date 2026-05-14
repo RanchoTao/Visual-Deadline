@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { storageKeys } from '../storage';
-import type { PressureHistoryRecord, Task } from '../types/task';
+import type { AIArtifactInput, PressureHistoryRecord, Task } from '../types/task';
 import { defaultAISettings, normalizeAISettings, requestChatCompletion, type AISettings } from '../services/aiClient';
 import { buildReviewUserPrompt, reviewSystemPrompt } from '../services/reviewPrompt';
 import { AIReportRenderer } from './AIReportRenderer';
@@ -9,11 +9,12 @@ import { AIReportRenderer } from './AIReportRenderer';
 interface AIReviewPanelProps {
   tasks: Task[];
   pressureHistory: PressureHistoryRecord[];
+  onAIReportGenerated?: (artifact: AIArtifactInput) => void;
 }
 
 type ReviewState = 'idle' | 'loading' | 'success' | 'error';
 
-export function AIReviewPanel({ tasks, pressureHistory }: AIReviewPanelProps) {
+export function AIReviewPanel({ tasks, pressureHistory, onAIReportGenerated }: AIReviewPanelProps) {
   const [storedSettings] = useLocalStorage<AISettings>(storageKeys.aiSettings, defaultAISettings);
   const settings = useMemo(() => normalizeAISettings(storedSettings), [storedSettings]);
   const [state, setState] = useState<ReviewState>('idle');
@@ -39,6 +40,16 @@ export function AIReviewPanel({ tasks, pressureHistory }: AIReviewPanelProps) {
       const result = await requestChatCompletion(settings, reviewSystemPrompt, buildReviewUserPrompt(tasks, pressureHistory));
       setReport(result);
       setState('success');
+      onAIReportGenerated?.({
+        kind: 'review',
+        title: '近期系统复盘',
+        content: result,
+        relatedTaskIds: tasks.map((task) => task.id),
+        relatedGoalIds: [],
+        pressure: pressureHistory.at(-1)?.pressure,
+        model: settings.model,
+        metadata: { provider: settings.provider, pressureRecordCount: pressureHistory.length },
+      });
     } catch (error) {
       setState('error');
       setErrorMessage(error instanceof Error ? error.message : 'AI 复盘生成失败，请稍后重试。');
@@ -57,7 +68,7 @@ export function AIReviewPanel({ tasks, pressureHistory }: AIReviewPanelProps) {
           <button type="button" onClick={generateReview} disabled={state === 'loading'} className="rounded-full bg-white/85 px-5 py-2 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300">
             {report ? '重新生成' : '生成近期复盘'}
           </button>
-          {report ? <button type="button" onClick={() => { setReport(''); setErrorMessage(''); setState('idle'); }} className="rounded-full px-4 py-2 text-sm font-semibold text-slate-500 hover:bg-slate-100">清除结果</button> : null}
+          {report ? <button type="button" onClick={() => { setReport(''); setErrorMessage(''); setState('idle'); }} className="rounded-full px-4 py-2 text-sm font-semibold text-slate-500 hover:bg-slate-100">隐藏本次结果</button> : null}
         </div>
       </div>
       <div className="mt-4 rounded-2xl bg-slate-50/80 px-4 py-3 text-xs leading-5 text-slate-500 ring-1 ring-white/80">当前配置：{hasApiKey ? `${settings.provider} · ${settings.model}` : '未配置 API Key'}。复盘仅发送必要任务与压力历史字段。</div>

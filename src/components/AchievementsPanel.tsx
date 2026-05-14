@@ -21,9 +21,9 @@ export function AchievementsPanel({ achievements }: AchievementsPanelProps) {
     <section className="relative z-0 rounded-[2rem] border border-white/70 bg-white/75 p-5 shadow-xl shadow-slate-200/60 backdrop-blur">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <p className="text-sm font-semibold text-slate-500">成就系统</p>
-          <h2 className="text-2xl font-semibold text-slate-950">最近与下一步</h2>
-          <p className="mt-1 text-sm text-slate-500">只显示最接近的 4 个目标，保留一点正反馈。</p>
+          <p className="text-sm font-semibold text-slate-500">行为信号</p>
+          <h2 className="text-2xl font-semibold text-slate-950">已经留下的痕迹</h2>
+          <p className="mt-1 text-sm text-slate-500">这些不是奖励，而是 VD 观察到的生活状态、压力姿态与行为记忆。</p>
         </div>
         <div className="flex items-center gap-2">
           <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-600">{achievements.length}/{achievementCatalog.length}</span>
@@ -40,7 +40,7 @@ export function AchievementsPanel({ achievements }: AchievementsPanelProps) {
             <article key={achievement.id} className={`rounded-3xl p-4 ring-1 transition ${isUnlocked ? 'bg-white text-slate-900 shadow-sm shadow-slate-100 ring-white/80' : 'bg-slate-50/70 text-slate-400 ring-white/60'}`}>
               <div className="flex items-center justify-between gap-3"><h3 className="text-sm font-semibold">{achievement.title}</h3><span className="text-lg" aria-hidden="true">{isUnlocked ? '◦' : '·'}</span></div>
               <p className="mt-2 line-clamp-2 text-xs leading-5">{achievement.description}</p>
-              <p className="mt-3 text-[11px] font-medium text-slate-400">{unlockedAchievement ? formatUnlockedAt(unlockedAchievement.unlockedAt) : '下一步可解锁'}</p>
+              <p className="mt-3 text-[11px] font-medium text-slate-400">{unlockedAchievement ? formatUnlockedAt(unlockedAchievement.unlockedAt) : '尚未发生'}</p>
             </article>
           );
         })}

@@ -80,6 +80,23 @@ export interface Achievement {
   unlockedAt: string;
 }
 
+export type AIArtifactKind = 'task-analysis' | 'review' | 'goal-roadmap' | 'task-intake' | 'pressure-analysis' | 'recommendation';
+
+export interface AIArtifact {
+  id: string;
+  kind: AIArtifactKind;
+  title: string;
+  content: string;
+  createdAt: string;
+  relatedTaskIds: string[];
+  relatedGoalIds: string[];
+  pressure?: number;
+  model?: string;
+  metadata?: Record<string, string | number | boolean | string[]>;
+}
+
+export type AIArtifactInput = Omit<AIArtifact, 'id' | 'createdAt'> & { createdAt?: string };
+
 export interface Goal {
   id: string;
   title: string;

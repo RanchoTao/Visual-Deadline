@@ -1,4 +1,4 @@
-import type { LifecycleStatus, Task, Achievement, PressureBreakdown, TaskInput } from '../types/task';
+import type { AIArtifactInput, LifecycleStatus, Task, Achievement, PressureBreakdown, TaskInput } from '../types/task';
 import { AchievementsPanel } from './AchievementsPanel';
 import { AITaskAnalysisPanel } from './AITaskAnalysisPanel';
 import { AITaskCommandBar } from './AITaskCommandBar';
@@ -16,10 +16,11 @@ interface TaskPageProps {
   onDeleteTask: (taskId: string) => void;
   onEditTask: (task: Task) => void;
   onAIConnected: () => void;
-  onAIReportGenerated: () => void;
+  onAIArtifactGenerated: (artifact: AIArtifactInput) => void;
+  onAIReportGenerated: (artifact: AIArtifactInput) => void;
 }
 
-export function TaskPage({ tasks, activeTasks, achievements, pressure, onAddTask, onConfirmAITasks, onArchiveTask, onDeleteTask, onEditTask, onAIConnected, onAIReportGenerated }: TaskPageProps) {
+export function TaskPage({ tasks, activeTasks, achievements, pressure, onAddTask, onConfirmAITasks, onArchiveTask, onDeleteTask, onEditTask, onAIConnected, onAIArtifactGenerated, onAIReportGenerated }: TaskPageProps) {
   return (
     <section className="space-y-6">
       <header className="flex flex-wrap items-center justify-between gap-4 rounded-[2rem] border border-white/70 bg-white/75 p-6 shadow-xl shadow-slate-200/60 backdrop-blur">
@@ -33,7 +34,7 @@ export function TaskPage({ tasks, activeTasks, achievements, pressure, onAddTask
         </button>
       </header>
 
-      <AITaskCommandBar tasks={tasks} onConfirmTasks={onConfirmAITasks} />
+      <AITaskCommandBar tasks={tasks} onConfirmTasks={onConfirmAITasks} onAIArtifactGenerated={onAIArtifactGenerated} />
       <PriorityMap tasks={activeTasks} />
       <AITaskAnalysisPanel tasks={tasks} pressure={pressure} onAIConnected={onAIConnected} onAIReportGenerated={onAIReportGenerated} />
       <TaskList tasks={activeTasks} onArchive={onArchiveTask} onDelete={onDeleteTask} onEdit={onEditTask} />

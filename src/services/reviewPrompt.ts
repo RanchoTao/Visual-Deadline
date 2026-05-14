@@ -1,7 +1,7 @@
 import type { PressureHistoryRecord, Task } from '../types/task';
 import { getDisplayProgress, getTaskProgress, getTimeProgress, isProgressAuto } from '../utils/taskScoring';
 
-export const reviewSystemPrompt = `You are the review engine of Visualized Deadline (VD).
+export const reviewSystemPrompt = `You are the review engine of Visual Deadline (VD).
 
 Generate a concise Chinese structured review report from task and pressure data.
 
