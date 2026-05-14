@@ -10,6 +10,8 @@ import { ModalPortal } from './ModalPortal';
 interface AITaskAnalysisPanelProps {
   tasks: Task[];
   pressure?: PressureBreakdown;
+  onAIConnected?: () => void;
+  onAIReportGenerated?: () => void;
 }
 
 type AnalysisState = 'idle' | 'loading' | 'success' | 'error';
@@ -18,7 +20,7 @@ function providerLabel(provider: AIProvider): string {
   return provider === 'deepseek-compatible' ? 'DeepSeek Compatible' : 'OpenAI Compatible';
 }
 
-export function AITaskAnalysisPanel({ tasks, pressure }: AITaskAnalysisPanelProps) {
+export function AITaskAnalysisPanel({ tasks, pressure, onAIConnected, onAIReportGenerated }: AITaskAnalysisPanelProps) {
   const [storedSettings, setStoredSettings] = useLocalStorage<AISettings>(storageKeys.aiSettings, defaultAISettings);
   const settings = useMemo(() => normalizeAISettings(storedSettings), [storedSettings]);
   const [draftSettings, setDraftSettings] = useState<AISettings>(settings);
@@ -40,7 +42,9 @@ export function AITaskAnalysisPanel({ tasks, pressure }: AITaskAnalysisPanelProp
 
   function saveSettings(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setStoredSettings(normalizeAISettings(draftSettings));
+    const normalizedDraftSettings = normalizeAISettings(draftSettings);
+    setStoredSettings(normalizedDraftSettings);
+    if (normalizedDraftSettings.apiKey.trim()) onAIConnected?.();
     setIsSettingsOpen(false);
     setErrorMessage('');
   }
@@ -66,6 +70,7 @@ export function AITaskAnalysisPanel({ tasks, pressure }: AITaskAnalysisPanelProp
       const result = await requestChatCompletion(settings, taskAnalysisSystemPrompt, userPrompt);
       setReport(result);
       setAnalysisState('success');
+      onAIReportGenerated?.();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'AI 分析请求失败，请稍后重试。');
       setAnalysisState('error');

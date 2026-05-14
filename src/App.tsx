@@ -165,9 +165,13 @@ function normalizeStoredTask(task: LegacyTask): Task {
 
 function normalizeStoredAchievements(achievements: Achievement[]): Achievement[] {
   if (!Array.isArray(achievements)) return [];
-  const knownIds = new Set(achievementCatalog.map((achievement) => achievement.id));
+  const catalogById = new Map(achievementCatalog.map((achievement) => [achievement.id, achievement]));
 
-  return achievements.filter((achievement) => knownIds.has(achievement.id) && Boolean(achievement.unlockedAt));
+  return achievements.flatMap((achievement) => {
+    if (!achievement.unlockedAt) return [];
+    const catalogAchievement = catalogById.get(achievement.id);
+    return [{ ...(catalogAchievement ?? achievement), unlockedAt: achievement.unlockedAt }];
+  });
 }
 
 function normalizeProfile(profile: unknown): UserProfile {
@@ -409,7 +413,6 @@ function App() {
     if (normalizedTasks.some((task) => !task.id.startsWith('demo-'))) unlockAchievement('first-task-created');
     if (normalizedTasks.some((task) => task.lifecycleStatus === 'completed')) unlockAchievement('first-task-completed');
     if (normalizedTasks.some((task) => task.lifecycleStatus === 'abandoned' && task.importance <= 4)) unlockAchievement('first-low-value-abandoned');
-    if (pressure.state === 'manageable') unlockAchievement('first-manageable-pressure');
     if (normalizedTasks.filter((task) => task.lifecycleStatus === 'completed').length >= 3) unlockAchievement('first-three-completed');
     if (
       normalizedTasks.some((task) => {
@@ -419,14 +422,20 @@ function App() {
     ) {
       unlockAchievement('first-seven-day-progress');
     }
-    if (normalizedTasks.some((task) => task.lifecycleStatus === 'completed' && ['recovery', 'entertainment'].includes(task.activityType))) unlockAchievement('first-recovery-relief');
-  }, [onboardingComplete, normalizedTasks, pressure.state]);
+  }, [onboardingComplete, normalizedTasks]);
+
+  useEffect(() => {
+    if (!onboardingComplete) return;
+    if (activeModule === 'social') unlockAchievement('social-graph-opened');
+    if (activeModule === 'map') unlockAchievement('life-tree-opened');
+  }, [activeModule, onboardingComplete]);
 
   function savePressureCalibration(referencePressure: number, sourceTasks = normalizedTasks) {
     const activeLoad = calculateTaskLoad(sourceTasks);
     const activeCount = sourceTasks.filter((task) => task.lifecycleStatus === 'active').length;
     const calibration = createPressureCalibration(referencePressure, activeLoad, activeCount);
     setPressureCalibration(calibration);
+    unlockAchievement('first-manageable-pressure');
     recordPressureSnapshot('recalibration', sourceTasks, '压力映射系数已重新校准。', calibration);
     // Keep the legacy pressure value available through the centralized storage layer.
     savePressure({ baselinePressure: calibration.referencePressure });
@@ -447,6 +456,7 @@ function App() {
     const nextTasks = [...createdTasks, ...normalizedTasks];
     setTasks(nextTasks);
     setPressureCalibration(calibration);
+    unlockAchievement('first-manageable-pressure');
     recordPressureSnapshot('recalibration', nextTasks, '完成初始压力校准。', calibration);
     savePressure({ baselinePressure: calibration.referencePressure });
     setOnboardingComplete(true);
@@ -590,11 +600,13 @@ function App() {
       onArchiveTask={archiveTask}
       onDeleteTask={deleteTask}
       onEditTask={startEditing}
+      onAIConnected={() => unlockAchievement('ai-first-connection')}
+      onAIReportGenerated={() => unlockAchievement('ai-report-generated')}
     />
   );
 
   const moduleContent: Record<LifeOSModule, ReactElement> = {
-    home: <HomePage pressure={pressure} pressureHistory={normalizedPressureHistory} recommendedTasks={recommendedTasks} activeTasks={activeTasks} tasks={normalizedTasks} goals={normalizedGoals} onSaveGoal={saveGoal} onDeleteGoal={deleteGoal} onAddTask={() => setIsFormOpen(true)} onRecalibrate={openRecalibration} onOpenTasks={() => setActiveModule('task')} />,
+    home: <HomePage pressure={pressure} pressureHistory={normalizedPressureHistory} recommendedTasks={recommendedTasks} activeTasks={activeTasks} tasks={normalizedTasks} goals={normalizedGoals} onSaveGoal={saveGoal} onDeleteGoal={deleteGoal} onRoadmapGenerated={() => unlockAchievement('roadmap-generated')} onAddTask={() => setIsFormOpen(true)} onRecalibrate={openRecalibration} onOpenTasks={() => setActiveModule('task')} />,
     task: taskModule,
     map: <LifeMapPage />,
     social: <SocialPage />,

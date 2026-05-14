@@ -11,6 +11,7 @@ interface GoalRoadmapPanelProps {
   tasks: Task[];
   onSaveGoal: (input: GoalInput, goalId?: string) => void;
   onDeleteGoal: (goalId: string) => void;
+  onRoadmapGenerated?: () => void;
 }
 
 const categories = ['study', 'research', 'fitness', 'work', 'life', 'social', 'other'] as const;
@@ -28,7 +29,7 @@ function createGoalInput(goal: Goal): GoalInput {
   };
 }
 
-export function GoalRoadmapPanel({ goals, tasks, onSaveGoal, onDeleteGoal }: GoalRoadmapPanelProps) {
+export function GoalRoadmapPanel({ goals, tasks, onSaveGoal, onDeleteGoal, onRoadmapGenerated }: GoalRoadmapPanelProps) {
   const [storedSettings] = useLocalStorage<AISettings>(storageKeys.aiSettings, defaultAISettings);
   const settings = useMemo(() => normalizeAISettings(storedSettings), [storedSettings]);
   const [title, setTitle] = useState('');
@@ -103,6 +104,7 @@ export function GoalRoadmapPanel({ goals, tasks, onSaveGoal, onDeleteGoal }: Goa
       const content = await requestChatCompletion(settings, goalRoadmapSystemPrompt, buildGoalRoadmapUserPrompt(goal, tasks));
       const result = parseGoalRoadmapResponse(content);
       onSaveGoal({ ...createGoalInput(goal), roadmapSuggestions: result.roadmapSuggestions }, goal.id);
+      onRoadmapGenerated?.();
       setRoadmapState({});
     } catch (error) {
       setRoadmapState({ errorGoalId: goal.id, message: error instanceof Error ? error.message : '目标路线图生成失败。' });
