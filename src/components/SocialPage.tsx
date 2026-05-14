@@ -4,11 +4,15 @@ import { useLocalStorage } from '../hooks/useLocalStorage';
 import { storageKeys } from '../storage';
 import type { SocialPersonData } from '../types/task';
 
-const CURRENT_SOCIAL_LAYOUT_VERSION = 9;
+const CURRENT_SOCIAL_LAYOUT_VERSION = 10;
 const CENTER = { x: 720, y: 560 };
 const DEFAULT_PERSON_COLOR = '#d8e2dc';
 const CENTER_NODE_COLOR = '#1e293b';
 const MAX_SOCIAL_DISTANCE = 1400;
+const MIN_SOCIAL_RADIUS = 180;
+const MAX_SOCIAL_RADIUS = 760;
+const COLLISION_PADDING = 24;
+const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 const NODE_WIDTH = 132;
 const NODE_HEIGHT = 62;
 
@@ -23,6 +27,7 @@ interface ContactSortState {
 }
 interface NormalizeNodesOptions {
   relayout?: boolean;
+  preserveManual?: boolean;
 }
 
 const socialClusters = [
@@ -97,44 +102,61 @@ function socialRing(score: number): { label: string; radius: number } {
 }
 
 function socialRadius(score: number): number {
-  return 160 + (100 - clampScore(score)) * 5.2;
+  return Math.min(MAX_SOCIAL_RADIUS, MIN_SOCIAL_RADIUS + (100 - clampScore(score)) * 5.4);
 }
 
-function targetPosition(node: SocialNode, index: number): SocialNode['position'] {
-  const data = node.data ?? normalizeSocialData(undefined);
-  const cluster = socialClusters.find((item) => item.id === data.cluster) ?? clusterFor(data);
-  const score = clampScore(data.subjectiveFavorability);
-  const radius = socialRadius(score) + stableOffset(`${node.id}-radius`, 34);
-  const angle = normalizeAngle(data.angle) ?? cluster.angle + stableOffset(`${node.id}-angle`, 0.66) + (index % 4 - 1.5) * 0.06;
+function positionFromPolar(angle: number, radius: number): SocialNode['position'] {
   return {
     x: Math.round(CENTER.x + Math.cos(angle) * radius - NODE_WIDTH / 2),
     y: Math.round(CENTER.y + Math.sin(angle) * radius - NODE_HEIGHT / 2),
   };
 }
 
+function deterministicAngle(nodeId: string, data: SocialPersonData, index: number): number {
+  const cluster = socialClusters.find((item) => item.id === data.cluster) ?? clusterFor(data);
+  const spreadIndex = index + (stableHash(nodeId) % 7) * 0.17;
+  return cluster.angle + spreadIndex * GOLDEN_ANGLE + stableOffset(`${nodeId}-angle-jitter`, 0.28);
+}
+
+function targetPosition(node: SocialNode, index: number): SocialNode['position'] {
+  const data = node.data ?? normalizeSocialData(undefined);
+  const score = clampScore(data.subjectiveFavorability);
+  const radius = Math.min(MAX_SOCIAL_RADIUS, Math.max(MIN_SOCIAL_RADIUS, socialRadius(score) + stableOffset(`${node.id}-radius`, 28)));
+  const angle = normalizeAngle(data.angle) ?? deterministicAngle(node.id, data, index);
+  return positionFromPolar(angle, radius);
+}
+
+function nodesOverlap(left: SocialNode['position'], right: SocialNode['position']): boolean {
+  return Math.abs(left.x - right.x) < NODE_WIDTH + COLLISION_PADDING && Math.abs(left.y - right.y) < NODE_HEIGHT + COLLISION_PADDING;
+}
+
 function avoidCollisions(nodes: SocialNode[]): SocialNode[] {
   const placed: SocialNode[] = [];
-  for (const node of nodes) {
-    if (node.id === 'me') {
+  const orderedNodes = [...nodes].sort((left, right) => {
+    if (left.id === 'me') return -1;
+    if (right.id === 'me') return 1;
+    if (left.data?.manualPosition && !right.data?.manualPosition) return -1;
+    if (!left.data?.manualPosition && right.data?.manualPosition) return 1;
+    return 0;
+  });
+  for (const node of orderedNodes) {
+    if (node.id === 'me' || node.data?.manualPosition) {
       placed.push(node);
       continue;
     }
     let position = { ...node.position };
-    let angle = angleFromPosition(position) ?? node.data?.angle ?? 0;
-    let radius = Math.hypot(position.x + NODE_WIDTH / 2 - CENTER.x, position.y + NODE_HEIGHT / 2 - CENTER.y);
-    for (let attempt = 0; attempt < 10; attempt += 1) {
-      const overlaps = placed.some((placedNode) => Math.abs(position.x - placedNode.position.x) < NODE_WIDTH + 18 && Math.abs(position.y - placedNode.position.y) < NODE_HEIGHT + 18);
+    let angle = angleFromPosition(position) ?? node.data?.angle ?? deterministicAngle(node.id, getSocialData(node), placed.length);
+    let radius = Math.max(MIN_SOCIAL_RADIUS, Math.hypot(position.x + NODE_WIDTH / 2 - CENTER.x, position.y + NODE_HEIGHT / 2 - CENTER.y));
+    for (let attempt = 0; attempt < 28; attempt += 1) {
+      const overlaps = placed.some((placedNode) => nodesOverlap(position, placedNode.position));
       if (!overlaps) break;
-      angle += 0.18 + stableOffset(`${node.id}-collision-${attempt}`, 0.06);
-      radius += 12;
-      position = {
-        x: Math.round(CENTER.x + Math.cos(angle) * radius - NODE_WIDTH / 2),
-        y: Math.round(CENTER.y + Math.sin(angle) * radius - NODE_HEIGHT / 2),
-      };
+      angle += GOLDEN_ANGLE * 0.37 + stableOffset(`${node.id}-collision-angle-${attempt}`, 0.08);
+      radius = Math.min(MAX_SOCIAL_RADIUS, radius + 18 + (stableHash(`${node.id}-${attempt}`) % 9));
+      position = positionFromPolar(angle, radius);
     }
-    placed.push({ ...node, position });
+    placed.push({ ...node, position, data: { ...getSocialData(node), angle } });
   }
-  return placed;
+  return nodes.map((node) => placed.find((placedNode) => placedNode.id === node.id) ?? node);
 }
 
 
@@ -184,9 +206,12 @@ function normalizeNodes(nodes: unknown, options: NormalizeNodesOptions = {}): So
     const id = String(node.id || crypto.randomUUID());
     const data = normalizeSocialData(node.data);
     const storedPosition = isValidSocialPosition(node.position) ? node.position : undefined;
-    const angle = normalizeAngle(data.angle) ?? angleFromPosition(storedPosition) ?? (socialClusters.find((cluster) => cluster.id === data.cluster)?.angle ?? 0) + stableOffset(id, 0.72);
-    const shouldKeepStoredPosition = Boolean(storedPosition) && !options.relayout;
-    const position = shouldKeepStoredPosition ? storedPosition! : targetPosition({ id, position: { x: 0, y: 0 }, data: { ...data, angle, manualPosition: false } }, index);
+    const storedAngle = angleFromPosition(storedPosition);
+    const explicitAngle = normalizeAngle(data.angle);
+    const shouldKeepStoredPosition = Boolean(storedPosition) && (!options.relayout || (options.preserveManual && data.manualPosition));
+    const layoutData = { ...data, angle: shouldKeepStoredPosition ? storedAngle ?? explicitAngle : undefined, manualPosition: false };
+    const position = shouldKeepStoredPosition ? storedPosition! : targetPosition({ id, position: { x: 0, y: 0 }, data: layoutData }, index);
+    const angle = angleFromPosition(position) ?? explicitAngle;
     return { id, position, data: { ...data, angle, manualPosition: shouldKeepStoredPosition ? data.manualPosition : false } };
   });
   const laidOut = options.relayout ? avoidCollisions(prepared) : prepared;
@@ -231,7 +256,7 @@ export function SocialPage() {
 
   useEffect(() => {
     if (layoutVersion < CURRENT_SOCIAL_LAYOUT_VERSION) {
-      setStoredNodes(normalizeNodes(storedNodes, { relayout: true }));
+      setStoredNodes(normalizeNodes(storedNodes, { relayout: true, preserveManual: true }));
       setLayoutVersion(CURRENT_SOCIAL_LAYOUT_VERSION);
       return;
     }
@@ -264,8 +289,9 @@ export function SocialPage() {
     const id = crypto.randomUUID();
     const data = normalizeSocialData({ name: '未命名联系人', relationshipType: '朋友', roleCategory: '朋友' });
     const newNode: SocialNode = { id, position: targetPosition({ id, position: { x: 0, y: 0 }, data }, baseNodes.length), data };
-    setStoredNodes([...baseNodes, newNode]);
-    setEditingNode(newNode);
+    const nextNodes = avoidCollisions([...baseNodes, newNode]);
+    setStoredNodes(nextNodes);
+    setEditingNode(nextNodes.find((node) => node.id === id) ?? newNode);
   }
 
   function saveNode() {
@@ -277,7 +303,7 @@ export function SocialPage() {
       ? meNode().position
       : shouldKeepPosition
         ? existingNode!.position
-        : targetPosition({ ...editingNode, data: sanitizedData }, normalizedNodes.findIndex((node) => node.id === editingNode.id));
+        : targetPosition({ ...editingNode, data: { ...sanitizedData, angle: undefined, manualPosition: false } }, normalizedNodes.findIndex((node) => node.id === editingNode.id));
     const sanitizedNode = { ...editingNode, data: sanitizedData, position };
     setStoredNodes((nodes) => normalizeNodes(nodes).map((node) => (node.id === sanitizedNode.id ? sanitizedNode : node)));
     setEditingNode(undefined);
@@ -342,24 +368,22 @@ export function SocialPage() {
           <div className="mt-5 rounded-3xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-400">暂无联系人。添加联系人后会出现在这里。</div>
         ) : (
           <div className="mt-5 overflow-hidden rounded-[1.5rem] border border-slate-100 bg-white/70">
-            <div className="hidden grid-cols-[1fr_1fr_0.75fr_0.9fr_1.4fr_auto] gap-3 border-b border-slate-100 px-4 py-3 text-xs font-semibold text-slate-400 md:grid">
+            <div className="hidden grid-cols-[1fr_1fr_0.75fr_auto] gap-3 border-b border-slate-100 px-4 py-3 text-xs font-semibold text-slate-400 md:grid">
               <button type="button" onClick={() => cycleContactSort('name')} className="text-left font-semibold text-slate-500 hover:text-slate-900">姓名 <span className="ml-1 text-slate-400">{sortArrow('name')}</span></button>
               <span>关系</span>
               <button type="button" onClick={() => cycleContactSort('favorability')} className="text-left font-semibold text-slate-500 hover:text-slate-900">好感度 <span className="ml-1 text-slate-400">{sortArrow('favorability')}</span></button>
-              <span>最近互动</span><span>备注</span><span>操作</span>
+              <span>操作</span>
             </div>
             <div className="divide-y divide-slate-100">
               {sortedContacts.map((node) => {
                 const data = getSocialData(node);
                 const favorability = clampScore(data.subjectiveFavorability);
                 return (
-                  <article key={node.id} className="grid gap-3 px-4 py-4 text-sm md:grid-cols-[1fr_1fr_0.75fr_0.9fr_1.4fr_auto] md:items-center">
+                  <article key={node.id} className="grid gap-3 px-4 py-4 text-sm md:grid-cols-[1fr_1fr_0.75fr_auto] md:items-center">
                     <button type="button" onClick={() => setEditingNode(node)} className="text-left font-semibold text-slate-950 hover:text-sky-700">{data.name}</button>
                     <div className="text-slate-500"><span className="rounded-full bg-slate-50 px-2.5 py-1 text-xs font-semibold ring-1 ring-white/80">{data.roleCategory || data.relationshipType}</span></div>
                     <div className="font-semibold text-slate-700">{favorability}/100</div>
-                    <div className="text-slate-500">{formatLastInteraction(data.lastInteractionDate)}</div>
-                    <p className="line-clamp-2 text-slate-500">{data.notes || '暂无备注'}</p>
-                    <button type="button" onClick={() => setEditingNode(node)} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/85 text-lg font-semibold leading-none text-slate-500 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">⋯</button>
+                    <button type="button" onClick={() => setEditingNode(node)} aria-label={`查看或编辑 ${data.name}`} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/85 text-lg font-semibold leading-none text-slate-500 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">⋯</button>
                   </article>
                 );
               })}
@@ -371,8 +395,12 @@ export function SocialPage() {
       {editingNode ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/15 px-4 backdrop-blur-sm">
           <section className="w-full max-w-2xl rounded-[2rem] border border-white/80 bg-white/95 p-5 shadow-2xl shadow-slate-300/60">
-            <h2 className="text-2xl font-semibold text-slate-950">{editingNode.id === 'me' ? '编辑中心节点' : '编辑关系'}</h2>
+            <h2 className="text-2xl font-semibold text-slate-950">{editingNode.id === 'me' ? '编辑中心节点' : '关系详情'}</h2>
             <p className="mt-2 rounded-2xl bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-500">表单只保留当前最必要的信息；旧数据中的熟悉度、信任等字段会继续保留在本地存储中。</p>
+            <div className="mt-3 grid gap-2 text-xs text-slate-500 md:grid-cols-2">
+              <span className="rounded-2xl bg-white/80 px-4 py-3 ring-1 ring-white/80">最近互动：{formatLastInteraction(editingNode.data?.lastInteractionDate)}</span>
+              <span className="rounded-2xl bg-white/80 px-4 py-3 ring-1 ring-white/80">备注：{editingNode.data?.notes || '暂无备注'}</span>
+            </div>
             <div className="mt-4 grid gap-4 md:grid-cols-2">
               <label className="text-sm font-medium text-slate-600">
                 {editingNode.id === 'me' ? '昵称' : '姓名'}
@@ -386,6 +414,7 @@ export function SocialPage() {
               ) : (
                 <>
                   <label className="text-sm font-medium text-slate-600">角色/分类<input value={editingNode.data?.roleCategory ?? ''} onChange={(event) => updateEditingData('roleCategory', event.target.value)} placeholder="同学、家人、线上朋友……" className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3" /></label>
+                  <label className="text-sm font-medium text-slate-600">最近互动<input type="date" value={editingNode.data?.lastInteractionDate ?? ''} onChange={(event) => updateEditingData('lastInteractionDate', event.target.value)} className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3" /></label>
                   <label className="text-sm font-medium text-slate-600 md:col-span-2">{favorabilityField.label}<div className="mt-2 flex items-center gap-3"><input type="range" min="0" max="100" value={clampScore(editingNode.data?.[favorabilityField.key])} onChange={(event) => updateEditingData(favorabilityField.key, event.target.value)} className="w-full accent-slate-900" /><input type="number" min="0" max="100" value={clampScore(editingNode.data?.[favorabilityField.key])} onChange={(event) => updateEditingData(favorabilityField.key, String(clampScore(event.target.value)))} className="w-24 rounded-2xl border border-slate-200 px-3 py-2" /></div><p className="mt-2 text-xs text-slate-400">{socialRing(clampScore(editingNode.data?.subjectiveFavorability)).label}</p></label>
                 </>
               )}
