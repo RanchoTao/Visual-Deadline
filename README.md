@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./assets/visualdeadline-banner.png" alt="Visualized Deadline banner" />
+</p>
+
 # Visualized-Deadline
 Visualized Deadline is a Flysoon Labs project by Rancho Tao.
 
