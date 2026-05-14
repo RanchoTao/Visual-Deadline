@@ -1,13 +1,13 @@
 # Repository Structure Suggestion
 
-Visualized-Deadline should be organized like a modern open-source product, not a disposable prototype. The structure below separates product code, brand assets, launch materials, AI experiments, plugins, and long-term roadmap artifacts.
+Visual Deadline should be organized like a modern open-source product, not a disposable prototype. The structure below separates product code, brand assets, launch materials, AI experiments, plugins, and long-term roadmap artifacts.
 
 ---
 
 ## Suggested Structure
 
 ```text
-Visualized-Deadline/
+Visual Deadline/
 ├── assets/
 │   ├── brand/
 │   ├── diagrams/

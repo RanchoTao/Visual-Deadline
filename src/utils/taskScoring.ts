@@ -202,6 +202,10 @@ function roundToTenth(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
+function roundToHundredth(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
 function getPressureState(rawPressure: number): PressureState {
   if (rawPressure > 100) return 'burnout';
   if (rawPressure >= 81) return 'overload';
@@ -222,18 +226,19 @@ export function calculateRecoveryRelief(tasks: Task[]): number {
   }, 0);
 }
 
-export function createPressureCalibration(referencePressure: number, referenceTaskLoad: number, taskCount: number, capturedAt = new Date().toISOString()): PressureCalibrationSnapshot {
+export function createPressureCalibration(referencePressure: number, referenceTaskLoad: number, taskCount: number, capturedAt = new Date().toISOString(), recoveryRelief = 0): PressureCalibrationSnapshot {
   const safeReferencePressure = clampPressure(referencePressure);
   const safeReferenceTaskLoad = Math.max(0, referenceTaskLoad);
-  const pressureRatio = safeReferenceTaskLoad > 0 ? safeReferencePressure / safeReferenceTaskLoad : DEFAULT_PRESSURE_RATIO;
+  const safeRecoveryRelief = Math.max(0, recoveryRelief);
+  const pressureRatio = safeReferenceTaskLoad > 0 ? (safeReferencePressure + safeRecoveryRelief) / safeReferenceTaskLoad : DEFAULT_PRESSURE_RATIO;
 
   return {
     referencePressure: safeReferencePressure,
     referenceTaskLoad: roundToTenth(safeReferenceTaskLoad),
-    pressureRatio: roundToTenth(pressureRatio),
+    pressureRatio: roundToHundredth(pressureRatio),
     taskCount,
     capturedAt,
-    note: 'referencePressure describes how the calibrated task set felt; current pressure = currentTaskLoad × pressureRatio - recoveryRelief. Future versions may personalize urgency/importance weights from behavior.',
+    note: 'referencePressure describes how the calibrated task set felt; current pressure = currentTaskLoad × pressureRatio - recoveryRelief. The mapping coefficient includes recovery relief so recalibrating the current task set moves the pressure index toward the user target.',
   };
 }
 
@@ -247,7 +252,7 @@ export function normalizePressureCalibration(calibration?: Partial<PressureCalib
   return {
     referencePressure,
     referenceTaskLoad: roundToTenth(referenceTaskLoad),
-    pressureRatio: roundToTenth(pressureRatio),
+    pressureRatio: roundToHundredth(pressureRatio),
     taskCount: typeof calibration?.taskCount === 'number' ? Math.max(0, calibration.taskCount) : 0,
     capturedAt: calibration?.capturedAt || new Date().toISOString(),
     note: calibration?.note || 'Migrated pressure calibration. Subjective pressure is treated as a calibration sample, not a permanent base layer.',
@@ -301,7 +306,7 @@ export function getPressureInterpretation(totalPressure: number): string {
 }
 
 export const achievementCatalog: Omit<Achievement, 'unlockedAt'>[] = [
-  { id: 'first-entry', title: '初见飞升', description: '你开始把任务、时间与压力放进一个可观察的系统。' },
+  { id: 'first-entry', title: '初见 VD', description: '你开始把任务、时间与压力放进一个可观察的系统。' },
   { id: 'first-task-created', title: '第一颗任务星', description: '第一个事项已被记录，注意力从脑内转移到系统中。' },
   { id: 'first-task-completed', title: '截止线生还者', description: '你完成了一项任务，系统记录下这次从截止线中回收的秩序。' },
   { id: 'first-manageable-pressure', title: '压力校准者', description: '你完成了一次压力校准，让指数更接近真实体感。' },

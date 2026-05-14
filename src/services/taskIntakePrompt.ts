@@ -1,7 +1,7 @@
 import type { LifecycleStatus, TaskInput, Task } from '../types/task';
 import { clampImportance, clampProgress, normalizeActivityType } from '../utils/taskScoring';
 
-export const taskIntakeSystemPrompt = `You are the task structuring engine of Visualized Deadline (VD).
+export const taskIntakeSystemPrompt = `You are the task structuring engine of Visual Deadline (VD).
 
 Your job is to convert the user's natural language into structured task drafts.
 

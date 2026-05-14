@@ -7,7 +7,7 @@ export interface TaskAnalysisPayload {
   tasks: Array<Pick<Task, 'id' | 'title' | 'description' | 'importance' | 'deadline' | 'progress' | 'activityType' | 'lifecycleStatus' | 'createdAt' | 'updatedAt'> & { taskProgress: number; displayProgress: number; progressMode: 'manual' | 'auto'; timeProgress: number; estimatedDuration?: number; decomposition?: string[]; stages?: string[]; milestoneSuggestions?: string[] }>;
 }
 
-export const taskAnalysisSystemPrompt = `You are the cognitive analysis engine of Visualized Deadline (VD), an AI-native task and life-structure management system.
+export const taskAnalysisSystemPrompt = `You are the cognitive analysis engine of Visual Deadline (VD), an AI-native task and life-structure management system.
 
 VD is not a generic todo app.
 VD models tasks as pressure, value, time risk, execution load, and long-term growth alignment.

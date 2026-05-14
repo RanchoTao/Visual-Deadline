@@ -121,7 +121,7 @@ export function AITaskAnalysisPanel({ tasks, pressure, onAIConnected, onAIReport
               <button type="button" onClick={() => setIsSettingsOpen(false)} className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-500 hover:bg-slate-200">关闭</button>
             </div>
 
-            <p className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-500 ring-1 ring-white/80">API Key 仅保存在当前浏览器本地，用于直接请求你选择的模型服务。飞升不会上传或保存你的 API Key 到服务器。</p>
+            <p className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-500 ring-1 ring-white/80">API Key 仅保存在当前浏览器本地，用于直接请求你选择的模型服务。VD 不会上传或保存你的 API Key 到服务器。</p>
             <p className="mt-2 rounded-2xl bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-700 ring-1 ring-amber-100">任务数据会直接发送给你选择的 AI 服务商用于生成分析。请不要填写不愿发送给第三方模型的敏感内容。</p>
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./visualdeadline-banner.png" alt="Visualized-Deadline banner" />
+  <img src="./visualdeadline-banner.png" alt="Visual Deadline banner" />
 </p>
 
 <div align="center">
@@ -23,7 +23,7 @@ A pressure-aware, visualization-driven life operating system for deadlines, prio
 
 ## What is VD?
 
-**Visual-Deadline (VD)** is not a traditional todo list. It is a **life operating system** that makes invisible pressure visible.
+**Visual Deadline (VD)** is not a traditional todo list. It is a **life operating system** that makes invisible pressure visible.
 
 Most task apps ask: “What do you need to do?” VD asks a deeper question:
 
@@ -62,7 +62,7 @@ The long-term goal is to become a local-first, extensible system for understandi
 
 Traditional todo apps often fail when life becomes complex:
 
-| Traditional todo lists | Visualized-Deadline |
+| Traditional todo lists | Visual Deadline |
 | --- | --- |
 | Flat task rows | Spatial pressure fields |
 | Manual priority labels | Calculated urgency × importance |
@@ -162,7 +162,7 @@ More demo ideas are documented in [`docs/DEMO_GIF_IDEAS.md`](./docs/DEMO_GIF_IDE
 VD is currently a Vite + React + TypeScript application with a local-first browser data model.
 
 ```text
-Visualized-Deadline
+Visual Deadline
 ├── src/                    # Product source code
 │   ├── App.tsx             # Shell, views, state orchestration
 │   ├── main.tsx            # React entrypoint
@@ -357,4 +357,4 @@ The project also draws from ideas in time management, cognitive load theory, per
 
 ## License
 
-Visualized-Deadline is licensed under the [Apache License 2.0](./LICENSE).
+Visual Deadline is licensed under the [Apache License 2.0](./LICENSE).

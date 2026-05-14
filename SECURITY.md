@@ -1,6 +1,6 @@
 # Security Policy
 
-Visualized-Deadline (VD) is a pressure-aware life operating system. Because it can contain personal tasks, relationships, goals, logs, and future AI-generated life context, security and privacy are central product requirements.
+Visual Deadline (VD) is a pressure-aware life operating system. Because it can contain personal tasks, relationships, goals, logs, and future AI-generated life context, security and privacy are central product requirements.
 
 ---
 

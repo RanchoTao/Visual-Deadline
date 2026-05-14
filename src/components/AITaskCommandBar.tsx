@@ -93,7 +93,7 @@ export function AITaskCommandBar({ tasks, onConfirmTasks }: AITaskCommandBarProp
         <div>
           <p className="text-sm font-semibold text-slate-500">AI 任务录入</p>
           <h2 className="mt-1 text-2xl font-semibold">自然语言 → 可确认任务草稿</h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">说出最近要推进的人生事项，AI 会抽取任务、阶段与拆解建议，确认后才会写入飞升。</p>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">说出最近要推进的人生事项，AI 会抽取任务、阶段与拆解建议，确认后才会写入 VD。</p>
         </div>
         <span className="rounded-full bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-500 ring-1 ring-white/80">{hasApiKey ? '已配置 API Key' : '未配置 API Key'}</span>
       </div>

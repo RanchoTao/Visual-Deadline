@@ -1,4 +1,4 @@
-# Visualized-Deadline Branding Suggestions
+# Visual Deadline Branding Suggestions
 
 VD should feel like a serious open-source product with a distinctive emotional and visual identity: futuristic, calm, pressure-aware, and technically credible.
 
@@ -41,7 +41,7 @@ This should remain the main project line. It is specific, memorable, and clearly
 
 ## GitHub Bio
 
-**Visualized-Deadline (VD)** — a pressure-aware, visualization-driven life operating system. Visualize pressure, not just tasks.
+**Visual Deadline (VD)** — a pressure-aware, visualization-driven life operating system. Visualize pressure, not just tasks.
 
 Shorter version:
 
@@ -61,11 +61,11 @@ Short GitHub repository description:
 
 ## Social Media One-Line Intro
 
-I’m building **Visualized-Deadline**: an open-source life operating system that visualizes deadline pressure instead of showing another flat todo list.
+I’m building **Visual Deadline**: an open-source life operating system that visualizes deadline pressure instead of showing another flat todo list.
 
 Alternative:
 
-**Visualized-Deadline** turns tasks, deadlines, life domains, and relationships into a pressure map so you can see what is actually weighing on your life.
+**Visual Deadline** turns tasks, deadlines, life domains, and relationships into a pressure map so you can see what is actually weighing on your life.
 
 ---
 
@@ -73,7 +73,7 @@ Alternative:
 
 ### Option A
 
-> **Visualized-Deadline is a pressure-aware life operating system for people whose lives cannot fit inside a flat todo list.**
+> **Visual Deadline is a pressure-aware life operating system for people whose lives cannot fit inside a flat todo list.**
 
 ### Option B
 

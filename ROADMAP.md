@@ -1,6 +1,6 @@
-# Visualized-Deadline Roadmap
+# Visual Deadline Roadmap
 
-Visualized-Deadline (VD) is evolving from a visual deadline prototype into a pressure-aware, local-first life operating system.
+Visual Deadline (VD) is evolving from a visual deadline prototype into a pressure-aware, local-first life operating system.
 
 The roadmap is intentionally ambitious, but staged. Each phase should produce a usable product, not just infrastructure.
 

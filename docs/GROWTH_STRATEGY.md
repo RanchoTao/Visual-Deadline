@@ -1,6 +1,6 @@
 # Open Source Growth Strategy
 
-This strategy is designed for an early-stage solo developer building Visualized-Deadline into a credible open-source product.
+This strategy is designed for an early-stage solo developer building Visual Deadline into a credible open-source product.
 
 ---
 

@@ -1,6 +1,7 @@
 import type { Achievement, Goal, PressureCalibrationSnapshot, PressureHistoryRecord, Task, UserProfile } from '../types/task';
 
-export const APP_NAME = 'Visualized-Deadline';
+export const APP_NAME = 'Visual Deadline';
+const LEGACY_APP_NAMES = ['Visualized-Deadline'] as const;
 export const SCHEMA_VERSION = '0.7';
 export const STORAGE_CHANGE_EVENT = 'vd-storage-change';
 export const STORAGE_RECOVERY_EVENT = 'vd-storage-recovery';
@@ -197,7 +198,7 @@ export function migrateData(raw: unknown): MigrationResult {
   if (!envelope) return { ok: false, error: '导入文件不是有效的 VD 数据对象。' };
 
   const app = envelope.app;
-  if (app !== undefined && app !== APP_NAME) return { ok: false, error: '导入文件不属于 Visualized-Deadline。' };
+  if (app !== undefined && app !== APP_NAME && !LEGACY_APP_NAMES.includes(app as typeof LEGACY_APP_NAMES[number])) return { ok: false, error: '导入文件不属于 Visual Deadline。' };
 
   const schemaVersion = typeof envelope.schemaVersion === 'string' ? envelope.schemaVersion : 'legacy';
   if (schemaVersion !== 'legacy' && compareVersions(schemaVersion, SCHEMA_VERSION) > 0) {

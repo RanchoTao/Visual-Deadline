@@ -1,6 +1,6 @@
-# Contributing to Visualized-Deadline
+# Contributing to Visual Deadline
 
-Thank you for considering a contribution to **Visualized-Deadline (VD)**.
+Thank you for considering a contribution to **Visual Deadline (VD)**.
 
 VD is an early-stage open-source product with a strong point of view: productivity tools should help people see pressure, structure, and recovery — not just collect more tasks.
 

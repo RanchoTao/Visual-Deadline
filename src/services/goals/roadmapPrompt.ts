@@ -1,6 +1,6 @@
 import type { Goal, Task } from '../../types/task';
 
-export const goalRoadmapSystemPrompt = `You are the long-term goal roadmap engine of Visualized Deadline (VD).
+export const goalRoadmapSystemPrompt = `You are the long-term goal roadmap engine of Visual Deadline (VD).
 
 Generate editable roadmap suggestions for one strategic goal.
 

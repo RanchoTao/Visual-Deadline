@@ -14,6 +14,7 @@ import type { Achievement, ActivityType, Goal, GoalInput, LifecycleStatus, LifeO
 import {
   achievementCatalog,
   calculatePressureIndex,
+  calculateRecoveryRelief,
   calculateTaskLoad,
   createPressureCalibration,
   clampImportance,
@@ -282,6 +283,13 @@ function App() {
   const recommendedTasks = useMemo(() => normalizedTasks.filter((task) => task.lifecycleStatus === 'active').sort((a, b) => getTaskScore(b) - getTaskScore(a)).slice(0, 3), [normalizedTasks]);
   const deadlinePressureTasks = useMemo(() => activeTasks.filter(isDeadlinePressureTask).sort((a, b) => getTaskScore(b) - getTaskScore(a)), [activeTasks]);
   const pressure = useMemo<PressureBreakdown>(() => calculatePressureIndex(normalizedTasks, normalizedPressureCalibration, legacyReferencePressure), [normalizedTasks, normalizedPressureCalibration, legacyReferencePressure]);
+  const recalibrationPreview = useMemo<PressureBreakdown>(() => {
+    const activeLoad = calculateTaskLoad(normalizedTasks);
+    const activeCount = normalizedTasks.filter((task) => task.lifecycleStatus === 'active').length;
+    const recoveryRelief = calculateRecoveryRelief(normalizedTasks);
+    const previewCalibration = createPressureCalibration(recalibrationPressure, activeLoad, activeCount, new Date().toISOString(), recoveryRelief);
+    return calculatePressureIndex(normalizedTasks, previewCalibration, legacyReferencePressure);
+  }, [legacyReferencePressure, normalizedTasks, recalibrationPressure]);
 
   useEffect(() => {
     if (JSON.stringify(tasks) !== JSON.stringify(normalizedTasks)) {
@@ -433,7 +441,8 @@ function App() {
   function savePressureCalibration(referencePressure: number, sourceTasks = normalizedTasks) {
     const activeLoad = calculateTaskLoad(sourceTasks);
     const activeCount = sourceTasks.filter((task) => task.lifecycleStatus === 'active').length;
-    const calibration = createPressureCalibration(referencePressure, activeLoad, activeCount);
+    const recoveryRelief = calculateRecoveryRelief(sourceTasks);
+    const calibration = createPressureCalibration(referencePressure, activeLoad, activeCount, new Date().toISOString(), recoveryRelief);
     setPressureCalibration(calibration);
     unlockAchievement('first-manageable-pressure');
     recordPressureSnapshot('recalibration', sourceTasks, '压力映射系数已重新校准。', calibration);
@@ -606,7 +615,7 @@ function App() {
   );
 
   const moduleContent: Record<LifeOSModule, ReactElement> = {
-    home: <HomePage pressure={pressure} pressureHistory={normalizedPressureHistory} recommendedTasks={recommendedTasks} activeTasks={activeTasks} tasks={normalizedTasks} goals={normalizedGoals} onSaveGoal={saveGoal} onDeleteGoal={deleteGoal} onRoadmapGenerated={() => unlockAchievement('roadmap-generated')} onAddTask={() => setIsFormOpen(true)} onRecalibrate={openRecalibration} onOpenTasks={() => setActiveModule('task')} />,
+    home: <HomePage pressure={pressure} pressureHistory={normalizedPressureHistory} recommendedTasks={recommendedTasks} activeTasks={activeTasks} tasks={normalizedTasks} goals={normalizedGoals} onSaveGoal={saveGoal} onDeleteGoal={deleteGoal} onRoadmapGenerated={() => unlockAchievement('roadmap-generated')} onRecalibrate={openRecalibration} onOpenTasks={() => setActiveModule('task')} />,
     task: taskModule,
     map: <LifeMapPage />,
     social: <SocialPage />,
@@ -625,9 +634,16 @@ function App() {
             <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">此刻这组任务让你感觉有多大压力？</h2>
             <p className="mt-3 text-sm leading-6 text-slate-500">系统会读取当前进行中任务负载，并用你的主观感受重新计算个体压力映射系数。</p>
             <div className="mt-6 rounded-3xl bg-slate-50/90 p-5 ring-1 ring-white/80">
-              <div className="flex items-end justify-between gap-4"><span className="text-sm font-medium text-slate-600">主观压力</span><span className="text-5xl font-semibold text-slate-950">{recalibrationPressure}</span></div>
+              <div className="flex items-end justify-between gap-4"><span className="text-sm font-medium text-slate-600">主观压力</span><span className="text-5xl font-semibold text-slate-950 tabular-nums">{recalibrationPressure}</span></div>
               <input type="range" min="0" max="100" value={recalibrationPressure} onChange={(event) => setRecalibrationPressure(clampPressure(Number(event.target.value)))} className="mt-5 w-full accent-slate-700" />
+              <div className="mt-5 h-2 overflow-hidden rounded-full bg-white"><div className="h-full rounded-full bg-slate-800 transition-all duration-700 ease-out" style={{ width: `${Math.min(100, recalibrationPreview.rawPressure)}%` }} /></div>
+              <div className="mt-4 grid gap-2 text-xs text-slate-500 sm:grid-cols-3">
+                <span className="rounded-full bg-white px-3 py-2">新系数 ×{recalibrationPreview.pressureRatio}</span>
+                <span className="rounded-full bg-white px-3 py-2">预估压力 {recalibrationPreview.rawPressure}</span>
+                <span className="rounded-full bg-white px-3 py-2">目标 {recalibrationPreview.referencePressure}</span>
+              </div>
             </div>
+            <p className="mt-4 rounded-2xl bg-sky-50 px-4 py-3 text-xs leading-5 text-sky-700 ring-1 ring-sky-100">保存后会重算压力映射系数、刷新当前压力指数、记录新的压力曲线节点，并让推荐卡片显示新的校准压力权重。</p>
             <div className="mt-6 flex justify-end gap-3"><button type="button" onClick={() => setIsRecalibrationOpen(false)} className="rounded-full px-5 py-2.5 text-sm font-semibold text-slate-500 hover:bg-slate-100">取消</button><button type="button" onClick={submitRecalibration} className="rounded-full bg-white/85 px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">保存校准</button></div>
           </section>
         </div>
@@ -646,7 +662,7 @@ function App() {
               <button type="button" onClick={() => setWelcomeBackMessage(undefined)} className="rounded-full bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-500 ring-1 ring-slate-200 hover:bg-slate-100" aria-label="关闭欢迎提示">关闭</button>
             </div>
             <div className="relative mt-5 space-y-3 text-sm leading-6 text-slate-600">
-              <p className="text-lg font-semibold text-slate-800">欢迎回到飞升。</p>
+              <p className="text-lg font-semibold text-slate-800">欢迎回到 VD。</p>
               <p className="rounded-2xl bg-slate-50/80 px-4 py-3 ring-1 ring-white/80">当前时间：{welcomeBackMessage.currentTime}</p>
               <p className="rounded-2xl bg-white/75 px-4 py-3 font-semibold text-slate-700 ring-1 ring-white/80">{welcomeBackMessage.detail}</p>
             </div>
