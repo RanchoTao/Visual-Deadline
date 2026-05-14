@@ -10,15 +10,14 @@ import { TaskForm } from './components/TaskForm';
 import { SocialPage } from './components/SocialPage';
 import { TaskPage } from './components/TaskPage';
 import { useLocalStorage } from './hooks/useLocalStorage';
-import type { Achievement, ActivityType, Goal, GoalInput, LifecycleStatus, LifeOSModule, PressureBreakdown, PressureCalibrationSnapshot, PressureHistoryEventType, PressureHistoryRecord, Task, TaskInput, UserProfile } from './types/task';
+import type { Achievement, AIArtifact, AIArtifactInput, ActivityType, Goal, GoalInput, LifecycleStatus, LifeOSModule, PressureBreakdown, PressureCalibrationSnapshot, PressureHistoryEventType, PressureHistoryRecord, Task, TaskInput, UserProfile } from './types/task';
 import {
   achievementCatalog,
   calculatePressureIndex,
-  calculateTaskLoad,
   createPressureCalibration,
   clampImportance,
-  clampPressure,
   clampProgress,
+  clampSubjectivePressure,
   getTaskScore,
   getUrgencyScore,
   normalizePressureCalibration,
@@ -28,7 +27,7 @@ import {
   normalizeProgressMode,
 } from './utils/taskScoring';
 import { appendPressureHistoryRecord, createPressureHistoryRecord, normalizePressureHistory } from './utils/pressureHistory';
-import { hasValue, loadValue, savePressure, saveValue, storageKeys } from './storage';
+import { hasValue, loadValue, saveAutoBackup, savePressure, saveValue, storageKeys } from './storage';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const WELCOME_BACK_GAP_MS = 2 * 60 * 60 * 1000;
@@ -89,10 +88,14 @@ function isDeadlinePressureTask(task: Task): boolean {
 function readBaselinePressure(): number | null {
   try {
     const storedPressure = loadValue<number | null>(storageKeys.baselinePressure, null);
-    return storedPressure === null ? null : clampPressure(storedPressure);
+    return storedPressure === null ? null : clampSubjectivePressure(storedPressure);
   } catch {
     return null;
   }
+}
+
+function debugOnboardingPersistence(message: string, payload?: unknown): void {
+  console.info(`[VD onboarding:persistence] ${message}`, payload ?? '');
 }
 
 function readInitialOnboardingComplete(): boolean {
@@ -170,8 +173,84 @@ function normalizeStoredAchievements(achievements: Achievement[]): Achievement[]
   return achievements.flatMap((achievement) => {
     if (!achievement.unlockedAt) return [];
     const catalogAchievement = catalogById.get(achievement.id);
-    return [{ ...(catalogAchievement ?? achievement), unlockedAt: achievement.unlockedAt }];
+    if (!catalogAchievement) return [];
+    return [{ ...catalogAchievement, unlockedAt: achievement.unlockedAt }];
   });
+}
+
+
+function normalizeAIArtifacts(artifacts: AIArtifact[]): AIArtifact[] {
+  if (!Array.isArray(artifacts)) return [];
+
+  return artifacts.flatMap((artifact) => {
+    if (!artifact || typeof artifact !== 'object' || !artifact.content || !artifact.createdAt) return [];
+    return [{
+      id: artifact.id || crypto.randomUUID(),
+      kind: artifact.kind || 'review',
+      title: artifact.title || 'AI 记录',
+      content: artifact.content,
+      createdAt: artifact.createdAt,
+      relatedTaskIds: Array.isArray(artifact.relatedTaskIds) ? artifact.relatedTaskIds.filter((id): id is string => typeof id === 'string') : [],
+      relatedGoalIds: Array.isArray(artifact.relatedGoalIds) ? artifact.relatedGoalIds.filter((id): id is string => typeof id === 'string') : [],
+      pressure: typeof artifact.pressure === 'number' ? artifact.pressure : undefined,
+      model: typeof artifact.model === 'string' ? artifact.model : undefined,
+      metadata: artifact.metadata && typeof artifact.metadata === 'object' ? artifact.metadata : undefined,
+    }];
+  }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 120);
+}
+
+function createAIArtifact(input: AIArtifactInput): AIArtifact {
+  return {
+    ...input,
+    id: crypto.randomUUID(),
+    createdAt: input.createdAt ?? new Date().toISOString(),
+    relatedTaskIds: input.relatedTaskIds ?? [],
+    relatedGoalIds: input.relatedGoalIds ?? [],
+  };
+}
+
+function getLocalDateKey(value: string): string | undefined {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return undefined;
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function hasCompletedInFinalHour(task: Task): boolean {
+  if (!task.completedAt || !task.deadline) return false;
+  const completedAt = new Date(task.completedAt).getTime();
+  const deadline = new Date(task.deadline).getTime();
+  if (!Number.isFinite(completedAt) || !Number.isFinite(deadline)) return false;
+  const diff = deadline - completedAt;
+  return diff >= 0 && diff <= 60 * 60 * 1000;
+}
+
+function hasConsecutiveDateRun(dateKeys: string[], targetDays: number): boolean {
+  const uniqueDates = [...new Set(dateKeys)].sort();
+  if (uniqueDates.length < targetDays) return false;
+  let run = 1;
+  for (let index = 1; index < uniqueDates.length; index += 1) {
+    const previous = new Date(`${uniqueDates[index - 1]}T00:00:00`).getTime();
+    const current = new Date(`${uniqueDates[index]}T00:00:00`).getTime();
+    run = current - previous === MS_PER_DAY ? run + 1 : 1;
+    if (run >= targetDays) return true;
+  }
+  return false;
+}
+
+function getMaxFinalHourCompletionRun(tasks: Task[]): number {
+  let currentRun = 0;
+  let maxRun = 0;
+  tasks
+    .filter((task) => task.lifecycleStatus === 'completed' && task.completedAt)
+    .sort((left, right) => new Date(left.completedAt as string).getTime() - new Date(right.completedAt as string).getTime())
+    .forEach((task) => {
+      currentRun = hasCompletedInFinalHour(task) ? currentRun + 1 : 0;
+      maxRun = Math.max(maxRun, currentRun);
+    });
+  return maxRun;
 }
 
 function normalizeProfile(profile: unknown): UserProfile {
@@ -255,14 +334,16 @@ function App() {
   const [tasks, setTasks] = useLocalStorage<Task[]>(storageKeys.tasks, []);
   const [goals, setGoals] = useLocalStorage<Goal[]>(storageKeys.goals, []);
   const [achievements, setAchievements] = useLocalStorage<Achievement[]>(storageKeys.achievements, []);
+  const [aiArtifacts, setAIArtifacts] = useLocalStorage<AIArtifact[]>(storageKeys.aiArtifacts, []);
   const [profile, setProfile] = useLocalStorage<UserProfile>(storageKeys.profile, defaultProfile);
   const [onboardingComplete, setOnboardingComplete] = useLocalStorage<boolean>(storageKeys.onboardingComplete, readInitialOnboardingComplete());
-  const legacyReferencePressure = readBaselinePressure() ?? 35;
+  const legacyReferencePressure = readBaselinePressure() ?? 5;
   const [pressureCalibration, setPressureCalibration] = useLocalStorage<PressureCalibrationSnapshot>(storageKeys.pressureCalibration, normalizePressureCalibration(null, legacyReferencePressure));
   const [pressureHistory, setPressureHistory] = useLocalStorage<PressureHistoryRecord[]>(storageKeys.pressureHistory, []);
   const [activeModule, setActiveModule] = useState<LifeOSModule>('home');
   const [isRecalibrationOpen, setIsRecalibrationOpen] = useState(false);
-  const [recalibrationPressure, setRecalibrationPressure] = useState(legacyReferencePressure);
+  const [recalibrationPressure, setRecalibrationPressure] = useState(clampSubjectivePressure(legacyReferencePressure));
+  const [pressureClock, setPressureClock] = useState(() => Date.now());
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | undefined>();
   const [toastAchievement, setToastAchievement] = useState<Achievement | undefined>();
@@ -275,13 +356,25 @@ function App() {
   }, [tasks]);
   const normalizedGoals = useMemo(() => normalizeGoals(goals), [goals]);
   const normalizedAchievements = useMemo(() => normalizeStoredAchievements(achievements), [achievements]);
+  const normalizedAIArtifacts = useMemo(() => normalizeAIArtifacts(aiArtifacts), [aiArtifacts]);
   const normalizedProfile = useMemo(() => normalizeProfile(profile), [profile]);
   const normalizedPressureCalibration = useMemo(() => normalizePressureCalibration(pressureCalibration, legacyReferencePressure), [legacyReferencePressure, pressureCalibration]);
   const normalizedPressureHistory = useMemo(() => normalizePressureHistory(pressureHistory), [pressureHistory]);
   const activeTasks = useMemo(() => normalizedTasks.filter((task) => task.lifecycleStatus === 'active'), [normalizedTasks]);
-  const recommendedTasks = useMemo(() => normalizedTasks.filter((task) => task.lifecycleStatus === 'active').sort((a, b) => getTaskScore(b) - getTaskScore(a)).slice(0, 3), [normalizedTasks]);
-  const deadlinePressureTasks = useMemo(() => activeTasks.filter(isDeadlinePressureTask).sort((a, b) => getTaskScore(b) - getTaskScore(a)), [activeTasks]);
-  const pressure = useMemo<PressureBreakdown>(() => calculatePressureIndex(normalizedTasks, normalizedPressureCalibration, legacyReferencePressure), [normalizedTasks, normalizedPressureCalibration, legacyReferencePressure]);
+  const pressureNow = useMemo(() => new Date(pressureClock), [pressureClock]);
+  const recommendedTasks = useMemo(() => normalizedTasks.filter((task) => task.lifecycleStatus === 'active').sort((a, b) => getTaskScore(b, pressureNow) - getTaskScore(a, pressureNow)).slice(0, 3), [normalizedTasks, pressureNow]);
+  const deadlinePressureTasks = useMemo(() => activeTasks.filter(isDeadlinePressureTask).sort((a, b) => getTaskScore(b, pressureNow) - getTaskScore(a, pressureNow)), [activeTasks, pressureNow]);
+  const pressure = useMemo<PressureBreakdown>(() => calculatePressureIndex(normalizedTasks, normalizedPressureCalibration, legacyReferencePressure, pressureNow), [normalizedTasks, normalizedPressureCalibration, legacyReferencePressure, pressureNow]);
+  const recalibrationPreview = useMemo<PressureBreakdown>(() => {
+    const capturedAt = new Date().toISOString();
+    const previewCalibration = createPressureCalibration(recalibrationPressure, normalizedTasks, 0, capturedAt);
+    return calculatePressureIndex(normalizedTasks, previewCalibration, legacyReferencePressure, pressureNow);
+  }, [legacyReferencePressure, normalizedTasks, pressureNow, recalibrationPressure]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => setPressureClock(Date.now()), 60 * 1000);
+    return () => window.clearInterval(intervalId);
+  }, []);
 
   useEffect(() => {
     if (JSON.stringify(tasks) !== JSON.stringify(normalizedTasks)) {
@@ -300,6 +393,12 @@ function App() {
       setAchievements(normalizedAchievements);
     }
   }, [achievements, normalizedAchievements, setAchievements]);
+
+  useEffect(() => {
+    if (JSON.stringify(aiArtifacts) !== JSON.stringify(normalizedAIArtifacts)) {
+      setAIArtifacts(normalizedAIArtifacts);
+    }
+  }, [aiArtifacts, normalizedAIArtifacts, setAIArtifacts]);
 
   useEffect(() => {
     if (JSON.stringify(profile) !== JSON.stringify(normalizedProfile)) {
@@ -379,7 +478,7 @@ function App() {
 
 
   function recordPressureSnapshot(eventType: PressureHistoryEventType, sourceTasks = normalizedTasks, note?: string, calibration = normalizedPressureCalibration) {
-    const snapshotPressure = calculatePressureIndex(sourceTasks, calibration, legacyReferencePressure);
+    const snapshotPressure = calculatePressureIndex(sourceTasks, calibration, legacyReferencePressure, new Date());
     const record = createPressureHistoryRecord(snapshotPressure, sourceTasks, eventType, note);
     setPressureHistory((records) => appendPressureHistoryRecord(records, record));
   }
@@ -388,6 +487,12 @@ function App() {
     if (!onboardingComplete) return;
     recordPressureSnapshot('auto');
   }, [onboardingComplete, pressure.rawPressure, pressure.currentTaskLoad, pressure.recoveryRelief, activeTasks.length]);
+
+  function saveAIArtifact(input: AIArtifactInput): AIArtifact {
+    const artifact = createAIArtifact(input);
+    setAIArtifacts((currentArtifacts) => normalizeAIArtifacts([artifact, ...normalizeAIArtifacts(currentArtifacts)]));
+    return artifact;
+  }
 
   function unlockAchievement(id: string) {
     setAchievements((currentAchievements) => {
@@ -410,19 +515,30 @@ function App() {
 
     unlockAchievement('first-entry');
 
-    if (normalizedTasks.some((task) => !task.id.startsWith('demo-'))) unlockAchievement('first-task-created');
     if (normalizedTasks.some((task) => task.lifecycleStatus === 'completed')) unlockAchievement('first-task-completed');
     if (normalizedTasks.some((task) => task.lifecycleStatus === 'abandoned' && task.importance <= 4)) unlockAchievement('first-low-value-abandoned');
-    if (normalizedTasks.filter((task) => task.lifecycleStatus === 'completed').length >= 3) unlockAchievement('first-three-completed');
-    if (
-      normalizedTasks.some((task) => {
-        if (!task.completedAt) return false;
-        return new Date(task.completedAt).getTime() - new Date(task.createdAt).getTime() <= 7 * MS_PER_DAY;
-      })
-    ) {
-      unlockAchievement('first-seven-day-progress');
-    }
+    const completedDateKeys = normalizedTasks.filter((task) => task.lifecycleStatus === 'completed' && task.completedAt).map((task) => getLocalDateKey(task.completedAt as string)).filter((value): value is string => Boolean(value));
+    if ([...new Set(completedDateKeys)].some((dateKey) => completedDateKeys.filter((item) => item === dateKey).length >= 6)) unlockAchievement('first-six-in-day');
+    if (normalizedTasks.some((task) => task.importance >= 9 && hasCompletedInFinalHour(task))) unlockAchievement('last-survivor');
+    if (getMaxFinalHourCompletionRun(normalizedTasks) >= 10) unlockAchievement('knife-edge-streak');
+    if (normalizedTasks.filter((task) => task.lifecycleStatus === 'active' && task.deadline && new Date(task.deadline).getTime() < Date.now()).length > 5) unlockAchievement('rotting');
+    if (normalizedTasks.filter((task) => task.activityType === 'entertainment').length >= 5) unlockAchievement('hedonism');
   }, [onboardingComplete, normalizedTasks]);
+
+  useEffect(() => {
+    if (!onboardingComplete) return;
+    const usageDateKeys = normalizedPressureHistory.map((record) => getLocalDateKey(record.timestamp)).filter((value): value is string => Boolean(value));
+    if (hasConsecutiveDateRun(usageDateKeys, 7)) unlockAchievement('seven-day-streak');
+
+    const pressureByDate = new Map<string, number[]>();
+    normalizedPressureHistory.forEach((record) => {
+      const dateKey = getLocalDateKey(record.timestamp);
+      if (!dateKey) return;
+      pressureByDate.set(dateKey, [...(pressureByDate.get(dateKey) ?? []), record.pressure]);
+    });
+    const over100Dates = [...pressureByDate.entries()].filter(([, values]) => values.length > 0 && values.every((value) => value > 10)).map(([dateKey]) => dateKey);
+    if (hasConsecutiveDateRun(over100Dates, 3)) unlockAchievement('pressure-cooker');
+  }, [normalizedPressureHistory, onboardingComplete]);
 
   useEffect(() => {
     if (!onboardingComplete) return;
@@ -431,18 +547,16 @@ function App() {
   }, [activeModule, onboardingComplete]);
 
   function savePressureCalibration(referencePressure: number, sourceTasks = normalizedTasks) {
-    const activeLoad = calculateTaskLoad(sourceTasks);
-    const activeCount = sourceTasks.filter((task) => task.lifecycleStatus === 'active').length;
-    const calibration = createPressureCalibration(referencePressure, activeLoad, activeCount);
+    const calibration = createPressureCalibration(referencePressure, sourceTasks, 0, new Date().toISOString());
     setPressureCalibration(calibration);
     unlockAchievement('first-manageable-pressure');
-    recordPressureSnapshot('recalibration', sourceTasks, '压力映射系数已重新校准。', calibration);
+    recordPressureSnapshot('recalibration', sourceTasks, `用户将主观压力重新校准为 ${calibration.lastSubjectivePressure}，系统已更新压力映射系数。`, calibration);
     // Keep the legacy pressure value available through the centralized storage layer.
-    savePressure({ baselinePressure: calibration.referencePressure });
+    savePressure({ baselinePressure: calibration.lastSubjectivePressure, calibration });
   }
 
   function openRecalibration() {
-    setRecalibrationPressure(pressure.referencePressure);
+    setRecalibrationPressure(clampSubjectivePressure(pressure.referencePressure));
     setIsRecalibrationOpen(true);
   }
 
@@ -451,14 +565,42 @@ function App() {
     setIsRecalibrationOpen(false);
   }
 
-  function completeOnboarding(importedTasks: TaskInput[], _referencePressure: number, calibration: PressureCalibrationSnapshot) {
+  async function completeOnboarding(importedTasks: TaskInput[], referencePressure: number, _calibration: PressureCalibrationSnapshot) {
+    const capturedAt = new Date().toISOString();
+    debugOnboardingPersistence('before save', { importedTaskCount: importedTasks.length, referencePressure, existingTaskCount: normalizedTasks.length });
+
     const createdTasks = importedTasks.map((task) => createTask(task));
     const nextTasks = [...createdTasks, ...normalizedTasks];
+    const calibration = createPressureCalibration(referencePressure, nextTasks, 0, capturedAt);
+    const snapshotPressure = calculatePressureIndex(nextTasks, calibration, legacyReferencePressure, new Date(capturedAt));
+    const pressureRecord = createPressureHistoryRecord(snapshotPressure, nextTasks, 'recalibration', `用户将主观压力重新校准为 ${calibration.lastSubjectivePressure}，系统已更新压力映射系数。`);
+    const nextPressureHistory = appendPressureHistoryRecord(normalizedPressureHistory, pressureRecord);
+
+    await Promise.all([
+      Promise.resolve(saveValue(storageKeys.tasks, nextTasks)),
+      Promise.resolve(saveValue(storageKeys.pressureCalibration, calibration)),
+      Promise.resolve(savePressure({ baselinePressure: calibration.lastSubjectivePressure, calibration, history: nextPressureHistory })),
+      Promise.resolve(saveValue(storageKeys.pressureHistory, nextPressureHistory)),
+      Promise.resolve(saveValue(storageKeys.onboardingComplete, true)),
+    ]);
+
+    debugOnboardingPersistence('after save', { taskIds: createdTasks.map((task) => task.id), pressureCoefficient: calibration.pressureCoefficient, pressureRecordId: pressureRecord.id });
+
+    const reloadedTasks = loadValue<Task[]>(storageKeys.tasks, []);
+    const reloadedCalibration = loadValue<PressureCalibrationSnapshot | null>(storageKeys.pressureCalibration, null);
+    const reloadedOnboardingComplete = loadValue<boolean>(storageKeys.onboardingComplete, false);
+    debugOnboardingPersistence('after reload', { taskCount: reloadedTasks.length, reloadedOnboardingComplete, pressureCoefficient: reloadedCalibration?.pressureCoefficient });
+
+    if (!reloadedOnboardingComplete || reloadedTasks.length < nextTasks.length) {
+      throw new Error('VD 没有确认本地保存完成。请重试，当前页面不会丢弃你输入的数据。');
+    }
+
     setTasks(nextTasks);
     setPressureCalibration(calibration);
+    setPressureHistory(nextPressureHistory);
+    saveAutoBackup();
     unlockAchievement('first-manageable-pressure');
-    recordPressureSnapshot('recalibration', nextTasks, '完成初始压力校准。', calibration);
-    savePressure({ baselinePressure: calibration.referencePressure });
+    debugOnboardingPersistence('before redirect', { onboardingComplete: true, taskCount: nextTasks.length });
     setOnboardingComplete(true);
   }
 
@@ -597,20 +739,21 @@ function App() {
       pressure={pressure}
       onAddTask={() => setIsFormOpen(true)}
       onConfirmAITasks={addTaskDrafts}
+      onAIArtifactGenerated={saveAIArtifact}
       onArchiveTask={archiveTask}
       onDeleteTask={deleteTask}
       onEditTask={startEditing}
       onAIConnected={() => unlockAchievement('ai-first-connection')}
-      onAIReportGenerated={() => unlockAchievement('ai-report-generated')}
+      onAIReportGenerated={(artifact) => { saveAIArtifact(artifact); unlockAchievement('ai-report-generated'); }}
     />
   );
 
   const moduleContent: Record<LifeOSModule, ReactElement> = {
-    home: <HomePage pressure={pressure} pressureHistory={normalizedPressureHistory} recommendedTasks={recommendedTasks} activeTasks={activeTasks} tasks={normalizedTasks} goals={normalizedGoals} onSaveGoal={saveGoal} onDeleteGoal={deleteGoal} onRoadmapGenerated={() => unlockAchievement('roadmap-generated')} onAddTask={() => setIsFormOpen(true)} onRecalibrate={openRecalibration} onOpenTasks={() => setActiveModule('task')} />,
+    home: <HomePage pressure={pressure} pressureHistory={normalizedPressureHistory} recommendedTasks={recommendedTasks} activeTasks={activeTasks} tasks={normalizedTasks} goals={normalizedGoals} onSaveGoal={saveGoal} onDeleteGoal={deleteGoal} onRoadmapGenerated={(artifact) => { saveAIArtifact(artifact); unlockAchievement('roadmap-generated'); }} onRecalibrate={openRecalibration} onOpenTasks={() => setActiveModule('task')} />,
     task: taskModule,
     map: <LifeMapPage />,
     social: <SocialPage />,
-    log: <LogPage tasks={normalizedTasks} pressureHistory={normalizedPressureHistory} onDelete={deleteTask} onReviewNoteChange={updateReviewNote} />,
+    log: <LogPage tasks={normalizedTasks} goals={normalizedGoals} profile={normalizedProfile} pressure={pressure} pressureHistory={normalizedPressureHistory} achievements={normalizedAchievements} aiArtifacts={normalizedAIArtifacts} onAIReportGenerated={(artifact) => { saveAIArtifact(artifact); unlockAchievement('ai-report-generated'); }} onDelete={deleteTask} onReviewNoteChange={updateReviewNote} />,
     me: <ProfilePage profile={normalizedProfile} onProfileChange={setProfile} />,
   };
 
@@ -625,9 +768,16 @@ function App() {
             <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">此刻这组任务让你感觉有多大压力？</h2>
             <p className="mt-3 text-sm leading-6 text-slate-500">系统会读取当前进行中任务负载，并用你的主观感受重新计算个体压力映射系数。</p>
             <div className="mt-6 rounded-3xl bg-slate-50/90 p-5 ring-1 ring-white/80">
-              <div className="flex items-end justify-between gap-4"><span className="text-sm font-medium text-slate-600">主观压力</span><span className="text-5xl font-semibold text-slate-950">{recalibrationPressure}</span></div>
-              <input type="range" min="0" max="100" value={recalibrationPressure} onChange={(event) => setRecalibrationPressure(clampPressure(Number(event.target.value)))} className="mt-5 w-full accent-slate-700" />
+              <div className="flex items-end justify-between gap-4"><span className="text-sm font-medium text-slate-600">主观压力</span><span className="text-5xl font-semibold text-slate-950 tabular-nums">{recalibrationPressure}</span></div>
+              <input type="range" min="1" max="10" value={recalibrationPressure} onChange={(event) => setRecalibrationPressure(clampSubjectivePressure(Number(event.target.value)))} className="mt-5 w-full accent-slate-700" />
+              <div className="mt-5 h-2 overflow-hidden rounded-full bg-white"><div className="h-full rounded-full bg-slate-800 transition-all duration-700 ease-out" style={{ width: `${Math.min(100, recalibrationPreview.rawPressure * 10)}%` }} /></div>
+              <div className="mt-4 grid gap-2 text-xs text-slate-500 sm:grid-cols-3">
+                <span className="rounded-full bg-white px-3 py-2">新系数 ×{recalibrationPreview.pressureRatio}</span>
+                <span className="rounded-full bg-white px-3 py-2">预估压力 {recalibrationPreview.rawPressure}</span>
+                <span className="rounded-full bg-white px-3 py-2">目标 {recalibrationPreview.referencePressure}</span>
+              </div>
             </div>
+            <p className="mt-4 rounded-2xl bg-sky-50 px-4 py-3 text-xs leading-5 text-sky-700 ring-1 ring-sky-100">保存后会重算压力映射系数、刷新当前压力指数、记录新的压力曲线节点，并让推荐卡片显示新的校准压力权重。</p>
             <div className="mt-6 flex justify-end gap-3"><button type="button" onClick={() => setIsRecalibrationOpen(false)} className="rounded-full px-5 py-2.5 text-sm font-semibold text-slate-500 hover:bg-slate-100">取消</button><button type="button" onClick={submitRecalibration} className="rounded-full bg-white/85 px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">保存校准</button></div>
           </section>
         </div>
@@ -646,7 +796,7 @@ function App() {
               <button type="button" onClick={() => setWelcomeBackMessage(undefined)} className="rounded-full bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-500 ring-1 ring-slate-200 hover:bg-slate-100" aria-label="关闭欢迎提示">关闭</button>
             </div>
             <div className="relative mt-5 space-y-3 text-sm leading-6 text-slate-600">
-              <p className="text-lg font-semibold text-slate-800">欢迎回到飞升。</p>
+              <p className="text-lg font-semibold text-slate-800">欢迎回到 VD。</p>
               <p className="rounded-2xl bg-slate-50/80 px-4 py-3 ring-1 ring-white/80">当前时间：{welcomeBackMessage.currentTime}</p>
               <p className="rounded-2xl bg-white/75 px-4 py-3 font-semibold text-slate-700 ring-1 ring-white/80">{welcomeBackMessage.detail}</p>
             </div>
