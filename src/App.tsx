@@ -14,6 +14,7 @@ import type { Achievement, AIArtifact, AIArtifactInput, ActivityType, Goal, Goal
 import {
   achievementCatalog,
   calculatePressureIndex,
+  calculateTaskLoad,
   createPressureCalibration,
   clampImportance,
   clampPressure,
@@ -27,7 +28,7 @@ import {
   normalizeProgressMode,
 } from './utils/taskScoring';
 import { appendPressureHistoryRecord, createPressureHistoryRecord, normalizePressureHistory } from './utils/pressureHistory';
-import { hasValue, loadValue, savePressure, saveValue, storageKeys } from './storage';
+import { hasValue, loadValue, savePressure, saveTasks, saveValue, storageKeys } from './storage';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const WELCOME_BACK_GAP_MS = 2 * 60 * 60 * 1000;
@@ -343,7 +344,9 @@ function App() {
   const [editingTask, setEditingTask] = useState<Task | undefined>();
   const [toastAchievement, setToastAchievement] = useState<Achievement | undefined>();
   const [welcomeBackMessage, setWelcomeBackMessage] = useState<WelcomeBackMessage | undefined>();
+  const [pressureClock, setPressureClock] = useState(() => Date.now());
   const hasCheckedWelcomeBack = useRef(false);
+  const hasLoggedHydration = useRef(false);
 
   const normalizedTasks = useMemo(() => {
     const storedTasks = Array.isArray(tasks) ? tasks : [];
@@ -358,11 +361,28 @@ function App() {
   const activeTasks = useMemo(() => normalizedTasks.filter((task) => task.lifecycleStatus === 'active'), [normalizedTasks]);
   const recommendedTasks = useMemo(() => normalizedTasks.filter((task) => task.lifecycleStatus === 'active').sort((a, b) => getTaskScore(b) - getTaskScore(a)).slice(0, 3), [normalizedTasks]);
   const deadlinePressureTasks = useMemo(() => activeTasks.filter(isDeadlinePressureTask).sort((a, b) => getTaskScore(b) - getTaskScore(a)), [activeTasks]);
-  const pressure = useMemo<PressureBreakdown>(() => calculatePressureIndex(normalizedTasks, normalizedPressureCalibration, legacyReferencePressure), [normalizedTasks, normalizedPressureCalibration, legacyReferencePressure]);
+  const pressure = useMemo<PressureBreakdown>(() => calculatePressureIndex(normalizedTasks, normalizedPressureCalibration, legacyReferencePressure, new Date(pressureClock)), [normalizedTasks, normalizedPressureCalibration, legacyReferencePressure, pressureClock]);
   const recalibrationPreview = useMemo<PressureBreakdown>(() => {
     const previewCalibration = createPressureCalibration(recalibrationPressure, normalizedTasks, 0, new Date().toISOString());
     return calculatePressureIndex(normalizedTasks, previewCalibration, legacyReferencePressure);
   }, [legacyReferencePressure, normalizedTasks, recalibrationPressure]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => setPressureClock(Date.now()), 60 * 1000);
+    return () => window.clearInterval(intervalId);
+  }, []);
+
+  useEffect(() => {
+    if (hasLoggedHydration.current) return;
+    hasLoggedHydration.current = true;
+    console.info('[VD_ONBOARDING] hydration/restored state after reload', {
+      taskCount: normalizedTasks.length,
+      onboardingComplete,
+      subjectivePressure: normalizedPressureCalibration.lastSubjectivePressure,
+      pressureCoefficient: normalizedPressureCalibration.pressureCoefficient,
+      realtimePressure: pressure.rawPressure,
+    });
+  }, [normalizedPressureCalibration.lastSubjectivePressure, normalizedPressureCalibration.pressureCoefficient, normalizedTasks.length, onboardingComplete, pressure.rawPressure]);
 
   useEffect(() => {
     if (JSON.stringify(tasks) !== JSON.stringify(normalizedTasks)) {
@@ -553,16 +573,90 @@ function App() {
     setIsRecalibrationOpen(false);
   }
 
-  function completeOnboarding(importedTasks: TaskInput[], referencePressure: number, _calibration: PressureCalibrationSnapshot) {
-    const createdTasks = importedTasks.map((task) => createTask(task));
-    const nextTasks = [...createdTasks, ...normalizedTasks];
-    const calibration = createPressureCalibration(referencePressure, nextTasks, 0, new Date().toISOString());
-    setTasks(nextTasks);
-    setPressureCalibration(calibration);
-    unlockAchievement('first-manageable-pressure');
-    recordPressureSnapshot('recalibration', nextTasks, `用户将主观压力重新校准为 ${calibration.lastSubjectivePressure}，系统已更新压力映射系数。`, calibration);
-    savePressure({ baselinePressure: calibration.lastSubjectivePressure, calibration });
-    setOnboardingComplete(true);
+  function completeOnboarding(importedTasks: TaskInput[], referencePressure: number, _calibration: PressureCalibrationSnapshot): { ok: boolean; error?: string } {
+    console.info('[VD_ONBOARDING] submit reached app pipeline');
+
+    try {
+      const createdTasks = importedTasks.map((task) => createTask(task));
+      const validCreatedTasks = createdTasks.filter((task) => task.lifecycleStatus === 'active' && task.progress < 100 && task.title.trim());
+      if (validCreatedTasks.length === 0) throw new Error('请至少保留一个未完成的有效任务后再进入 VD。');
+
+      const nextTasks = [...createdTasks, ...normalizedTasks];
+      const totalTaskPressure = calculateTaskLoad(nextTasks);
+      console.info('[VD_ONBOARDING] totalTaskPressure', totalTaskPressure);
+      if (totalTaskPressure <= 0) throw new Error('当前任务压力为 0，无法完成校准。请检查任务重要性、截止时间或进度。');
+
+      const calibration = createPressureCalibration(referencePressure, nextTasks, 0, new Date().toISOString());
+      if (!Number.isFinite(calibration.pressureCoefficient) || calibration.pressureCoefficient < 0) throw new Error('压力校准失败，请重新选择主观压力。');
+
+      const realtimePressure = calculatePressureIndex(nextTasks, calibration, legacyReferencePressure).rawPressure;
+      if (!Number.isFinite(realtimePressure)) throw new Error('实时压力计算失败，请检查任务数据。');
+
+      console.info('[VD_ONBOARDING] pressureCoefficient', calibration.pressureCoefficient);
+      console.info('[VD_ONBOARDING] realtimePressure', realtimePressure);
+
+      try {
+        saveTasks(nextTasks);
+        console.info('[VD_ONBOARDING] task persistence success', { taskCount: nextTasks.length });
+      } catch (error) {
+        console.error('[VD_ONBOARDING] task persistence failure', error);
+        throw new Error('任务保存失败，请检查浏览器存储权限后重试。');
+      }
+
+      try {
+        savePressure({ baselinePressure: calibration.lastSubjectivePressure, calibration });
+        console.info('[VD_ONBOARDING] user state persistence success', {
+          subjectivePressure: calibration.lastSubjectivePressure,
+          pressureCoefficient: calibration.pressureCoefficient,
+          realtimePressure,
+        });
+      } catch (error) {
+        console.error('[VD_ONBOARDING] user state persistence failure', error);
+        throw new Error('压力校准保存失败，请检查浏览器存储权限后重试。');
+      }
+
+      try {
+        saveValue(storageKeys.onboardingComplete, true);
+        console.info('[VD_ONBOARDING] onboarding completion flag update', true);
+      } catch (error) {
+        console.error('[VD_ONBOARDING] onboarding completion flag update failure', error);
+        throw new Error('引导完成状态保存失败，请检查浏览器存储权限后重试。');
+      }
+
+      const persistedTasks = loadValue<Task[]>(storageKeys.tasks, []);
+      const persistedCalibration = loadValue<PressureCalibrationSnapshot | null>(storageKeys.pressureCalibration, null);
+      const persistedOnboardingComplete = loadValue<boolean>(storageKeys.onboardingComplete, false);
+      const persistedRealtimePressure = calculatePressureIndex(persistedTasks.map((task) => normalizeStoredTask(task)), persistedCalibration, legacyReferencePressure).rawPressure;
+      const persistedStateIsValid = persistedTasks.length >= createdTasks.length
+        && persistedOnboardingComplete === true
+        && Boolean(persistedCalibration)
+        && Number.isFinite(persistedCalibration?.pressureCoefficient)
+        && Number.isFinite(persistedRealtimePressure);
+
+      if (!persistedStateIsValid) throw new Error('保存校验失败：任务或压力校准未正确写入。');
+      console.info('[VD_ONBOARDING] persisted state verified', {
+        taskCount: persistedTasks.length,
+        onboardingComplete: persistedOnboardingComplete,
+        pressureCoefficient: persistedCalibration?.pressureCoefficient,
+        realtimePressure: persistedRealtimePressure,
+      });
+
+      setTasks(nextTasks);
+      setPressureCalibration(calibration);
+      unlockAchievement('first-manageable-pressure');
+      recordPressureSnapshot('recalibration', nextTasks, `用户将主观压力重新校准为 ${calibration.lastSubjectivePressure}，系统已更新压力映射系数。`, calibration);
+      console.info('[VD_ONBOARDING] redirect started');
+      setOnboardingComplete(true);
+      return { ok: true };
+    } catch (error) {
+      try {
+        saveValue(storageKeys.onboardingComplete, false);
+      } catch {
+        // The original error below is more actionable for the user; this rollback is best-effort.
+      }
+      console.error('[VD_ONBOARDING] onboarding pipeline failed', error);
+      return { ok: false, error: error instanceof Error ? error.message : '进入 VD 失败，请稍后重试。' };
+    }
   }
 
   function closeForm() {

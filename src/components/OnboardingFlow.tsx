@@ -1,10 +1,15 @@
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useState } from 'react';
 import type { ActivityType, Importance, LifecycleStatus, PressureCalibrationSnapshot, TaskInput } from '../types/task';
 import { toDatetimeLocalValue } from '../utils/date';
 import { clampImportance, clampPressure, clampProgress, createPressureCalibration, getActivityTypeLabel, getUrgencyWeight } from '../utils/taskScoring';
 
+interface OnboardingCompleteResult {
+  ok: boolean;
+  error?: string;
+}
+
 interface OnboardingFlowProps {
-  onComplete: (tasks: TaskInput[], referencePressure: number, calibration: PressureCalibrationSnapshot) => void;
+  onComplete: (tasks: TaskInput[], referencePressure: number, calibration: PressureCalibrationSnapshot) => OnboardingCompleteResult | Promise<OnboardingCompleteResult>;
 }
 
 const activityTypes: ActivityType[] = ['task', 'schedule', 'study', 'fitness', 'social', 'recovery', 'entertainment', 'other'];
@@ -24,7 +29,8 @@ function createDraftTask(title: string): TaskInput {
 function calculateInitialTaskLoad(tasks: TaskInput[]): number {
   return tasks.reduce((sum, task) => {
     if (task.lifecycleStatus !== 'active') return sum;
-    return sum + getUrgencyWeight(task.deadline) * task.importance;
+    const progressNormalized = clampProgress(task.progress) / 100;
+    return sum + getUrgencyWeight(task.deadline) * clampImportance(task.importance) * (1 - progressNormalized);
   }, 0);
 }
 
@@ -34,8 +40,9 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   const [roughTitles, setRoughTitles] = useState<string[]>([]);
   const [referencePressure, setReferencePressure] = useState(35);
   const [draftTasks, setDraftTasks] = useState<TaskInput[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
   const canContinueDump = roughTitles.length > 0;
-  const initialTaskLoad = useMemo(() => calculateInitialTaskLoad(draftTasks), [draftTasks]);
 
   function addRoughTitle(event?: FormEvent<HTMLFormElement>) {
     event?.preventDefault();
@@ -55,7 +62,9 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
     setDraftTasks((current) => current.map((task, taskIndex) => (taskIndex === index ? { ...task, ...values } : task)));
   }
 
-  function completeOnboarding() {
+  async function completeOnboarding() {
+    if (isSubmitting) return;
+    setSubmitError('');
     const refinedTasks = draftTasks.map((task) => ({
       ...task,
       title: task.title.trim() || '未命名项目',
@@ -65,9 +74,46 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
       lifecycleStatus: 'active' as LifecycleStatus,
     }));
 
-    // Future versions can compare this initial load with later user behavior to learn
-    // personalized urgency/importance weighting. No machine learning is implemented here.
-    onComplete(refinedTasks, referencePressure, createPressureCalibration(referencePressure, initialTaskLoad, refinedTasks.length));
+    const validTasks = refinedTasks.filter((task) => task.title.trim() && task.lifecycleStatus === 'active' && task.progress < 100);
+    const safeReferencePressure = clampPressure(referencePressure);
+    const totalTaskPressure = calculateInitialTaskLoad(refinedTasks);
+
+    console.info('[VD_ONBOARDING] submit started');
+    console.info('[VD_ONBOARDING] tasks before save', refinedTasks);
+    console.info('[VD_ONBOARDING] subjectivePressure before calibration', safeReferencePressure);
+    console.info('[VD_ONBOARDING] totalTaskPressure', totalTaskPressure);
+
+    if (validTasks.length === 0) {
+      setSubmitError('请至少保留一个未完成的有效任务后再进入 VD。');
+      return;
+    }
+
+    if (!Number.isFinite(safeReferencePressure)) {
+      setSubmitError('主观压力数值无效，请重新选择。');
+      return;
+    }
+
+    if (totalTaskPressure <= 0) {
+      setSubmitError('当前任务压力为 0，无法完成校准。请检查任务重要性、截止时间或进度。');
+      return;
+    }
+
+    const calibration = createPressureCalibration(safeReferencePressure, totalTaskPressure, refinedTasks.length);
+    console.info('[VD_ONBOARDING] pressureCoefficient', calibration.pressureCoefficient);
+    console.info('[VD_ONBOARDING] realtimePressure', totalTaskPressure * calibration.pressureCoefficient);
+
+    try {
+      setIsSubmitting(true);
+      const result = await onComplete(refinedTasks, safeReferencePressure, calibration);
+      if (!result.ok) {
+        setSubmitError(result.error || '保存失败，请稍后重试。');
+      }
+    } catch (error) {
+      console.error('[VD_ONBOARDING] onboarding submit failed', error);
+      setSubmitError(error instanceof Error ? error.message : '保存失败，请稍后重试。');
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -140,7 +186,10 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
             </div>
             <div className="mt-8 flex justify-between gap-3">
               <button type="button" onClick={() => setStep(2)} className="rounded-full px-5 py-3 text-sm font-semibold text-slate-500 hover:bg-slate-100">返回</button>
-              <button type="button" onClick={completeOnboarding} className="rounded-full bg-white/85 px-6 py-3 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">进入 VD</button>
+              <div className="flex flex-col items-end gap-2">
+                {submitError ? <p className="max-w-md rounded-2xl bg-rose-50 px-4 py-2 text-sm text-rose-700 ring-1 ring-rose-100">{submitError}</p> : null}
+                <button type="button" onClick={completeOnboarding} disabled={isSubmitting} className="rounded-full bg-white/85 px-6 py-3 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300">{isSubmitting ? '保存中…' : '进入 VD'}</button>
+              </div>
             </div>
           </div>
         ) : null}

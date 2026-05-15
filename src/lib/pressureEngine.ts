@@ -66,13 +66,20 @@ export function isUnfinishedPressureTask(task: Task): boolean {
   return task.lifecycleStatus === 'active' && task.progress < 100;
 }
 
+function normalizeProgressPressure(progress?: number): number {
+  if (typeof progress !== 'number' || Number.isNaN(progress)) return 0;
+  return Math.min(100, Math.max(0, progress));
+}
+
 export function calculateTaskPressure(task: Task, now: string | number | Date = new Date(), weights: PressureModelWeights = defaultPressureModelWeights): number {
   const urgency = calculateUrgency(task.deadline, now);
+  const progressNormalized = normalizeProgressPressure(task.progress) / 100;
+  const remainingWorkMultiplier = 1 - progressNormalized;
   const importanceTerm = weights.importanceWeight * task.importance;
   const urgencyTerm = weights.urgencyWeight * urgency;
-  const interactionTerm = weights.interactionWeight * task.importance * urgency;
+  const interactionTerm = weights.interactionWeight * task.importance * urgency * remainingWorkMultiplier;
 
-  // Default VD v1 model: taskPressure = importance × urgency.
+  // Default VD v1 model: taskPressure = importance × urgency × remaining work.
   // The additive terms are intentionally present for future personalization:
   // α × importance + β × urgency + γ × interactionTerm.
   return roundToHundredth(importanceTerm + urgencyTerm + interactionTerm);
@@ -116,12 +123,11 @@ export function calibratePressure(tasks: Task[], subjectivePressure: number, now
     pressureRatio: roundToFourDecimals(pressureCoefficient),
     taskCount: tasks.filter(isUnfinishedPressureTask).length,
     capturedAt: calibratedAt,
-    note: 'subjective pressure calibrates the current raw task pressure: realtimePressure = currentRawPressure × pressureCoefficient - recoveryRelease.',
+    note: 'subjective pressure calibrates the current raw task pressure: realtimePressure = currentRawPressure × pressureCoefficient.',
   };
 }
 
-export function calculateRealtimePressure(tasks: Task[], pressureCoefficient: number, recoveryRelease = 0, now: string | number | Date = new Date(), weights: PressureModelWeights = defaultPressureModelWeights): number {
-  const safeCoefficient = Number.isFinite(pressureCoefficient) && pressureCoefficient > 0 ? pressureCoefficient : DEFAULT_PRESSURE_COEFFICIENT;
-  const safeRecoveryRelease = Number.isFinite(recoveryRelease) ? Math.max(0, recoveryRelease) : 0;
-  return Math.max(0, calculateRawPressure(tasks, now, weights) * safeCoefficient - safeRecoveryRelease);
+export function calculateRealtimePressure(tasks: Task[], pressureCoefficient: number, _recoveryRelease = 0, now: string | number | Date = new Date(), weights: PressureModelWeights = defaultPressureModelWeights): number {
+  const safeCoefficient = Number.isFinite(pressureCoefficient) && pressureCoefficient >= 0 ? pressureCoefficient : DEFAULT_PRESSURE_COEFFICIENT;
+  return Math.max(0, calculateRawPressure(tasks, now, weights) * safeCoefficient);
 }
