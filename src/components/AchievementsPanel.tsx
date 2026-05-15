@@ -31,15 +31,15 @@ export function AchievementsPanel({ achievements }: AchievementsPanelProps) {
         </div>
       </div>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {displayAchievements.map((achievement) => {
           const unlockedAchievement = achievements.find((item) => item.id === achievement.id);
           const isUnlocked = unlockedIds.has(achievement.id);
 
           return (
-            <article key={achievement.id} className={`rounded-3xl p-4 ring-1 transition ${isUnlocked ? 'bg-white text-slate-900 shadow-sm shadow-slate-100 ring-white/80' : 'bg-slate-50/70 text-slate-400 ring-white/60'}`}>
+            <article key={achievement.id} className={`rounded-3xl p-5 ring-1 transition ${isUnlocked ? 'bg-white text-slate-950 shadow-sm shadow-slate-100 ring-white/80' : 'bg-slate-50/70 text-slate-300 ring-white/60'}`}>
               <div className="flex items-center justify-between gap-3"><h3 className="text-sm font-semibold">{achievement.title}</h3><span className="text-lg" aria-hidden="true">{isUnlocked ? '◦' : '·'}</span></div>
-              <p className="mt-2 line-clamp-2 text-xs leading-5">{achievement.description}</p>
+              <p className={`mt-3 line-clamp-2 whitespace-pre-line text-xs leading-5 ${isUnlocked ? 'text-slate-600' : 'text-slate-400'}`}>{achievement.description}</p>
               <p className="mt-3 text-[11px] font-medium text-slate-400">{unlockedAchievement ? formatUnlockedAt(unlockedAchievement.unlockedAt) : '尚未发生'}</p>
             </article>
           );

@@ -1,12 +1,7 @@
 import { FormEvent, useState } from 'react';
-import type { Importance, LifecycleStatus, PressureCalibrationSnapshot, TaskInput } from '../types/task';
+import type { ActivityType, Importance, LifecycleStatus, PressureCalibrationSnapshot, TaskInput } from '../types/task';
 import { toDatetimeLocalValue } from '../utils/date';
 import { clampPressure, clampProgress, createPressureCalibration, getUrgencyWeight } from '../utils/taskScoring';
-
-interface OnboardingCompleteResult {
-  ok: boolean;
-  error?: string;
-}
 
 interface OnboardingCompleteResult {
   ok: boolean;
@@ -17,21 +12,26 @@ interface OnboardingFlowProps {
   onComplete: (tasks: TaskInput[], referencePressure: number, calibration: PressureCalibrationSnapshot) => OnboardingCompleteResult | Promise<OnboardingCompleteResult>;
 }
 
+const DEFAULT_ONBOARDING_DESCRIPTION = '';
+const DEFAULT_ONBOARDING_IMPORTANCE: Importance = 1;
+const DEFAULT_ONBOARDING_PROGRESS = 0;
+const DEFAULT_ONBOARDING_ACTIVITY_TYPE: ActivityType = 'task';
+const DEFAULT_ONBOARDING_LIFECYCLE_STATUS: LifecycleStatus = 'active';
 
 function createDraftTask(title: string): TaskInput {
   return {
     title,
-    description: '',
-    importance: 1,
+    description: DEFAULT_ONBOARDING_DESCRIPTION,
+    importance: DEFAULT_ONBOARDING_IMPORTANCE,
     deadline: toDatetimeLocalValue(new Date(Date.now() + 24 * 60 * 60 * 1000)),
-    progress: 0,
-    activityType: 'task',
-    lifecycleStatus: 'active',
+    progress: DEFAULT_ONBOARDING_PROGRESS,
+    activityType: DEFAULT_ONBOARDING_ACTIVITY_TYPE,
+    lifecycleStatus: DEFAULT_ONBOARDING_LIFECYCLE_STATUS,
   };
 }
 
 function clampOnboardingImportance(importance?: number | null): Importance {
-  if (typeof importance !== 'number' || Number.isNaN(importance)) return 1;
+  if (typeof importance !== 'number' || !Number.isFinite(importance)) return DEFAULT_ONBOARDING_IMPORTANCE;
   return Math.min(10, Math.max(1, Math.round(importance))) as Importance;
 }
 
@@ -81,11 +81,11 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
     const refinedTasks = draftTasks.map((task) => ({
       ...task,
       title: task.title.trim(),
-      description: '',
+      description: DEFAULT_ONBOARDING_DESCRIPTION,
       importance: clampOnboardingImportance(task.importance),
-      progress: 0,
-      activityType: 'task' as const,
-      lifecycleStatus: 'active' as LifecycleStatus,
+      progress: DEFAULT_ONBOARDING_PROGRESS,
+      activityType: DEFAULT_ONBOARDING_ACTIVITY_TYPE,
+      lifecycleStatus: DEFAULT_ONBOARDING_LIFECYCLE_STATUS,
     }));
 
     const validTasks = refinedTasks.filter((task) => task.title.trim() && hasValidDeadline(task.deadline) && task.lifecycleStatus === 'active' && task.progress < 100);
@@ -207,7 +207,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
                         <span>重要程度（1-10）</span>
                         <span className="rounded-full bg-white px-3 py-1 text-sm font-semibold text-slate-800 ring-1 ring-slate-200">{clampOnboardingImportance(task.importance)}</span>
                       </span>
-                      <input type="range" min="1" max="10" step="1" value={clampOnboardingImportance(task.importance)} onChange={(event) => updateDraftTask(index, { importance: clampOnboardingImportance(Number(event.target.value)) })} className="mt-3 w-full accent-slate-700" />
+                      <input type="range" min="1" max="10" step="1" value={clampOnboardingImportance(task.importance)} onChange={(event) => updateDraftTask(index, { importance: clampOnboardingImportance(Number(event.target.value)) })} className="mt-3 h-2 w-full cursor-pointer accent-slate-700" />
                       <span className="mt-2 flex justify-between text-[11px] text-slate-400"><span>不重要（1）</span><span>非常重要（10）</span></span>
                     </label>
                     <label className="text-xs font-medium text-slate-500">
