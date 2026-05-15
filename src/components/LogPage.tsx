@@ -63,7 +63,7 @@ function buildTimelineEvents(tasks: Task[], pressureHistory: PressureHistoryReco
     if (task.lifecycleStatus === 'active' && task.deadline && new Date(task.deadline).getTime() < Date.now()) events.push({ id: `task-overdue-${task.id}`, timestamp: task.deadline, type: 'overdue', title: '逾期事件', body: task.title, tone: 'bg-amber-50 text-amber-700 ring-amber-100' });
     return events;
   });
-  const achievementEvents: TimelineEvent[] = achievements.map((achievement) => ({ id: `achievement-${achievement.id}`, timestamp: achievement.unlockedAt, type: 'achievement', title: achievement.title, body: achievement.description, tone: 'bg-zinc-50 text-zinc-700 ring-zinc-100' }));
+  const achievementEvents: TimelineEvent[] = achievements.map((achievement) => ({ id: `achievement-${achievement.id}`, timestamp: achievement.unlockedAt, type: 'achievement', title: achievement.title, body: achievement.shortDescription, tone: 'bg-zinc-50 text-zinc-700 ring-zinc-100' }));
   const emotionalEvents: TimelineEvent[] = pressureHistory.slice(-12).map((record) => ({ id: `emotion-${record.id}`, timestamp: record.timestamp, type: 'emotion', title: '情绪压力快照', body: getPressureMood(record.pressure), tone: 'bg-indigo-50 text-indigo-700 ring-indigo-100' }));
   return [...aiEvents, ...pressureEvents, ...taskEvents, ...achievementEvents, ...emotionalEvents].sort((left, right) => new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime()).slice(0, 80);
 }
