@@ -171,7 +171,7 @@ function normalizeStoredAchievements(achievements: Achievement[]): Achievement[]
     if (!achievement.unlockedAt) return [];
     const catalogAchievement = catalogById.get(achievement.id);
     if (!catalogAchievement) return [];
-    return [{ ...catalogAchievement, unlockedAt: achievement.unlockedAt }];
+    return [{ ...catalogAchievement, unlockTime: achievement.unlockedAt, unlockedAt: achievement.unlockedAt }];
   });
 }
 
@@ -321,9 +321,12 @@ function createAchievement(id: string): Achievement | undefined {
   const achievement = achievementCatalog.find((item) => item.id === id);
   if (!achievement) return undefined;
 
+  const unlockedAt = new Date().toISOString();
+
   return {
     ...achievement,
-    unlockedAt: new Date().toISOString(),
+    unlockTime: unlockedAt,
+    unlockedAt,
   };
 }
 

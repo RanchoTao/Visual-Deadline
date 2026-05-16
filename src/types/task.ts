@@ -115,8 +115,9 @@ export interface AchievementDefinition {
   description: string;
   unlockCondition: string;
   category: AchievementCategory;
+  hiddenNarrativeTone: string;
+  unlockTime?: string;
   rarityLevel?: string;
-  hiddenCommentary?: string;
   relatedStats?: string[];
 }
 

@@ -45,8 +45,8 @@ function AchievementDetailModal({ achievement, unlockedAchievement, onClose }: {
             <dd className="mt-2 text-sm text-slate-600">{achievement.unlockCondition}</dd>
           </div>
           <div className="rounded-3xl bg-slate-50/80 p-4 ring-1 ring-white/80">
-            <dt className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Hidden System Commentary</dt>
-            <dd className="mt-2 text-sm text-slate-500">{achievement.hiddenCommentary ?? '未接入。系统暂时保持沉默。'}</dd>
+            <dt className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Hidden Narrative Tone</dt>
+            <dd className="mt-2 text-sm text-slate-500">{achievement.hiddenNarrativeTone ?? '未接入。系统暂时保持沉默。'}</dd>
           </div>
           <div className="rounded-3xl bg-slate-50/80 p-4 ring-1 ring-white/80">
             <dt className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Related Statistics</dt>
