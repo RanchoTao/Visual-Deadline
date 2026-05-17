@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./visualdeadline-banner.png" alt="Visual Deadline banner" />
+  <img src="./public/banner.png" alt="Visual Deadline banner" />
 </p>
 
 <div align="center">

@@ -17,7 +17,7 @@ interface AITaskAnalysisPanelProps {
 type AnalysisState = 'idle' | 'loading' | 'success' | 'error';
 
 function providerLabel(provider: AIProvider): string {
-  return provider === 'deepseek-compatible' ? 'DeepSeek Compatible' : 'OpenAI Compatible';
+  return provider === 'deepseek-compatible' ? 'DeepSeek 兼容接口' : 'OpenAI 兼容接口';
 }
 
 export function AITaskAnalysisPanel({ tasks, pressure, onAIConnected, onAIReportGenerated }: AITaskAnalysisPanelProps) {
@@ -124,8 +124,8 @@ export function AITaskAnalysisPanel({ tasks, pressure, onAIConnected, onAIReport
             <div className="mt-5 grid gap-4 md:grid-cols-2">
               <label className="text-sm font-medium text-slate-600">服务商
                 <select value={draftSettings.provider} onChange={(event) => handleProviderChange(event.target.value as AIProvider)} className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-sky-200 focus:ring-4 focus:ring-sky-100/70">
-                  <option value="openai-compatible">OpenAI Compatible</option>
-                  <option value="deepseek-compatible">DeepSeek Compatible</option>
+                  <option value="openai-compatible">OpenAI 兼容接口</option>
+                  <option value="deepseek-compatible">DeepSeek 兼容接口</option>
                 </select>
               </label>
               <label className="text-sm font-medium text-slate-600">模型

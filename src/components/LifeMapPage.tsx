@@ -94,14 +94,14 @@ interface LifeMapPageProps {
 }
 
 const lifeSystemSections = [
-  'Life Overview',
-  'Long-Term Goals',
-  'AI Roadmaps',
-  'Life Domains',
-  'Period Planning',
-  'Risk Warnings',
-  'Life Statistics',
-  'Growth Trends',
+  '人生总览',
+  '长期目标',
+  'AI 路线图',
+  '人生领域',
+  '阶段规划',
+  '风险提醒',
+  '人生统计',
+  '成长趋势',
 ];
 
 export function LifeMapPage({ goals, tasks, onSaveGoal, onDeleteGoal, onRoadmapGenerated }: LifeMapPageProps) {
@@ -119,9 +119,9 @@ export function LifeMapPage({ goals, tasks, onSaveGoal, onDeleteGoal, onRoadmapG
         {focusedModule ? <button type="button" onClick={() => setFocusedModuleId(undefined)} className="rounded-full bg-white/85 px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">返回人生总览</button> : null}
       </div>
 
-      <div className="grid gap-3 rounded-[2rem] border border-white/70 bg-white/65 p-4 shadow-xl shadow-slate-200/50 backdrop-blur md:grid-cols-4" aria-label="Life module structure">
+      <div className="grid gap-3 rounded-[2rem] border border-white/70 bg-white/65 p-4 shadow-xl shadow-slate-200/50 backdrop-blur md:grid-cols-4" aria-label="人生模块结构">
         {lifeSystemSections.map((section, index) => (
-          <div key={section} className={`rounded-2xl px-4 py-3 text-sm font-semibold ring-1 ${section === 'Long-Term Goals' ? 'bg-slate-950 text-white ring-slate-900' : 'bg-white/75 text-slate-600 ring-white/80'}`}>
+          <div key={section} className={`rounded-2xl px-4 py-3 text-sm font-semibold ring-1 ${section === '长期目标' ? 'bg-slate-950 text-white ring-slate-900' : 'bg-white/75 text-slate-600 ring-white/80'}`}>
             <span className="mr-2 text-xs opacity-60">{index + 1}</span>{section}
           </div>
         ))}
