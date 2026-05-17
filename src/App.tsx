@@ -11,7 +11,7 @@ import { PrivacyPolicyPage } from './components/PrivacyPolicyPage';
 import { TaskForm } from './components/TaskForm';
 import { SocialPage } from './components/SocialPage';
 import { TaskPage } from './components/TaskPage';
-import { TermsPlaceholderPage } from './components/TermsPlaceholderPage';
+import { TermsPage } from './components/TermsPage';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useSupabaseAuth } from './hooks/useSupabaseAuth';
 import type { Achievement, AIArtifact, AIArtifactInput, ActivityType, Goal, GoalInput, LifecycleStatus, LifeOSModule, PressureBreakdown, PressureCalibrationSnapshot, PressureHistoryEventType, PressureHistoryRecord, Task, TaskInput, UserProfile } from './types/task';
@@ -946,7 +946,7 @@ function App() {
   }
 
   if (publicPath === '/terms') {
-    return <TermsPlaceholderPage onBack={navigateHome} />;
+    return <TermsPage onBack={navigateHome} />;
   }
 
   if (!session && !hasChosenGuestMode) {

@@ -53,7 +53,7 @@ export function AuthPanel({ isConfigured, isLoading, error, onSignIn, onSignUp, 
       return;
     }
     if (mode === 'signup' && !hasAcceptedPolicies) {
-      setFormError('请先阅读并同意用户协议与隐私政策');
+      setFormError('请先阅读并同意用户协议与隐私政策。');
       return;
     }
     setIsSubmitting(true);
@@ -79,7 +79,7 @@ export function AuthPanel({ isConfigured, isLoading, error, onSignIn, onSignUp, 
         <p className="mt-3 text-sm leading-6 text-slate-500">使用 Supabase 邮箱密码登录后，任务、目标与压力历史会按你的用户 ID 隔离同步。也可以继续使用本机 localStorage。</p>
 
         {!isConfigured && !error ? (
-          <p className="mt-5 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-700 ring-1 ring-amber-100">Supabase environment variables are missing.</p>
+          <p className="mt-5 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-700 ring-1 ring-amber-100">Supabase 环境变量未配置。</p>
         ) : null}
         {isLoading ? <p className="mt-5 rounded-2xl bg-sky-50 px-4 py-3 text-sm text-sky-700 ring-1 ring-sky-100">正在恢复登录状态…</p> : null}
         {error || formError ? <p className="mt-5 rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-600 ring-1 ring-rose-100">{formError || error}</p> : null}

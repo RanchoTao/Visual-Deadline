@@ -47,8 +47,8 @@ const CODE_VERIFIER_STORAGE_KEY = 'vd.supabase.code_verifier';
 const LEGACY_SUPABASE_AUTH_PREFIX = 'sb-';
 const MAX_AUTH_TOKEN_LENGTH = 8_192;
 const JWT_LIKE_PATTERN = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
-const MISSING_CONFIG_MESSAGE = 'Supabase environment variables are missing.';
-const INVALID_URL_MESSAGE = 'Supabase URL must be a valid project base URL.';
+const MISSING_CONFIG_MESSAGE = 'Supabase 环境变量未配置。';
+const INVALID_URL_MESSAGE = 'Supabase URL 必须是有效的项目根地址。';
 const SUPABASE_PATH_SUFFIX_PATTERN = /\/(?:rest|auth)\/v1\/?$/i;
 
 interface SupabaseConfig {
@@ -235,11 +235,21 @@ export function clearSupabaseAuthCache(): void {
   clearLegacySupabaseStorage();
 }
 
+function parseJsonBody(text: string): unknown {
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { message: text.slice(0, 240) };
+  }
+}
+
 async function parseResponse<T>(response: Response): Promise<T> {
   const text = await response.text();
-  const body = text ? JSON.parse(text) : null;
+  const body = parseJsonBody(text);
+  const bodyRecord = body && typeof body === 'object' ? body as Record<string, unknown> : null;
   if (!response.ok) {
-    const message = body?.msg || body?.message || body?.error_description || body?.error || 'Supabase 请求失败。';
+    const message = bodyRecord?.msg || bodyRecord?.message || bodyRecord?.error_description || bodyRecord?.error || 'Supabase 请求失败。';
     if (import.meta.env.DEV) {
       console.error('[Visual Deadline Supabase REST error]', {
         status: response.status,
@@ -247,7 +257,7 @@ async function parseResponse<T>(response: Response): Promise<T> {
         body,
       });
     }
-    throw new SupabaseRestError(message, response, body && typeof body === 'object' ? body as Record<string, unknown> : null);
+    throw new SupabaseRestError(String(message), response, bodyRecord);
   }
   return body as T;
 }
