@@ -1,3 +1,4 @@
+import logoUrl from '../../visualdeadline-banner.png';
 import { branding } from '../constants/branding';
 import type { LifeOSModule, UserProfile } from '../types/task';
 
