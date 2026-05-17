@@ -10,6 +10,7 @@ interface ProfilePageProps {
 
 const profileFields: { key: keyof UserProfile; label: string; placeholder: string; multiline?: boolean }[] = [
   { key: 'nickname', label: '昵称', placeholder: '你希望 VD 如何称呼你' },
+  { key: 'username', label: '用户名', placeholder: '例如：visualdeadline' },
   { key: 'height', label: '身高', placeholder: '例如：175 cm' },
   { key: 'weight', label: '体重', placeholder: '例如：68 kg' },
   { key: 'identity', label: '身份', placeholder: '例如：学生 / 研究者 / 创作者' },
@@ -19,9 +20,9 @@ const profileFields: { key: keyof UserProfile; label: string; placeholder: strin
 ];
 
 const systemItems = [
-  { title: '本地模式', description: '当前数据保存在本机浏览器；未来云同步会作为可选能力。' },
-  { title: '隐私说明', description: '隐私政策与数据边界预留入口，当前版本不上传个人数据。' },
-  { title: '未来同步', description: '为账号、认证和多设备同步保留结构，但不启用后端。' },
+  { title: '本地模式', description: '未登录时数据保存在本机浏览器；登录后可使用云同步。' },
+  { title: '数据与隐私', description: '查看隐私政策、数据边界与本地存储说明。' },
+  { title: '未来同步', description: '为账号、认证和多设备同步保留结构。' },
 ];
 
 export function ProfilePage({ profile, onProfileChange }: ProfilePageProps) {
@@ -45,8 +46,8 @@ export function ProfilePage({ profile, onProfileChange }: ProfilePageProps) {
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-400">我 · 系统设置</p>
-          <h1 className="mt-2 text-4xl font-semibold tracking-tight text-slate-950">我</h1>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">个人资料、系统状态与数据安全都放在这里。当前信息只保存在当前浏览器的 VD 存储层中。</p>
+          <h1 className="mt-2 text-4xl font-semibold tracking-tight text-slate-950">个人中心</h1>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">头像、昵称、用户名、系统状态与数据安全都放在这里。当前信息会作为 VD 的身份层持久保存。</p>
           <label className="mt-4 inline-flex cursor-pointer rounded-full bg-white/85 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">
             选择头像
             <input type="file" accept="image/*" onChange={handleAvatarChange} className="sr-only" />
@@ -88,6 +89,16 @@ export function ProfilePage({ profile, onProfileChange }: ProfilePageProps) {
               <p className="mt-2 text-xs leading-5 text-slate-500">{item.description}</p>
             </article>
           ))}
+        </div>
+        <div className="mt-4 rounded-3xl bg-white/75 p-4 ring-1 ring-white/80">
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">设置 / 数据与隐私</p>
+          <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="text-base font-semibold text-slate-900">隐私政策</h3>
+              <p className="mt-1 text-xs leading-5 text-slate-500">登录后也可以随时查看 VD（Visual Deadline）如何处理与保护你的数据。</p>
+            </div>
+            <a href="/privacy" className="inline-flex items-center justify-center rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-slate-200">查看隐私政策</a>
+          </div>
         </div>
         <p className="mt-4 rounded-2xl bg-white/75 px-4 py-3 text-xs leading-5 text-slate-500 ring-1 ring-white/80">应用版本 v1.0.1 · 网页优先 · 渐进式应用布局预留</p>
       </section>

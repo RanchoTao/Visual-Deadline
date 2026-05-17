@@ -39,6 +39,12 @@ export const defaultAISettings: AISettings = {
   model: 'gpt-4o-mini',
 };
 
+const BACKEND_AI_URL = '/api/ai';
+const MAX_SAFE_BEARER_TOKEN_LENGTH = 8_192;
+const JWT_LIKE_PATTERN = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
+const LARGE_HEADER_STATUS_CODES = new Set([431, 494]);
+const LARGE_HEADER_MESSAGE = 'VD Cloud AI 请求失败：请求头过大或登录状态异常。请重新登录；如果仍然失败，请清除本地缓存后再试。';
+
 export function getProviderDefaults(provider: AIProvider): Pick<AISettings, 'baseUrl' | 'model'> {
   if (provider === 'deepseek-compatible') return { baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' };
   return { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' };
@@ -61,6 +67,14 @@ export function isDeveloperAIKeyMode(settings: Partial<AISettings> | null | unde
 
 export function getAIConnectionLabel(settings: Partial<AISettings> | null | undefined): string {
   return isDeveloperAIKeyMode(settings) ? '开发者模式：使用本地 API Key' : 'VD 云端 AI 已启用';
+}
+
+export function isCloudAIAuthStateError(error: unknown): boolean {
+  return error instanceof Error && /请求头过大|登录状态异常|重新登录|本地缓存/.test(error.message);
+}
+
+export async function resetCloudAIAuthState(): Promise<void> {
+  await supabase.auth.clearLocalAuthState();
 }
 
 interface ChatCompletionChoice {
@@ -88,11 +102,39 @@ function buildBackendMessage(systemPrompt: string, userPrompt: string): string {
   );
 }
 
+function isSafeBearerToken(token: unknown): token is string {
+  return typeof token === 'string' && token.length > 0 && token.length <= MAX_SAFE_BEARER_TOKEN_LENGTH && JWT_LIKE_PATTERN.test(token);
+}
+
+function trimForLog(text: string, maxLength = 2_000): string {
+  return text.length > maxLength ? `${text.slice(0, maxLength)}…` : text;
+}
+
+function logAIRequestFailure(details: { url: string; status: number; responseText: string }): void {
+  console.error('[VD_AI_REQUEST_FAILED]', {
+    url: details.url,
+    status: details.status,
+    responseText: trimForLog(details.responseText),
+  });
+}
+
+function parseJsonResponse<T>(text: string): T | undefined {
+  try {
+    return text ? JSON.parse(text) as T : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function getLargeHeaderMessage(status: number): string | undefined {
+  return LARGE_HEADER_STATUS_CODES.has(status) ? LARGE_HEADER_MESSAGE : undefined;
+}
+
 export async function callBackendAI(request: BackendAIRequest): Promise<BackendAIResponse> {
   const session = await supabase.auth.getSession();
   if (!session?.access_token) throw new Error('请先登录后再使用 VD 云端 AI。');
 
-  const response = await fetch('/api/ai', {
+  const response = await fetch(BACKEND_AI_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -101,12 +143,8 @@ export async function callBackendAI(request: BackendAIRequest): Promise<BackendA
     body: JSON.stringify(request),
   });
 
-  let payload: BackendAIResponse | BackendAIErrorResponse | undefined;
-  try {
-    payload = (await response.json()) as BackendAIResponse | BackendAIErrorResponse;
-  } catch {
-    payload = undefined;
-  }
+  const responseText = await response.text();
+  const payload = parseJsonResponse<BackendAIResponse | BackendAIErrorResponse>(responseText);
 
   if (!response.ok || !payload?.ok) {
     const message = payload && 'error' in payload && payload.error ? payload.error : `VD 云端 AI 请求失败：${response.status}`;
@@ -139,14 +177,11 @@ async function requestBrowserChatCompletion(settings: AISettings, systemPrompt: 
     }),
   });
 
-  let payload: ChatCompletionResponse | undefined;
-  try {
-    payload = (await response.json()) as ChatCompletionResponse;
-  } catch {
-    payload = undefined;
-  }
+  const responseText = await response.text();
+  const payload = parseJsonResponse<ChatCompletionResponse>(responseText);
 
   if (!response.ok) {
+    logAIRequestFailure({ url: endpoint, status: response.status, responseText });
     const message = payload?.error?.message || (response.status === 401 ? 'API Key 无效或无权限。' : `AI 服务返回错误：${response.status}`);
     throw new Error(message);
   }

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { storageKeys } from '../storage';
 import type { AIArtifactInput, Task, TaskInput } from '../types/task';
-import { defaultAISettings, getAIConnectionLabel, normalizeAISettings, requestChatCompletion } from '../services/aiClient';
+import { defaultAISettings, getAIConnectionLabel, isCloudAIAuthStateError, normalizeAISettings, requestChatCompletion, resetCloudAIAuthState } from '../services/aiClient';
 import type { AISettings } from '../services/aiClient';
 import { buildTaskIntakeUserPrompt, createTaskIntakePayload, parseTaskIntakeResponse, taskIntakeSystemPrompt } from '../services/taskIntakePrompt';
 import { getActivityTypeLabel } from '../utils/taskScoring';
@@ -31,24 +31,38 @@ export function AITaskCommandBar({ tasks, onConfirmTasks, onAIArtifactGenerated 
   const [notes, setNotes] = useState('');
   const [rawJson, setRawJson] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const [canResetAuthState, setCanResetAuthState] = useState(false);
 
 
   async function structureTasks() {
     const trimmedInput = input.trim();
     if (!trimmedInput) {
       setState('error');
+      setCanResetAuthState(false);
       setErrorMessage('请先输入最近要做的事。');
       return;
     }
 
     setState('loading');
     setErrorMessage('');
+    setCanResetAuthState(false);
     setDrafts([]);
     setNotes('');
     setRawJson('');
     try {
       const payload = createTaskIntakePayload(trimmedInput, tasks);
-      const result = await requestChatCompletion(settings, taskIntakeSystemPrompt, buildTaskIntakeUserPrompt(payload), { mode: 'task_advice', context: { tasks } });
+      const taskContext = tasks
+        .filter((task) => task.lifecycleStatus === 'active')
+        .slice(0, 30)
+        .map((task) => ({
+          id: task.id,
+          title: task.title,
+          deadline: task.deadline,
+          importance: task.importance,
+          progress: task.progress,
+          activityType: task.activityType,
+        }));
+      const result = await requestChatCompletion(settings, taskIntakeSystemPrompt, buildTaskIntakeUserPrompt(payload), { mode: 'task_advice', context: { tasks: taskContext } });
       const parsed = parseTaskIntakeResponse(result);
       setDrafts(parsed.tasks);
       setNotes(parsed.notes);
@@ -65,6 +79,7 @@ export function AITaskCommandBar({ tasks, onConfirmTasks, onAIArtifactGenerated 
       });
     } catch (error) {
       setState('error');
+      setCanResetAuthState(isCloudAIAuthStateError(error));
       setErrorMessage(error instanceof Error ? error.message : '任务整理失败，请稍后重试。');
     }
   }
@@ -76,6 +91,7 @@ export function AITaskCommandBar({ tasks, onConfirmTasks, onAIArtifactGenerated 
     setDrafts([]);
     setNotes('');
     setRawJson('');
+    setCanResetAuthState(false);
     setState('idle');
   }
 
@@ -84,7 +100,14 @@ export function AITaskCommandBar({ tasks, onConfirmTasks, onAIArtifactGenerated 
     setNotes('');
     setRawJson('');
     setErrorMessage('');
+    setCanResetAuthState(false);
     setState('idle');
+  }
+
+  async function resetAuthState() {
+    await resetCloudAIAuthState();
+    setCanResetAuthState(false);
+    setErrorMessage('已清除登录缓存。请重新登录后再使用 VD Cloud AI。');
   }
 
   async function copyJson() {
@@ -115,7 +138,14 @@ export function AITaskCommandBar({ tasks, onConfirmTasks, onAIArtifactGenerated 
         </button>
       </div>
 
-      {state === 'error' && errorMessage ? <div className="mt-4 rounded-2xl bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-600 ring-1 ring-rose-100">{errorMessage}</div> : null}
+      {state === 'error' && errorMessage ? (
+        <div className="mt-4 rounded-2xl bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-600 ring-1 ring-rose-100">
+          <p>{errorMessage}</p>
+          {canResetAuthState ? (
+            <button type="button" onClick={resetAuthState} className="mt-3 rounded-full bg-white px-4 py-2 text-xs font-semibold text-rose-700 ring-1 ring-rose-100 hover:bg-rose-50">重新登录 / 清除登录缓存</button>
+          ) : null}
+        </div>
+      ) : null}
       {state === 'ready' ? (
         <div className="mt-4 rounded-[1.5rem] bg-white/90 p-4 text-slate-900 shadow-inner ring-1 ring-white/80">
           <div className="flex flex-wrap items-center justify-between gap-3">

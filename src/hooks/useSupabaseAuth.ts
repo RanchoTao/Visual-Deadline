@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase, type SupabaseSession } from '../lib/supabaseClient';
+import type { UserProfile } from '../types/task';
 
 const EMAIL_CONFIRMATION_REDIRECT_URL = 'https://www.visualdeadline.com';
 const AUTH_CALLBACK_QUERY_PARAMS = ['code', 'state', 'error', 'error_code', 'error_description'];
@@ -50,12 +51,19 @@ export function useSupabaseAuth() {
     };
   }, []);
 
-  const signUp = useCallback(async (email: string, password: string) => {
+  const signUp = useCallback(async (email: string, password: string, identity?: Pick<UserProfile, 'avatarDataUrl' | 'nickname' | 'username'>) => {
     setError(undefined);
     const nextSession = await supabase.auth.signUp({
       email,
       password,
-      options: { emailRedirectTo: EMAIL_CONFIRMATION_REDIRECT_URL },
+      options: {
+        emailRedirectTo: EMAIL_CONFIRMATION_REDIRECT_URL,
+        data: identity ? {
+          avatarDataUrl: identity.avatarDataUrl,
+          nickname: identity.nickname,
+          username: identity.username,
+        } : undefined,
+      },
     });
     if (nextSession) setSession(nextSession);
     return nextSession;

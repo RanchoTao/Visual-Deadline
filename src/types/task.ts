@@ -167,6 +167,7 @@ export type LifeOSModule = 'home' | 'task' | 'map' | 'social' | 'log' | 'me';
 
 export interface UserProfile {
   nickname: string;
+  username: string;
   height: string;
   weight: string;
   identity: string;
