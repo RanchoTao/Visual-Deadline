@@ -12,15 +12,76 @@ export interface SupabaseSession {
 
 type AuthChangeCallback = (session: SupabaseSession | null) => void;
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
-const SESSION_STORAGE_KEY = 'vd.supabase.session';
+interface EmailPasswordCredentials {
+  email: string;
+  password: string;
+}
 
-function getRequiredConfig() {
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-    throw new Error('缺少 Supabase 环境变量：请配置 VITE_SUPABASE_URL 和 VITE_SUPABASE_ANON_KEY。');
+const RAW_SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+const RAW_SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+const SESSION_STORAGE_KEY = 'vd.supabase.session';
+const MISSING_CONFIG_MESSAGE = 'Supabase environment variables are missing.';
+const INVALID_URL_MESSAGE = 'Supabase URL must be a valid project base URL.';
+const SUPABASE_PATH_SUFFIX_PATTERN = /\/(?:rest|auth)\/v1\/?$/i;
+
+interface SupabaseConfig {
+  url: string;
+  anonKey: string;
+}
+
+interface SupabaseConfigStatus {
+  config?: SupabaseConfig;
+  error?: string;
+}
+
+function normalizeSupabaseUrl(rawUrl: string): string {
+  let normalizedUrl = rawUrl.trim();
+  while (SUPABASE_PATH_SUFFIX_PATTERN.test(normalizedUrl)) {
+    normalizedUrl = normalizedUrl.replace(SUPABASE_PATH_SUFFIX_PATTERN, '');
   }
-  return { url: SUPABASE_URL.replace(/\/$/, ''), anonKey: SUPABASE_ANON_KEY };
+  return normalizedUrl.replace(/\/+$/, '');
+}
+
+function getSupabaseConfigStatus(): SupabaseConfigStatus {
+  const anonKey = RAW_SUPABASE_ANON_KEY?.trim();
+  if (!RAW_SUPABASE_URL?.trim() || !anonKey) {
+    return { error: MISSING_CONFIG_MESSAGE };
+  }
+
+  const url = normalizeSupabaseUrl(RAW_SUPABASE_URL);
+  try {
+    const parsedUrl = new URL(url);
+    if (!['http:', 'https:'].includes(parsedUrl.protocol) || parsedUrl.pathname !== '/') {
+      return { error: INVALID_URL_MESSAGE };
+    }
+    return { config: { url: parsedUrl.origin, anonKey } };
+  } catch {
+    return { error: INVALID_URL_MESSAGE };
+  }
+}
+
+const supabaseConfigStatus = getSupabaseConfigStatus();
+
+if (import.meta.env.DEV) {
+  const debugUrl = supabaseConfigStatus.config?.url ?? (RAW_SUPABASE_URL?.trim() ? normalizeSupabaseUrl(RAW_SUPABASE_URL) : undefined);
+  let urlOrigin: string | undefined;
+  try {
+    urlOrigin = debugUrl ? new URL(debugUrl).origin : undefined;
+  } catch {
+    urlOrigin = undefined;
+  }
+  console.debug('[Visual Deadline Supabase]', {
+    hasUrl: Boolean(RAW_SUPABASE_URL?.trim()),
+    hasAnonKey: Boolean(RAW_SUPABASE_ANON_KEY?.trim()),
+    urlOrigin,
+  });
+}
+
+function getRequiredConfig(): SupabaseConfig {
+  if (!supabaseConfigStatus.config) {
+    throw new Error(supabaseConfigStatus.error ?? MISSING_CONFIG_MESSAGE);
+  }
+  return supabaseConfigStatus.config;
 }
 
 function readStoredSession(): SupabaseSession | null {
@@ -62,7 +123,11 @@ class VisualDeadlineSupabaseClient {
   private listeners = new Set<AuthChangeCallback>();
 
   get isConfigured(): boolean {
-    return Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
+    return Boolean(supabaseConfigStatus.config);
+  }
+
+  get configError(): string | undefined {
+    return supabaseConfigStatus.error;
   }
 
   auth = {
@@ -74,7 +139,7 @@ class VisualDeadlineSupabaseClient {
       }
       return stored;
     },
-    signUp: async (email: string, password: string): Promise<SupabaseSession | null> => {
+    signUp: async ({ email, password }: EmailPasswordCredentials): Promise<SupabaseSession | null> => {
       const { url, anonKey } = getRequiredConfig();
       const payload = await parseResponse<{ access_token?: string; refresh_token?: string; expires_in?: number; user: SupabaseUser }>(await fetch(`${url}/auth/v1/signup`, {
         method: 'POST',
@@ -87,7 +152,7 @@ class VisualDeadlineSupabaseClient {
       this.emit(session);
       return session;
     },
-    signInWithPassword: async (email: string, password: string): Promise<SupabaseSession> => {
+    signInWithPassword: async ({ email, password }: EmailPasswordCredentials): Promise<SupabaseSession> => {
       const { url, anonKey } = getRequiredConfig();
       const payload = await parseResponse<{ access_token: string; refresh_token: string; expires_in?: number; user: SupabaseUser }>(await fetch(`${url}/auth/v1/token?grant_type=password`, {
         method: 'POST',
