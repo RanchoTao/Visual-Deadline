@@ -28,14 +28,14 @@ export function useSupabaseAuth() {
 
   const signUp = useCallback(async (email: string, password: string) => {
     setError(undefined);
-    const nextSession = await supabase.auth.signUp(email, password);
+    const nextSession = await supabase.auth.signUp({ email, password });
     if (nextSession) setSession(nextSession);
     return nextSession;
   }, []);
 
   const signIn = useCallback(async (email: string, password: string) => {
     setError(undefined);
-    const nextSession = await supabase.auth.signInWithPassword(email, password);
+    const nextSession = await supabase.auth.signInWithPassword({ email, password });
     setSession(nextSession);
     return nextSession;
   }, []);
@@ -46,5 +46,5 @@ export function useSupabaseAuth() {
     setSession(null);
   }, []);
 
-  return { session, isLoading, error, isConfigured: supabase.isConfigured, signUp, signIn, signOut };
+  return { session, isLoading, error: error ?? supabase.configError, isConfigured: supabase.isConfigured, signUp, signIn, signOut };
 }
