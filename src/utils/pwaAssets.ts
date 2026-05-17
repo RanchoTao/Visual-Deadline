@@ -1,6 +1,6 @@
 const APP_NAME = 'Visual Deadline';
 const THEME_COLOR = '#f8fafc';
-const LOGO_PATH = '/assets/images/branding/logo.png';
+const LOGO_PATH = '/assets/images/logo.png';
 const MANIFEST_PATH = '/site.webmanifest';
 
 function upsertMeta(name: string, content: string): void {
@@ -30,7 +30,6 @@ export function configurePwaAssets(): void {
   upsertMeta('apple-mobile-web-app-capable', 'yes');
   upsertMeta('apple-mobile-web-app-title', APP_NAME);
   upsertMeta('apple-mobile-web-app-status-bar-style', 'default');
-  // `logo.png` is the square app identity asset for browser/PWA icons.
   upsertLink('icon', LOGO_PATH, { type: 'image/png' });
   upsertLink('shortcut icon', LOGO_PATH, { type: 'image/png' });
   upsertLink('apple-touch-icon', LOGO_PATH, { sizes: '180x180' });
