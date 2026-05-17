@@ -91,13 +91,16 @@ export function ProfilePage({ profile, onProfileChange }: ProfilePageProps) {
           ))}
         </div>
         <div className="mt-4 rounded-3xl bg-white/75 p-4 ring-1 ring-white/80">
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">设置 / 数据与隐私</p>
+          <p className="text-xs font-semibold tracking-[0.22em] text-slate-400">设置 / 数据与隐私</p>
           <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h3 className="text-base font-semibold text-slate-900">隐私政策</h3>
-              <p className="mt-1 text-xs leading-5 text-slate-500">登录后也可以随时查看 VD（Visual Deadline）如何处理与保护你的数据。</p>
+              <h3 className="text-base font-semibold text-slate-900">协议与隐私</h3>
+              <p className="mt-1 text-xs leading-5 text-slate-500">登录后也可以随时查看 VD（Visual Deadline）如何处理与保护你的数据，以及你使用产品需要了解的基本规则。</p>
             </div>
-            <a href="/privacy" className="inline-flex items-center justify-center rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-slate-200">查看隐私政策</a>
+            <div className="flex flex-wrap gap-2">
+              <a href="/privacy" className="inline-flex items-center justify-center rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-slate-200">查看隐私政策</a>
+              <a href="/terms" className="inline-flex items-center justify-center rounded-full bg-white/85 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200">查看用户协议</a>
+            </div>
           </div>
         </div>
         <p className="mt-4 rounded-2xl bg-white/75 px-4 py-3 text-xs leading-5 text-slate-500 ring-1 ring-white/80">应用版本 v1.0.1 · 网页优先 · 渐进式应用布局预留</p>
