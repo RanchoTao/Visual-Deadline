@@ -17,6 +17,14 @@ export function AuthPanel({ isConfigured, isLoading, error, onSignIn, onSignUp, 
   const [formError, setFormError] = useState<string | undefined>();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  function getSubmitErrorMessage(submitError: unknown): string {
+    const message = submitError instanceof Error ? submitError.message : '认证失败，请稍后重试。';
+    if (mode === 'signin' && message.toLowerCase().includes('email not confirmed')) {
+      return '邮箱尚未验证。请打开验证邮件，建议用系统浏览器打开链接。';
+    }
+    return message;
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setFormError(undefined);
@@ -27,10 +35,14 @@ export function AuthPanel({ isConfigured, isLoading, error, onSignIn, onSignUp, 
     }
     setIsSubmitting(true);
     try {
-      const session = mode === 'signin' ? await onSignIn(email.trim(), password) : await onSignUp(email.trim(), password);
-      if (!session && mode === 'signup') setStatus('注册成功。请检查邮箱完成验证，然后回到这里登录。');
+      if (mode === 'signin') {
+        await onSignIn(email.trim(), password);
+      } else {
+        await onSignUp(email.trim(), password);
+        setStatus('注册成功，请前往邮箱点击验证链接。验证后再返回登录。');
+      }
     } catch (submitError) {
-      setFormError(submitError instanceof Error ? submitError.message : '认证失败，请稍后重试。');
+      setFormError(getSubmitErrorMessage(submitError));
     } finally {
       setIsSubmitting(false);
     }
