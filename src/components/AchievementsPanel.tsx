@@ -24,7 +24,7 @@ function AchievementDetailModal({ achievement, unlockedAchievement, onClose }: {
       <section className="max-h-[calc(100vh-3rem)] w-full max-w-2xl overflow-y-auto rounded-[2rem] border border-white/80 bg-white/95 p-6 shadow-2xl shadow-slate-300/60">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">System Memory Archive</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">系统记忆档案</p>
             <h2 id="achievement-detail-title" className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">{achievement.title}</h2>
             <p className="mt-3 max-w-xl text-sm leading-6 text-slate-500">{achievement.shortDescription}</p>
           </div>
@@ -33,23 +33,23 @@ function AchievementDetailModal({ achievement, unlockedAchievement, onClose }: {
 
         <dl className="mt-8 space-y-4">
           <div className="rounded-3xl bg-slate-50/80 p-4 ring-1 ring-white/80">
-            <dt className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Unlock Status</dt>
+            <dt className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">解锁状态</dt>
             <dd className="mt-2 text-sm font-semibold text-slate-900">{getDetailStatus(unlockedAchievement)}</dd>
           </div>
           <div className="rounded-3xl bg-slate-50/80 p-4 ring-1 ring-white/80">
-            <dt className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Unlock Timestamp</dt>
+            <dt className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">解锁时间</dt>
             <dd className="mt-2 text-sm text-slate-600">{unlockedAchievement ? formatUnlockedAt(unlockedAchievement.unlockedAt) : '等待系统记录。'}</dd>
           </div>
           <div className="rounded-3xl bg-slate-50/80 p-4 ring-1 ring-white/80">
-            <dt className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Trigger Condition</dt>
+            <dt className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">触发条件</dt>
             <dd className="mt-2 text-sm text-slate-600">{achievement.unlockCondition}</dd>
           </div>
           <div className="rounded-3xl bg-slate-50/80 p-4 ring-1 ring-white/80">
-            <dt className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Hidden Narrative Tone</dt>
+            <dt className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">隐藏叙事语气</dt>
             <dd className="mt-2 text-sm text-slate-500">{achievement.hiddenNarrativeTone ?? '未接入。系统暂时保持沉默。'}</dd>
           </div>
           <div className="rounded-3xl bg-slate-50/80 p-4 ring-1 ring-white/80">
-            <dt className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Related Statistics</dt>
+            <dt className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">相关统计</dt>
             <dd className="mt-2 text-sm text-slate-500">{achievement.relatedStats?.length ? achievement.relatedStats.join(' / ') : '未接入。等待更多生命数据。'}</dd>
           </div>
         </dl>

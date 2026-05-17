@@ -266,7 +266,7 @@ export function calculatePressureIndex(tasks: Task[], calibration?: Partial<Pres
     manageable: '可控',
     high: '高压',
     overload: '过载',
-    burnout: '压力爆表 / Burnout Risk',
+    burnout: '压力爆表 / 燃尽风险',
   };
 
   const recommendations: Record<PressureState, string> = {

@@ -59,11 +59,11 @@ function formatCloudSyncError(error: unknown): Error {
   console.error('[Visual Deadline cloud sync error]', error);
 
   if (TABLE_OR_COLUMN_MISSING_PATTERNS.some((pattern) => pattern.test(details))) {
-    return new Error('Database schema is not initialized. Run supabase-schema.sql.');
+    return new Error('数据库结构尚未初始化，请先执行 supabase-schema.sql。');
   }
 
   if (RLS_DENIED_PATTERNS.some((pattern) => pattern.test(details)) || (error instanceof SupabaseRestError && [401, 403].includes(error.status))) {
-    return new Error('Cloud sync permission denied. Check RLS policies.');
+    return new Error('云同步权限被拒绝，请检查 RLS 权限策略。');
   }
 
   return error;
