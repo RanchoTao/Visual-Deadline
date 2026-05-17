@@ -33,9 +33,16 @@ interface EmailPasswordCredentials {
   password: string;
 }
 
+interface SignUpCredentials extends EmailPasswordCredentials {
+  options?: {
+    emailRedirectTo?: string;
+  };
+}
+
 const RAW_SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const RAW_SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 const SESSION_STORAGE_KEY = 'vd.supabase.session';
+const CODE_VERIFIER_STORAGE_KEY = 'vd.supabase.code_verifier';
 const MISSING_CONFIG_MESSAGE = 'Supabase environment variables are missing.';
 const INVALID_URL_MESSAGE = 'Supabase URL must be a valid project base URL.';
 const SUPABASE_PATH_SUFFIX_PATTERN = /\/(?:rest|auth)\/v1\/?$/i;
@@ -100,6 +107,41 @@ function getRequiredConfig(): SupabaseConfig {
   return supabaseConfigStatus.config;
 }
 
+
+function base64UrlEncode(bytes: Uint8Array): string {
+  let binary = '';
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  return window.btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function createCodeVerifier(): string {
+  const randomBytes = new Uint8Array(32);
+  window.crypto.getRandomValues(randomBytes);
+  return base64UrlEncode(randomBytes);
+}
+
+async function createCodeChallenge(codeVerifier: string): Promise<string> {
+  const digest = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(codeVerifier));
+  return base64UrlEncode(new Uint8Array(digest));
+}
+
+function storeCodeVerifier(codeVerifier: string): void {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(CODE_VERIFIER_STORAGE_KEY, codeVerifier);
+}
+
+function readStoredCodeVerifier(): string | null {
+  if (typeof window === 'undefined') return null;
+  return window.localStorage.getItem(CODE_VERIFIER_STORAGE_KEY);
+}
+
+function clearStoredCodeVerifier(): void {
+  if (typeof window === 'undefined') return;
+  window.localStorage.removeItem(CODE_VERIFIER_STORAGE_KEY);
+}
+
 function readStoredSession(): SupabaseSession | null {
   if (typeof window === 'undefined') return null;
   try {
@@ -162,16 +204,41 @@ class VisualDeadlineSupabaseClient {
       }
       return stored;
     },
-    signUp: async ({ email, password }: EmailPasswordCredentials): Promise<SupabaseSession | null> => {
+    signUp: async ({ email, password, options }: SignUpCredentials): Promise<SupabaseSession | null> => {
       const { url, anonKey } = getRequiredConfig();
-      const payload = await parseResponse<{ access_token?: string; refresh_token?: string; expires_in?: number; user: SupabaseUser }>(await fetch(`${url}/auth/v1/signup`, {
+      const signUpUrl = new URL(`${url}/auth/v1/signup`);
+      if (options?.emailRedirectTo) signUpUrl.searchParams.set('redirect_to', options.emailRedirectTo);
+
+      const codeVerifier = createCodeVerifier();
+      const codeChallenge = await createCodeChallenge(codeVerifier);
+      storeCodeVerifier(codeVerifier);
+
+      const payload = await parseResponse<{ access_token?: string; refresh_token?: string; expires_in?: number; user: SupabaseUser }>(await fetch(signUpUrl, {
         method: 'POST',
         headers: { apikey: anonKey, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, code_challenge: codeChallenge, code_challenge_method: 's256' }),
       }));
       if (!payload.access_token || !payload.refresh_token) return null;
       const session = toSession(payload as { access_token: string; refresh_token: string; expires_in?: number; user: SupabaseUser });
       persistSession(session);
+      clearStoredCodeVerifier();
+      this.emit(session);
+      return session;
+    },
+    exchangeCodeForSession: async (code: string): Promise<SupabaseSession> => {
+      const { url, anonKey } = getRequiredConfig();
+      const codeVerifier = readStoredCodeVerifier();
+      if (!codeVerifier) {
+        throw new Error('无法完成邮箱验证登录：缺少本机验证凭据。请使用注册时的同一浏览器打开验证链接。');
+      }
+      const payload = await parseResponse<{ access_token: string; refresh_token: string; expires_in?: number; user: SupabaseUser }>(await fetch(`${url}/auth/v1/token?grant_type=pkce`, {
+        method: 'POST',
+        headers: { apikey: anonKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ auth_code: code, code_verifier: codeVerifier }),
+      }));
+      const session = toSession(payload);
+      persistSession(session);
+      clearStoredCodeVerifier();
       this.emit(session);
       return session;
     },

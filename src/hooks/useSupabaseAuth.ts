@@ -1,6 +1,22 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase, type SupabaseSession } from '../lib/supabaseClient';
 
+const EMAIL_CONFIRMATION_REDIRECT_URL = 'https://www.visualdeadline.com';
+const AUTH_CALLBACK_QUERY_PARAMS = ['code', 'state', 'error', 'error_code', 'error_description'];
+
+function readAuthCallbackCode(): string | null {
+  if (typeof window === 'undefined') return null;
+  return new URLSearchParams(window.location.search).get('code');
+}
+
+function removeAuthCallbackQueryParams(): void {
+  if (typeof window === 'undefined') return;
+  const url = new URL(window.location.href);
+  AUTH_CALLBACK_QUERY_PARAMS.forEach((param) => url.searchParams.delete(param));
+  const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+  window.history.replaceState(window.history.state, document.title, nextUrl);
+}
+
 export function useSupabaseAuth() {
   const [session, setSession] = useState<SupabaseSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -8,7 +24,15 @@ export function useSupabaseAuth() {
 
   useEffect(() => {
     let isMounted = true;
-    supabase.auth.getSession()
+    const callbackCode = readAuthCallbackCode();
+    const sessionPromise = callbackCode
+      ? supabase.auth.exchangeCodeForSession(callbackCode).then((exchangedSession) => {
+        removeAuthCallbackQueryParams();
+        return exchangedSession;
+      })
+      : supabase.auth.getSession();
+
+    sessionPromise
       .then((currentSession) => {
         if (isMounted) setSession(currentSession);
       })
@@ -28,7 +52,11 @@ export function useSupabaseAuth() {
 
   const signUp = useCallback(async (email: string, password: string) => {
     setError(undefined);
-    const nextSession = await supabase.auth.signUp({ email, password });
+    const nextSession = await supabase.auth.signUp({
+      email,
+      password,
+      options: { emailRedirectTo: EMAIL_CONFIRMATION_REDIRECT_URL },
+    });
     if (nextSession) setSession(nextSession);
     return nextSession;
   }, []);
