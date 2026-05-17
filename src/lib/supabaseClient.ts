@@ -12,6 +12,22 @@ export interface SupabaseSession {
 
 type AuthChangeCallback = (session: SupabaseSession | null) => void;
 
+export class SupabaseRestError extends Error {
+  status: number;
+  code?: string;
+  details?: string;
+  hint?: string;
+
+  constructor(message: string, response: Response, body: Record<string, unknown> | null) {
+    super(message);
+    this.name = 'SupabaseRestError';
+    this.status = response.status;
+    this.code = typeof body?.code === 'string' ? body.code : undefined;
+    this.details = typeof body?.details === 'string' ? body.details : undefined;
+    this.hint = typeof body?.hint === 'string' ? body.hint : undefined;
+  }
+}
+
 interface EmailPasswordCredentials {
   email: string;
   password: string;
@@ -114,7 +130,14 @@ async function parseResponse<T>(response: Response): Promise<T> {
   const body = text ? JSON.parse(text) : null;
   if (!response.ok) {
     const message = body?.msg || body?.message || body?.error_description || body?.error || 'Supabase 请求失败。';
-    throw new Error(message);
+    if (import.meta.env.DEV) {
+      console.error('[Visual Deadline Supabase REST error]', {
+        status: response.status,
+        statusText: response.statusText,
+        body,
+      });
+    }
+    throw new SupabaseRestError(message, response, body && typeof body === 'object' ? body as Record<string, unknown> : null);
   }
   return body as T;
 }
