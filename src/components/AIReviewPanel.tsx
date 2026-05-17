@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { storageKeys } from '../storage';
 import type { AIArtifactInput, PressureHistoryRecord, Task } from '../types/task';
-import { defaultAISettings, normalizeAISettings, requestChatCompletion, type AISettings } from '../services/aiClient';
+import { defaultAISettings, getAIConnectionLabel, isDeveloperAIKeyMode, normalizeAISettings, requestChatCompletion, type AISettings } from '../services/aiClient';
 import { buildReviewUserPrompt, reviewSystemPrompt } from '../services/reviewPrompt';
 import { AIReportRenderer } from './AIReportRenderer';
 
@@ -20,14 +20,9 @@ export function AIReviewPanel({ tasks, pressureHistory, onAIReportGenerated }: A
   const [state, setState] = useState<ReviewState>('idle');
   const [report, setReport] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
-  const hasApiKey = Boolean(settings.apiKey.trim());
+  const isDeveloperMode = isDeveloperAIKeyMode(settings);
 
   async function generateReview() {
-    if (!hasApiKey) {
-      setState('error');
-      setErrorMessage('请先在 AI 任务分析中设置 API Key，再生成近期数据观察。');
-      return;
-    }
     if (tasks.length === 0) {
       setState('error');
       setErrorMessage('当前没有任务数据，无法生成数据观察。');
@@ -37,7 +32,7 @@ export function AIReviewPanel({ tasks, pressureHistory, onAIReportGenerated }: A
     setState('loading');
     setErrorMessage('');
     try {
-      const result = await requestChatCompletion(settings, reviewSystemPrompt, buildReviewUserPrompt(tasks, pressureHistory));
+      const result = await requestChatCompletion(settings, reviewSystemPrompt, buildReviewUserPrompt(tasks, pressureHistory), { mode: 'pressure_analysis', context: { tasks, pressure: pressureHistory.at(-1) } });
       setReport(result);
       setState('success');
       onAIReportGenerated?.({
@@ -71,7 +66,7 @@ export function AIReviewPanel({ tasks, pressureHistory, onAIReportGenerated }: A
           {report ? <button type="button" onClick={() => { setReport(''); setErrorMessage(''); setState('idle'); }} className="rounded-full px-4 py-2 text-sm font-semibold text-slate-500 hover:bg-slate-100">隐藏本次结果</button> : null}
         </div>
       </div>
-      <div className="mt-4 rounded-2xl bg-slate-50/80 px-4 py-3 text-xs leading-5 text-slate-500 ring-1 ring-white/80">当前配置：{hasApiKey ? `${settings.provider} · ${settings.model}` : '未配置 API Key'}。数据观察仅发送必要任务与压力历史字段。</div>
+      <div className="mt-4 rounded-2xl bg-slate-50/80 px-4 py-3 text-xs leading-5 text-slate-500 ring-1 ring-white/80">当前配置：{getAIConnectionLabel(settings)}{isDeveloperMode ? ` · ${settings.provider} · ${settings.model}` : ''}。数据观察仅发送必要任务与压力历史字段。</div>
       {state === 'loading' ? <div className="mt-4 rounded-3xl bg-sky-50 p-5 text-sm font-semibold text-sky-700 ring-1 ring-sky-100">正在生成近期观察……</div> : null}
       {state === 'error' && errorMessage ? <div className="mt-4 rounded-3xl bg-rose-50 p-5 text-sm font-semibold text-rose-600 ring-1 ring-rose-100">{errorMessage}</div> : null}
       {report ? <AIReportRenderer content={report} variant="review" /> : null}

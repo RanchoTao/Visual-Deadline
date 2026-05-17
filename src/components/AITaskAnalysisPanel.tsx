@@ -2,7 +2,7 @@ import { useMemo, useState, type FormEvent } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { storageKeys } from '../storage';
 import type { AIArtifactInput, PressureBreakdown, Task } from '../types/task';
-import { defaultAISettings, getProviderDefaults, normalizeAISettings, requestChatCompletion, type AIProvider, type AISettings } from '../services/aiClient';
+import { defaultAISettings, getAIConnectionLabel, getProviderDefaults, isDeveloperAIKeyMode, normalizeAISettings, requestChatCompletion, type AIProvider, type AISettings } from '../services/aiClient';
 import { buildTaskAnalysisUserPrompt, createTaskAnalysisPayload, taskAnalysisSystemPrompt } from '../services/taskAnalysisPrompt';
 import { AIReportRenderer } from './AIReportRenderer';
 import { ModalPortal } from './ModalPortal';
@@ -28,7 +28,7 @@ export function AITaskAnalysisPanel({ tasks, pressure, onAIConnected, onAIReport
   const [analysisState, setAnalysisState] = useState<AnalysisState>('idle');
   const [report, setReport] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
-  const hasApiKey = Boolean(settings.apiKey.trim());
+  const isDeveloperMode = isDeveloperAIKeyMode(settings);
 
   function openSettings() {
     setDraftSettings(settings);
@@ -50,12 +50,6 @@ export function AITaskAnalysisPanel({ tasks, pressure, onAIConnected, onAIReport
   }
 
   async function runAnalysis() {
-    if (!hasApiKey) {
-      setErrorMessage('请先设置 AI API Key。');
-      setAnalysisState('error');
-      openSettings();
-      return;
-    }
     if (tasks.length === 0) {
       setErrorMessage('当前没有任务，无法进行 AI 任务分析。');
       setAnalysisState('error');
@@ -67,7 +61,7 @@ export function AITaskAnalysisPanel({ tasks, pressure, onAIConnected, onAIReport
     try {
       const payload = createTaskAnalysisPayload(tasks, pressure);
       const userPrompt = buildTaskAnalysisUserPrompt(payload);
-      const result = await requestChatCompletion(settings, taskAnalysisSystemPrompt, userPrompt);
+      const result = await requestChatCompletion(settings, taskAnalysisSystemPrompt, userPrompt, { mode: 'pressure_analysis', context: { tasks, pressure } });
       setReport(result);
       setAnalysisState('success');
       onAIReportGenerated?.({
@@ -96,7 +90,7 @@ export function AITaskAnalysisPanel({ tasks, pressure, onAIConnected, onAIReport
         </div>
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={openSettings} className="rounded-full bg-white/85 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">
-            设置 API Key
+            开发者 API Key
           </button>
           <button type="button" onClick={runAnalysis} disabled={analysisState === 'loading'} className="rounded-full bg-white/85 px-5 py-2 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300">
             {report ? '重新分析' : '分析当前任务'}
@@ -106,14 +100,8 @@ export function AITaskAnalysisPanel({ tasks, pressure, onAIConnected, onAIReport
       </div>
 
       <div className="mt-4 rounded-2xl bg-slate-50/80 px-4 py-3 text-xs leading-5 text-slate-500 ring-1 ring-white/80">
-        <span className="font-semibold text-slate-600">当前配置：</span>{hasApiKey ? `${providerLabel(settings.provider)} · ${settings.model}` : '未配置 API Key'}。任务数据会直接发送给你选择的 AI 服务商用于生成分析。请不要填写不愿发送给第三方模型的敏感内容。
+        <span className="font-semibold text-slate-600">当前配置：</span>{getAIConnectionLabel(settings)}{isDeveloperMode ? ` · ${providerLabel(settings.provider)} · ${settings.model}` : ''}。默认通过 /api/ai 使用 VD Cloud AI，开发者本地 API Key 仅保存在当前浏览器。
       </div>
-
-      {!hasApiKey ? (
-        <div className="mt-4 rounded-3xl border border-dashed border-slate-200 bg-white/65 p-5 text-sm text-slate-500">
-          尚未配置 API Key。请先点击“设置 API Key”，配置后再分析当前任务。
-        </div>
-      ) : null}
 
       {analysisState === 'loading' ? <div className="mt-4 rounded-3xl bg-sky-50 p-5 text-sm font-semibold text-sky-700 ring-1 ring-sky-100">正在生成任务压力报告……</div> : null}
       {analysisState === 'error' && errorMessage ? <div className="mt-4 rounded-3xl bg-rose-50 p-5 text-sm font-semibold text-rose-600 ring-1 ring-rose-100">{errorMessage}</div> : null}
@@ -130,7 +118,7 @@ export function AITaskAnalysisPanel({ tasks, pressure, onAIConnected, onAIReport
               <button type="button" onClick={() => setIsSettingsOpen(false)} className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-500 hover:bg-slate-200">关闭</button>
             </div>
 
-            <p className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-500 ring-1 ring-white/80">API Key 仅保存在当前浏览器本地，用于直接请求你选择的模型服务。VD 不会上传或保存你的 API Key 到服务器。</p>
+            <p className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-500 ring-1 ring-white/80">开发者模式 API Key 仅保存在当前浏览器本地，用于绕过 VD Cloud AI 直接请求你选择的模型服务。普通用户无需配置 API Key，VD 不会上传或保存你的本地 API Key 到服务器。</p>
             <p className="mt-2 rounded-2xl bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-700 ring-1 ring-amber-100">任务数据会直接发送给你选择的 AI 服务商用于生成分析。请不要填写不愿发送给第三方模型的敏感内容。</p>
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">

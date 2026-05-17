@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { storageKeys } from '../storage';
 import type { AIArtifactInput, Task, TaskInput } from '../types/task';
-import { defaultAISettings, normalizeAISettings, requestChatCompletion } from '../services/aiClient';
+import { defaultAISettings, getAIConnectionLabel, normalizeAISettings, requestChatCompletion } from '../services/aiClient';
 import type { AISettings } from '../services/aiClient';
 import { buildTaskIntakeUserPrompt, createTaskIntakePayload, parseTaskIntakeResponse, taskIntakeSystemPrompt } from '../services/taskIntakePrompt';
 import { getActivityTypeLabel } from '../utils/taskScoring';
@@ -31,15 +31,10 @@ export function AITaskCommandBar({ tasks, onConfirmTasks, onAIArtifactGenerated 
   const [notes, setNotes] = useState('');
   const [rawJson, setRawJson] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
-  const hasApiKey = Boolean(settings.apiKey.trim());
+
 
   async function structureTasks() {
     const trimmedInput = input.trim();
-    if (!hasApiKey) {
-      setState('error');
-      setErrorMessage('请先在 AI 任务分析中设置 API Key，再使用 AI 任务录入。');
-      return;
-    }
     if (!trimmedInput) {
       setState('error');
       setErrorMessage('请先输入最近要做的事。');
@@ -53,7 +48,7 @@ export function AITaskCommandBar({ tasks, onConfirmTasks, onAIArtifactGenerated 
     setRawJson('');
     try {
       const payload = createTaskIntakePayload(trimmedInput, tasks);
-      const result = await requestChatCompletion(settings, taskIntakeSystemPrompt, buildTaskIntakeUserPrompt(payload));
+      const result = await requestChatCompletion(settings, taskIntakeSystemPrompt, buildTaskIntakeUserPrompt(payload), { mode: 'task_advice', context: { tasks } });
       const parsed = parseTaskIntakeResponse(result);
       setDrafts(parsed.tasks);
       setNotes(parsed.notes);
@@ -105,7 +100,7 @@ export function AITaskCommandBar({ tasks, onConfirmTasks, onAIArtifactGenerated 
           <h2 className="mt-1 text-2xl font-semibold">自然语言 → 可确认任务草稿</h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">说出最近要推进的人生事项，AI 会抽取任务、阶段与拆解建议，确认后才会写入 VD。</p>
         </div>
-        <span className="rounded-full bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-500 ring-1 ring-white/80">{hasApiKey ? '已配置 API Key' : '未配置 API Key'}</span>
+        <span className="rounded-full bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-500 ring-1 ring-white/80">{getAIConnectionLabel(settings)}</span>
       </div>
 
       <div className="mt-5 flex flex-col gap-3 lg:flex-row">

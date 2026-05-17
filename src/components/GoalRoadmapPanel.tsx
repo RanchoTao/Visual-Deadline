@@ -94,14 +94,10 @@ export function GoalRoadmapPanel({ goals, tasks, onSaveGoal, onDeleteGoal, onRoa
   }
 
   async function generateRoadmap(goal: Goal) {
-    if (!settings.apiKey.trim()) {
-      setRoadmapState({ errorGoalId: goal.id, message: '请先配置 AI API Key，再生成目标路线图。' });
-      return;
-    }
     setSelectedGoalId(goal.id);
     setRoadmapState({ loadingGoalId: goal.id });
     try {
-      const content = await requestChatCompletion(settings, goalRoadmapSystemPrompt, buildGoalRoadmapUserPrompt(goal, tasks));
+      const content = await requestChatCompletion(settings, goalRoadmapSystemPrompt, buildGoalRoadmapUserPrompt(goal, tasks), { mode: 'daily_plan', context: { goals: [goal], tasks } });
       const result = parseGoalRoadmapResponse(content);
       onSaveGoal({ ...createGoalInput(goal), roadmapSuggestions: result.roadmapSuggestions }, goal.id);
       onRoadmapGenerated?.({
