@@ -51,10 +51,11 @@ export function LifeOSNav({ activeModule, profile, isSignedIn, isCloudLoading, s
       <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-white to-transparent" />
       <div className="flex items-start justify-between gap-4 px-1 py-1 md:items-center md:px-2">
         <button type="button" onClick={() => onModuleChange('home')} className="group flex min-w-0 items-center gap-3 rounded-[1.5rem] px-2 py-1.5 text-left transition duration-300 hover:bg-white/55">
-          <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-950 text-sm font-semibold text-white shadow-lg shadow-slate-300 transition duration-300 group-hover:-translate-y-0.5 group-hover:shadow-xl">VD</span>
+          <span className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl bg-white shadow-lg shadow-slate-300 ring-1 ring-slate-200/70 transition duration-300 group-hover:-translate-y-0.5 group-hover:shadow-xl">
+            <img src="/visualdeadline-logo.png" alt="Visual Deadline 标志" className="h-full w-full object-contain" />
+          </span>
           <span className="min-w-0">
             <span className="block text-base font-semibold tracking-tight text-slate-950">{branding.productName}</span>
-            <span className="mt-0.5 block text-sm font-medium text-slate-500">可视 · 人生操作系统</span>
           </span>
         </button>
 
