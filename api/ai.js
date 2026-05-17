@@ -1,6 +1,7 @@
 const MAX_MESSAGE_LENGTH = 12_000;
 const MAX_CONTEXT_LENGTH = 60_000;
 const MAX_REQUESTS_PER_USER_PER_DAY = 20;
+const MAX_AUTH_HEADER_LENGTH = 8_500;
 const DEEPSEEK_PROVIDER = 'deepseek';
 const SUPPORTED_MODES = new Set(['task_advice', 'daily_plan', 'pressure_analysis']);
 const dailyRequestCounts = new Map();
@@ -15,19 +16,46 @@ function readEnv(name, fallbackName) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-function getBearerToken(request) {
+function getAuthorizationHeader(request) {
   const header = request.headers.authorization || request.headers.Authorization;
-  if (typeof header !== 'string') return '';
-  const match = header.match(/^Bearer\s+(.+)$/i);
+  return typeof header === 'string' ? header : '';
+}
+
+function getBearerToken(request) {
+  const header = getAuthorizationHeader(request);
+  const match = header.match(/^Bearer\s+([^\s]+)$/i);
   return match?.[1]?.trim() || '';
 }
 
+function getApproximateHeaderSize(request) {
+  return Object.entries(request.headers || {}).reduce((total, [key, value]) => {
+    const normalizedValue = Array.isArray(value) ? value.join(',') : String(value ?? '');
+    return total + key.length + normalizedValue.length + 4;
+  }, 0);
+}
+
+function trimForLog(text, maxLength = 2000) {
+  return text.length > maxLength ? `${text.slice(0, maxLength)}…` : text;
+}
+
+function logAIRequestFailure({ url, status, responseText }) {
+  console.error('[VD_API_AI_REQUEST_FAILED]', {
+    url,
+    status,
+    responseText: trimForLog(responseText),
+  });
+}
+
 async function readJsonBody(request) {
-  if (request.body && typeof request.body === 'object') return request.body;
+  if (request.body && typeof request.body === 'object') {
+    request.vdBodyLength = JSON.stringify(request.body).length;
+    return request.body;
+  }
 
   const chunks = [];
   for await (const chunk of request) chunks.push(Buffer.from(chunk));
   const raw = Buffer.concat(chunks).toString('utf8');
+  request.vdBodyLength = raw.length;
   return raw ? JSON.parse(raw) : {};
 }
 
@@ -127,11 +155,13 @@ async function callDeepSeek(payload) {
     let data;
     try {
       data = rawText ? JSON.parse(rawText) : undefined;
-    } catch {
+    } catch (error) {
+      console.error('[VD_API_AI_UPSTREAM_PARSE_ERROR]', { error, status: response.status, responseText: rawText });
       data = undefined;
     }
 
     if (!response.ok) {
+      logAIRequestFailure({ url: `${baseUrl.replace(/\/+$/, '')}/chat/completions`, status: response.status, responseText: rawText });
       const upstreamMessage = typeof data?.error?.message === 'string' ? data.error.message : `DeepSeek returned ${response.status}`;
       const error = new Error(upstreamMessage);
       error.status = response.status;
@@ -154,6 +184,13 @@ export default async function handler(request, response) {
   }
 
   try {
+    const headerSize = getApproximateHeaderSize(request);
+    const authorizationHeader = getAuthorizationHeader(request);
+    if (headerSize > 12_000 || authorizationHeader.length > MAX_AUTH_HEADER_LENGTH) {
+      console.error('[VD_API_AI_HEADER_TOO_LARGE]', { headerSize, authorizationHeaderLength: authorizationHeader.length, url: request.url || '/api/ai' });
+      return sendJson(response, 431, { ok: false, error: '请求头过大或登录状态异常。请重新登录；如果仍然失败，请清除本地缓存后再试。' });
+    }
+
     const accessToken = getBearerToken(request);
     if (!accessToken) return sendJson(response, 401, { ok: false, error: '缺少 Supabase 登录凭证。' });
 
@@ -161,6 +198,16 @@ export default async function handler(request, response) {
     if (!user) return sendJson(response, 401, { ok: false, error: 'Supabase 登录凭证无效或已过期。' });
 
     const payload = await readJsonBody(request);
+    console.info('[VD_API_AI_REQUEST_START]', {
+      url: request.url || '/api/ai',
+      method: request.method,
+      bodyLength: request.vdBodyLength ?? 0,
+      headerSize,
+      authorizationHeaderLength: authorizationHeader.length,
+      hasSession: Boolean(accessToken),
+      isLoggedIn: Boolean(user?.id),
+      userId: user?.id,
+    });
     const validationError = validatePayload(payload);
     if (validationError) return sendJson(response, 400, { ok: false, error: validationError });
 
@@ -174,6 +221,7 @@ export default async function handler(request, response) {
       provider: DEEPSEEK_PROVIDER,
     });
   } catch (error) {
+    console.error('[VD_API_AI_HANDLER_ERROR]', { error, url: request.url || '/api/ai', method: request.method });
     if (error?.message === 'SUPABASE_CONFIG_MISSING') return sendJson(response, 500, { ok: false, error: '服务端 Supabase 环境变量未配置。' });
     if (error?.message === 'UNSUPPORTED_PROVIDER') return sendJson(response, 500, { ok: false, error: '当前服务端 AI_PROVIDER 暂不支持。' });
     if (error?.message === 'DEEPSEEK_API_KEY_MISSING') return sendJson(response, 500, { ok: false, error: '服务端 DeepSeek API Key 未配置。' });

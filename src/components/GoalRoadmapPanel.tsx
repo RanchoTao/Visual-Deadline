@@ -111,6 +111,7 @@ export function GoalRoadmapPanel({ goals, tasks, onSaveGoal, onDeleteGoal, onRoa
       });
       setRoadmapState({});
     } catch (error) {
+      console.error('[VD_AI_GOAL_ROADMAP_ERROR]', { error, goalId: goal.id });
       setRoadmapState({ errorGoalId: goal.id, message: error instanceof Error ? error.message : '目标导航失败。' });
     }
   }

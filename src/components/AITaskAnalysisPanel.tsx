@@ -75,6 +75,7 @@ export function AITaskAnalysisPanel({ tasks, pressure, onAIConnected, onAIReport
         metadata: { provider: settings.provider, taskCount: tasks.length },
       });
     } catch (error) {
+      console.error('[VD_AI_TASK_ANALYSIS_ERROR]', { error });
       setErrorMessage(error instanceof Error ? error.message : 'AI 分析请求失败，请稍后重试。');
       setAnalysisState('error');
     }

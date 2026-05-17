@@ -133,7 +133,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
         setSubmitError(result.error || '保存失败，请稍后重试。');
       }
     } catch (error) {
-      console.error('[VD_ONBOARDING] onboarding submit failed', error);
+      console.error('[VD_ONBOARDING] onboarding submit failed', { error });
       setSubmitError(error instanceof Error ? error.message : '保存失败，请稍后重试。');
     } finally {
       setIsSubmitting(false);

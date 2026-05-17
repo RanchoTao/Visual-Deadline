@@ -46,6 +46,7 @@ export function AIReviewPanel({ tasks, pressureHistory, onAIReportGenerated }: A
         metadata: { provider: settings.provider, pressureRecordCount: pressureHistory.length },
       });
     } catch (error) {
+      console.error('[VD_AI_REVIEW_ERROR]', { error });
       setState('error');
       setErrorMessage(error instanceof Error ? error.message : 'AI 数据观察生成失败，请稍后重试。');
     }

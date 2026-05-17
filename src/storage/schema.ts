@@ -222,7 +222,8 @@ export function migrateData(raw: unknown): MigrationResult {
 export function parseImportJson(text: string): MigrationResult {
   try {
     return migrateData(JSON.parse(text));
-  } catch {
+  } catch (error) {
+    console.error('[VD_IMPORT_JSON_PARSE_ERROR]', { error });
     return { ok: false, error: '文件不是有效 JSON，请选择由 VD 导出的 .json 备份。' };
   }
 }

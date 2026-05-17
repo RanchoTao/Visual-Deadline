@@ -73,6 +73,7 @@ async function withCloudSyncErrors<T>(operation: Promise<T>): Promise<T> {
   try {
     return await operation;
   } catch (error) {
+    console.error('[VD_CLOUD_SYNC_ERROR]', { error });
     throw formatCloudSyncError(error);
   }
 }

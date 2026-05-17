@@ -12,7 +12,8 @@ export function collectCurrentData(): VisualizedDeadlineData {
   const safeLoad = <T,>(reader: () => T, fallback: T): T => {
     try {
       return reader();
-    } catch {
+    } catch (error) {
+      console.error('[VD_BACKUP_COLLECT_READ_ERROR]', { error });
       return fallback;
     }
   };
@@ -38,7 +39,8 @@ export function saveAutoBackup(): void {
   const safeLoad = (key: string) => {
     try {
       return loadValue<VisualizedDeadlineExport | null>(key, null);
-    } catch {
+    } catch (error) {
+      console.error('[VD_BACKUP_SAFE_LOAD_ERROR]', { error, key });
       return null;
     }
   };
@@ -55,7 +57,8 @@ export function saveAutoBackup(): void {
 export function loadLatestBackup(): VisualizedDeadlineExport | null {
   try {
     return loadValue<VisualizedDeadlineExport | null>(storageKeys.backupLatest, null);
-  } catch {
+  } catch (error) {
+    console.error('[VD_BACKUP_LATEST_LOAD_ERROR]', { error });
     return null;
   }
 }
@@ -82,7 +85,8 @@ export function getAvailableBackupCount(): number {
   return [storageKeys.backupLatest, ...rollingBackupKeys].filter((key) => {
     try {
       return loadValue<VisualizedDeadlineExport | null>(key, null);
-    } catch {
+    } catch (error) {
+      console.error('[VD_BACKUP_COUNT_LOAD_ERROR]', { error, key });
       return false;
     }
   }).length;

@@ -63,7 +63,8 @@ export function DataSafetyPanel() {
       setBackupCount(getAvailableBackupCount());
       setStatus(`导入成功：已迁移到 v1.0.1 架构并立即刷新界面。`);
       setStatusType('success');
-    } catch {
+    } catch (error) {
+      console.error('[VD_DATA_IMPORT_ERROR]', { error });
       setStatus('读取文件失败，请确认浏览器允许访问该 JSON 备份。');
       setStatusType('error');
     }

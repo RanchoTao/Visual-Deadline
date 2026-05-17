@@ -7,9 +7,11 @@ import { LifeOSNav } from './components/LifeOSNav';
 import { LogPage } from './components/LogPage';
 import { OnboardingFlow } from './components/OnboardingFlow';
 import { ProfilePage } from './components/ProfilePage';
+import { PrivacyPolicyPage } from './components/PrivacyPolicyPage';
 import { TaskForm } from './components/TaskForm';
 import { SocialPage } from './components/SocialPage';
 import { TaskPage } from './components/TaskPage';
+import { TermsPlaceholderPage } from './components/TermsPlaceholderPage';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useSupabaseAuth } from './hooks/useSupabaseAuth';
 import type { Achievement, AIArtifact, AIArtifactInput, ActivityType, Goal, GoalInput, LifecycleStatus, LifeOSModule, PressureBreakdown, PressureCalibrationSnapshot, PressureHistoryEventType, PressureHistoryRecord, Task, TaskInput, UserProfile } from './types/task';
@@ -93,7 +95,8 @@ function readBaselinePressure(): number | null {
   try {
     const storedPressure = loadValue<number | null>(storageKeys.baselinePressure, null);
     return storedPressure === null ? null : clampPressure(storedPressure);
-  } catch {
+  } catch (error) {
+    console.error('[VD_BASELINE_PRESSURE_READ_ERROR]', { error });
     return null;
   }
 }
@@ -105,7 +108,8 @@ function readInitialOnboardingComplete(): boolean {
     // Existing users may have tasks or a baseline before onboardingComplete existed.
     // Treat that as already onboarded so migration never blocks their current data.
     return hasValue(storageKeys.tasks) || hasValue(storageKeys.baselinePressure);
-  } catch {
+  } catch (error) {
+    console.error('[VD_ONBOARDING_STATE_READ_ERROR]', { error });
     return false;
   }
 }
@@ -342,6 +346,7 @@ function createAchievement(id: string): Achievement | undefined {
 }
 
 function App() {
+  const [publicPath, setPublicPath] = useState(() => window.location.pathname);
   const { session, isLoading: isAuthLoading, error: authError, isConfigured: isSupabaseConfigured, signIn, signUp, signOut } = useSupabaseAuth();
   const [hasChosenGuestMode, setHasChosenGuestMode] = useState(false);
   const [cloudStatus, setCloudStatus] = useState<string | undefined>();
@@ -538,7 +543,8 @@ function App() {
     let previousActiveAt: number | null = null;
     try {
       previousActiveAt = loadValue<number | null>(storageKeys.welcomeLastActive, null);
-    } catch {
+    } catch (error) {
+      console.error('[VD_WELCOME_LAST_ACTIVE_READ_ERROR]', { error });
       previousActiveAt = null;
     }
 
@@ -698,7 +704,7 @@ function App() {
         saveTasks(nextTasks);
         console.info('[VD_ONBOARDING] task persistence success', { taskCount: nextTasks.length });
       } catch (error) {
-        console.error('[VD_ONBOARDING] task persistence failure', error);
+        console.error('[VD_ONBOARDING] task persistence failure', { error });
         throw new Error('任务保存失败，请检查浏览器存储权限后重试。');
       }
 
@@ -710,7 +716,7 @@ function App() {
           realtimePressure,
         });
       } catch (error) {
-        console.error('[VD_ONBOARDING] user state persistence failure', error);
+        console.error('[VD_ONBOARDING] user state persistence failure', { error });
         throw new Error('压力校准保存失败，请检查浏览器存储权限后重试。');
       }
 
@@ -718,7 +724,7 @@ function App() {
         saveValue(storageKeys.onboardingComplete, true);
         console.info('[VD_ONBOARDING] onboarding completion flag update', true);
       } catch (error) {
-        console.error('[VD_ONBOARDING] onboarding completion flag update failure', error);
+        console.error('[VD_ONBOARDING] onboarding completion flag update failure', { error });
         throw new Error('引导完成状态保存失败，请检查浏览器存储权限后重试。');
       }
 
@@ -750,10 +756,10 @@ function App() {
     } catch (error) {
       try {
         saveValue(storageKeys.onboardingComplete, false);
-      } catch {
-        // The original error below is more actionable for the user; this rollback is best-effort.
+      } catch (rollbackError) {
+        console.error('[VD_ONBOARDING_ROLLBACK_ERROR]', { error: rollbackError });
       }
-      console.error('[VD_ONBOARDING] onboarding pipeline failed', error);
+      console.error('[VD_ONBOARDING] onboarding pipeline failed', { error });
       return { ok: false, error: error instanceof Error ? error.message : '进入 VD 失败，请稍后重试。' };
     }
   }
@@ -885,6 +891,21 @@ function App() {
   }
 
 
+
+  useEffect(() => {
+    function syncPublicPath() {
+      setPublicPath(window.location.pathname);
+    }
+
+    window.addEventListener('popstate', syncPublicPath);
+    return () => window.removeEventListener('popstate', syncPublicPath);
+  }, []);
+
+  function navigateHome() {
+    window.history.pushState({}, '', '/');
+    setPublicPath('/');
+  }
+
   const taskModule = (
     <TaskPage
       tasks={normalizedTasks}
@@ -910,6 +931,15 @@ function App() {
     log: <LogPage tasks={normalizedTasks} goals={normalizedGoals} profile={normalizedProfile} pressure={pressure} pressureHistory={normalizedPressureHistory} achievements={normalizedAchievements} aiArtifacts={normalizedAIArtifacts} onAIReportGenerated={(artifact) => { saveAIArtifact(artifact); unlockAchievement('ai-report-generated'); }} onDelete={deleteTask} onReviewNoteChange={updateReviewNote} />,
     me: <ProfilePage profile={normalizedProfile} onProfileChange={setProfile} />,
   };
+
+
+  if (publicPath === '/privacy' || publicPath === '/privacy.html') {
+    return <PrivacyPolicyPage onBack={navigateHome} />;
+  }
+
+  if (publicPath === '/terms') {
+    return <TermsPlaceholderPage onBack={navigateHome} />;
+  }
 
   if (!session && !hasChosenGuestMode) {
     return <AuthPanel isConfigured={isSupabaseConfigured} isLoading={isAuthLoading} error={authError} onSignIn={signIn} onSignUp={signUp} onContinueAsGuest={() => setHasChosenGuestMode(true)} />;

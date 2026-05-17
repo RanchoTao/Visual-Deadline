@@ -19,9 +19,9 @@ const profileFields: { key: keyof UserProfile; label: string; placeholder: strin
 ];
 
 const systemItems = [
-  { title: '本地模式', description: '当前数据保存在本机浏览器；未来云同步会作为可选能力。' },
-  { title: '隐私说明', description: '隐私政策与数据边界预留入口，当前版本不上传个人数据。' },
-  { title: '未来同步', description: '为账号、认证和多设备同步保留结构，但不启用后端。' },
+  { title: '本地模式', description: '未登录时数据保存在本机浏览器；登录后可使用云同步。' },
+  { title: '数据与隐私', description: '查看隐私政策、数据边界与本地存储说明。' },
+  { title: '未来同步', description: '为账号、认证和多设备同步保留结构。' },
 ];
 
 export function ProfilePage({ profile, onProfileChange }: ProfilePageProps) {
@@ -88,6 +88,16 @@ export function ProfilePage({ profile, onProfileChange }: ProfilePageProps) {
               <p className="mt-2 text-xs leading-5 text-slate-500">{item.description}</p>
             </article>
           ))}
+        </div>
+        <div className="mt-4 rounded-3xl bg-white/75 p-4 ring-1 ring-white/80">
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">设置 / 数据与隐私</p>
+          <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="text-base font-semibold text-slate-900">隐私政策</h3>
+              <p className="mt-1 text-xs leading-5 text-slate-500">登录后也可以随时查看 VD（Visual Deadline）如何处理与保护你的数据。</p>
+            </div>
+            <a href="/privacy" className="inline-flex items-center justify-center rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-slate-200">查看隐私政策</a>
+          </div>
         </div>
         <p className="mt-4 rounded-2xl bg-white/75 px-4 py-3 text-xs leading-5 text-slate-500 ring-1 ring-white/80">应用版本 v1.0.1 · 网页优先 · 渐进式应用布局预留</p>
       </section>

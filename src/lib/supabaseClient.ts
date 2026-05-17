@@ -43,6 +43,9 @@ const RAW_SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined
 const RAW_SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 const SESSION_STORAGE_KEY = 'vd.supabase.session';
 const CODE_VERIFIER_STORAGE_KEY = 'vd.supabase.code_verifier';
+const LEGACY_SUPABASE_AUTH_PREFIX = 'sb-';
+const MAX_AUTH_TOKEN_LENGTH = 8_192;
+const JWT_LIKE_PATTERN = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
 const MISSING_CONFIG_MESSAGE = 'Supabase environment variables are missing.';
 const INVALID_URL_MESSAGE = 'Supabase URL must be a valid project base URL.';
 const SUPABASE_PATH_SUFFIX_PATTERN = /\/(?:rest|auth)\/v1\/?$/i;
@@ -78,7 +81,8 @@ function getSupabaseConfigStatus(): SupabaseConfigStatus {
       return { error: INVALID_URL_MESSAGE };
     }
     return { config: { url: parsedUrl.origin, anonKey } };
-  } catch {
+  } catch (error) {
+    console.error('[VD_SUPABASE_CONFIG_URL_ERROR]', { error, rawUrl: RAW_SUPABASE_URL });
     return { error: INVALID_URL_MESSAGE };
   }
 }
@@ -90,7 +94,8 @@ if (import.meta.env.DEV) {
   let urlOrigin: string | undefined;
   try {
     urlOrigin = debugUrl ? new URL(debugUrl).origin : undefined;
-  } catch {
+  } catch (error) {
+    console.error('[VD_SUPABASE_DEBUG_URL_ERROR]', { error, debugUrl });
     urlOrigin = undefined;
   }
   console.debug('[Visual Deadline Supabase]', {
@@ -109,6 +114,9 @@ function getRequiredConfig(): SupabaseConfig {
 
 
 function base64UrlEncode(bytes: Uint8Array): string {
+  if (typeof window === 'undefined' || typeof window.btoa !== 'function') {
+    throw new Error('当前浏览器不支持认证所需的 Base64 能力，请更换现代浏览器后重试。');
+  }
   let binary = '';
   bytes.forEach((byte) => {
     binary += String.fromCharCode(byte);
@@ -117,69 +125,174 @@ function base64UrlEncode(bytes: Uint8Array): string {
 }
 
 function createCodeVerifier(): string {
+  if (typeof window === 'undefined' || !window.crypto?.getRandomValues) {
+    throw new Error('当前浏览器不支持安全随机数，无法完成注册验证。请升级浏览器或关闭隐私限制后重试。');
+  }
   const randomBytes = new Uint8Array(32);
   window.crypto.getRandomValues(randomBytes);
   return base64UrlEncode(randomBytes);
 }
 
 async function createCodeChallenge(codeVerifier: string): Promise<string> {
+  if (typeof window === 'undefined' || !window.crypto?.subtle) {
+    throw new Error('当前浏览器不支持邮箱验证所需的安全加密能力。请使用 HTTPS 和现代浏览器后重试。');
+  }
   const digest = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(codeVerifier));
   return base64UrlEncode(new Uint8Array(digest));
 }
 
 function storeCodeVerifier(codeVerifier: string): void {
   if (typeof window === 'undefined') return;
-  window.localStorage.setItem(CODE_VERIFIER_STORAGE_KEY, codeVerifier);
+  try {
+    window.localStorage.setItem(CODE_VERIFIER_STORAGE_KEY, codeVerifier);
+  } catch (error) {
+    console.error('[VD_AUTH_CODE_VERIFIER_STORE_ERROR]', { error });
+    throw new Error('无法保存邮箱验证凭据。请确认浏览器允许本地存储后重试。');
+  }
 }
 
 function readStoredCodeVerifier(): string | null {
   if (typeof window === 'undefined') return null;
-  return window.localStorage.getItem(CODE_VERIFIER_STORAGE_KEY);
+  try {
+    return window.localStorage.getItem(CODE_VERIFIER_STORAGE_KEY);
+  } catch (error) {
+    console.error('[VD_AUTH_CODE_VERIFIER_READ_ERROR]', { error });
+    return null;
+  }
 }
 
 function clearStoredCodeVerifier(): void {
   if (typeof window === 'undefined') return;
-  window.localStorage.removeItem(CODE_VERIFIER_STORAGE_KEY);
+  try {
+    window.localStorage.removeItem(CODE_VERIFIER_STORAGE_KEY);
+  } catch (error) {
+    console.error('[VD_AUTH_CODE_VERIFIER_CLEAR_ERROR]', { error });
+  }
+}
+
+function isUsableStoredToken(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= MAX_AUTH_TOKEN_LENGTH;
+}
+
+function isUsableAccessToken(value: unknown): value is string {
+  return isUsableStoredToken(value) && JWT_LIKE_PATTERN.test(value);
+}
+
+function clearLegacySupabaseStorage(): void {
+  if (typeof window === 'undefined') return;
+
+  try {
+    const storages = [window.localStorage, window.sessionStorage];
+    storages.forEach((storage) => {
+      for (let index = storage.length - 1; index >= 0; index -= 1) {
+        const key = storage.key(index);
+        if (!key) continue;
+        if (key === SESSION_STORAGE_KEY || key === CODE_VERIFIER_STORAGE_KEY || key.startsWith(LEGACY_SUPABASE_AUTH_PREFIX)) {
+          storage.removeItem(key);
+        }
+      }
+    });
+  } catch (error) {
+    console.error('[VD_AUTH_STORAGE_CLEAR_ERROR]', { error });
+  }
+
+  try {
+    document.cookie.split(';').forEach((cookie) => {
+      const [rawName] = cookie.split('=');
+      const name = rawName?.trim();
+      if (!name || (!name.startsWith(LEGACY_SUPABASE_AUTH_PREFIX) && !name.startsWith('vd.supabase'))) return;
+      document.cookie = `${name}=; Max-Age=0; path=/; SameSite=Lax`;
+    });
+  } catch (error) {
+    console.error('[VD_AUTH_COOKIE_CLEAR_ERROR]', { error });
+  }
+}
+
+function normalizeStoredSession(value: unknown): SupabaseSession | null {
+  if (!value || typeof value !== 'object') return null;
+  const candidate = value as Record<string, unknown>;
+  if (!isUsableAccessToken(candidate.access_token) || !isUsableStoredToken(candidate.refresh_token)) return null;
+
+  const user = candidate.user && typeof candidate.user === 'object' ? candidate.user as Record<string, unknown> : null;
+  if (!user || typeof user.id !== 'string' || !user.id) return null;
+
+  return {
+    access_token: candidate.access_token,
+    refresh_token: candidate.refresh_token,
+    expires_at: typeof candidate.expires_at === 'number' ? candidate.expires_at : undefined,
+    user: {
+      id: user.id,
+      email: typeof user.email === 'string' ? user.email : undefined,
+    },
+  };
 }
 
 function readStoredSession(): SupabaseSession | null {
   if (typeof window === 'undefined') return null;
   try {
     const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as SupabaseSession) : null;
-  } catch {
+    if (!raw) return null;
+    const session = normalizeStoredSession(JSON.parse(raw));
+    if (!session) clearLegacySupabaseStorage();
+    return session;
+  } catch (error) {
+    console.error('[VD_AUTH_SESSION_READ_ERROR]', { error });
+    clearLegacySupabaseStorage();
     return null;
   }
 }
 
 function persistSession(session: SupabaseSession | null): void {
   if (typeof window === 'undefined') return;
-  if (session) window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
-  else window.localStorage.removeItem(SESSION_STORAGE_KEY);
+  if (session) {
+    const normalizedSession = normalizeStoredSession(session);
+    if (normalizedSession) {
+      try {
+        window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(normalizedSession));
+      } catch (error) {
+        console.error('[VD_AUTH_SESSION_PERSIST_ERROR]', { error, userId: normalizedSession.user.id });
+        throw new Error('无法保存登录状态。请确认浏览器允许本地存储后重试。');
+      }
+    } else clearLegacySupabaseStorage();
+  } else {
+    clearLegacySupabaseStorage();
+  }
 }
 
 function toSession(payload: { access_token: string; refresh_token: string; expires_in?: number; user: SupabaseUser }): SupabaseSession {
-  return {
+  const session = normalizeStoredSession({
     access_token: payload.access_token,
     refresh_token: payload.refresh_token,
     expires_at: payload.expires_in ? Math.floor(Date.now() / 1000) + payload.expires_in : undefined,
     user: payload.user,
-  };
+  });
+  if (!session) throw new Error('Supabase 登录态异常，请重新登录。');
+  return session;
+}
+
+export function clearSupabaseAuthCache(): void {
+  clearLegacySupabaseStorage();
 }
 
 async function parseResponse<T>(response: Response): Promise<T> {
   const text = await response.text();
-  const body = text ? JSON.parse(text) : null;
+  let body: unknown = null;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch (error) {
+    console.error('[VD_SUPABASE_RESPONSE_PARSE_ERROR]', { error, status: response.status, statusText: response.statusText, text });
+  }
   if (!response.ok) {
-    const message = body?.msg || body?.message || body?.error_description || body?.error || 'Supabase 请求失败。';
-    if (import.meta.env.DEV) {
-      console.error('[Visual Deadline Supabase REST error]', {
-        status: response.status,
-        statusText: response.statusText,
-        body,
-      });
-    }
-    throw new SupabaseRestError(message, response, body && typeof body === 'object' ? body as Record<string, unknown> : null);
+    const responseBody = body && typeof body === 'object' ? body as Record<string, unknown> : null;
+    const message = responseBody?.msg || responseBody?.message || responseBody?.error_description || responseBody?.error || 'Supabase 请求失败。';
+    console.error('[VD_SUPABASE_RESPONSE_ERROR]', {
+      status: response.status,
+      statusText: response.statusText,
+      body,
+      text,
+      url: response.url,
+    });
+    throw new SupabaseRestError(String(message), response, responseBody);
   }
   return body as T;
 }
@@ -196,6 +309,10 @@ class VisualDeadlineSupabaseClient {
   }
 
   auth = {
+    clearLocalAuthState: async (): Promise<void> => {
+      persistSession(null);
+      this.emit(null);
+    },
     getSession: async (): Promise<SupabaseSession | null> => {
       const stored = readStoredSession();
       if (!stored) return null;
@@ -266,7 +383,8 @@ class VisualDeadlineSupabaseClient {
         persistSession(session);
         this.emit(session);
         return session;
-      } catch {
+      } catch (error) {
+        console.error('[VD_AUTH_REFRESH_ERROR]', { error });
         persistSession(null);
         this.emit(null);
         return null;
@@ -279,7 +397,10 @@ class VisualDeadlineSupabaseClient {
         await fetch(`${config.url}/auth/v1/logout`, {
           method: 'POST',
           headers: { apikey: config.anonKey, Authorization: `Bearer ${session.access_token}` },
-        }).catch(() => undefined);
+        }).catch((error) => {
+          console.error('[VD_AUTH_LOGOUT_REQUEST_ERROR]', { error });
+          return undefined;
+        });
       }
       persistSession(null);
       this.emit(null);

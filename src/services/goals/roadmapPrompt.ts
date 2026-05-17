@@ -68,7 +68,8 @@ export function parseGoalRoadmapResponse(content: string): { roadmapSuggestions:
   let parsed: unknown;
   try {
     parsed = JSON.parse(rawJson);
-  } catch {
+  } catch (error) {
+    console.error('[VD_AI_GOAL_ROADMAP_PARSE_ERROR]', { error, rawJson });
     throw new Error('AI 返回内容不是有效 JSON，无法生成目标路线图。');
   }
   if (!parsed || typeof parsed !== 'object') throw new Error('AI 返回 JSON 结构无效。');

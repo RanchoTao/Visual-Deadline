@@ -5,13 +5,15 @@ export function useLocalStorage<T>(key: string, initialValue: T) {
   const readValue = (): T => {
     try {
       return loadValue<T>(key, initialValue);
-    } catch {
+    } catch (error) {
+      console.error('[VD_LOCAL_STORAGE_READ_ERROR]', { error, key });
       const restored = restoreLatestBackup();
       if (restored) {
         setRecoveryNotice('检测到本地数据异常，已自动从最近备份恢复。');
         try {
           return loadValue<T>(key, initialValue);
-        } catch {
+        } catch (retryError) {
+          console.error('[VD_LOCAL_STORAGE_RECOVERY_READ_ERROR]', { error: retryError, key });
           return initialValue;
         }
       }
