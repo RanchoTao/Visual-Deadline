@@ -123,7 +123,7 @@ export function calibratePressure(tasks: Task[], subjectivePressure: number, now
     pressureRatio: roundToFourDecimals(pressureCoefficient),
     taskCount: tasks.filter(isUnfinishedPressureTask).length,
     capturedAt: calibratedAt,
-    note: 'subjective pressure calibrates the current raw task pressure: realtimePressure = currentRawPressure × pressureCoefficient.',
+    note: '主观压力校准当前原始任务压力：实时压力 = 当前原始压力 × 压力系数。',
   };
 }
 

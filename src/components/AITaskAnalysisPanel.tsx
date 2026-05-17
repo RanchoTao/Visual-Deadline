@@ -17,7 +17,7 @@ interface AITaskAnalysisPanelProps {
 type AnalysisState = 'idle' | 'loading' | 'success' | 'error';
 
 function providerLabel(provider: AIProvider): string {
-  return provider === 'deepseek-compatible' ? 'DeepSeek Compatible' : 'OpenAI Compatible';
+  return provider === 'deepseek-compatible' ? 'DeepSeek 兼容' : 'OpenAI 兼容';
 }
 
 export function AITaskAnalysisPanel({ tasks, pressure, onAIConnected, onAIReportGenerated }: AITaskAnalysisPanelProps) {
@@ -100,7 +100,7 @@ export function AITaskAnalysisPanel({ tasks, pressure, onAIConnected, onAIReport
       </div>
 
       <div className="mt-4 rounded-2xl bg-slate-50/80 px-4 py-3 text-xs leading-5 text-slate-500 ring-1 ring-white/80">
-        <span className="font-semibold text-slate-600">当前配置：</span>{getAIConnectionLabel(settings)}{isDeveloperMode ? ` · ${providerLabel(settings.provider)} · ${settings.model}` : ''}。默认通过 /api/ai 使用 VD Cloud AI，开发者本地 API Key 仅保存在当前浏览器。
+        <span className="font-semibold text-slate-600">当前配置：</span>{getAIConnectionLabel(settings)}{isDeveloperMode ? ` · ${providerLabel(settings.provider)} · ${settings.model}` : ''}。默认通过 /api/ai 使用 VD 云端 AI，开发者本地 API Key 仅保存在当前浏览器。
       </div>
 
       {analysisState === 'loading' ? <div className="mt-4 rounded-3xl bg-sky-50 p-5 text-sm font-semibold text-sky-700 ring-1 ring-sky-100">正在生成任务压力报告……</div> : null}
@@ -118,14 +118,14 @@ export function AITaskAnalysisPanel({ tasks, pressure, onAIConnected, onAIReport
               <button type="button" onClick={() => setIsSettingsOpen(false)} className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-500 hover:bg-slate-200">关闭</button>
             </div>
 
-            <p className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-500 ring-1 ring-white/80">开发者模式 API Key 仅保存在当前浏览器本地，用于绕过 VD Cloud AI 直接请求你选择的模型服务。普通用户无需配置 API Key，VD 不会上传或保存你的本地 API Key 到服务器。</p>
+            <p className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-500 ring-1 ring-white/80">开发者模式 API Key 仅保存在当前浏览器本地，用于绕过 VD 云端 AI 直接请求你选择的模型服务。普通用户无需配置 API Key，VD 不会上传或保存你的本地 API Key 到服务器。</p>
             <p className="mt-2 rounded-2xl bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-700 ring-1 ring-amber-100">任务数据会直接发送给你选择的 AI 服务商用于生成分析。请不要填写不愿发送给第三方模型的敏感内容。</p>
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">
               <label className="text-sm font-medium text-slate-600">服务商
                 <select value={draftSettings.provider} onChange={(event) => handleProviderChange(event.target.value as AIProvider)} className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-sky-200 focus:ring-4 focus:ring-sky-100/70">
-                  <option value="openai-compatible">OpenAI Compatible</option>
-                  <option value="deepseek-compatible">DeepSeek Compatible</option>
+                  <option value="openai-compatible">OpenAI 兼容</option>
+                  <option value="deepseek-compatible">DeepSeek 兼容</option>
                 </select>
               </label>
               <label className="text-sm font-medium text-slate-600">模型

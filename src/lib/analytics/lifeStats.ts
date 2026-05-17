@@ -1,4 +1,5 @@
 import type { ActivityType, AIArtifact, Goal, PressureHistoryRecord, Task } from '../../types/task';
+import { getActivityTypeLabel } from '../../utils/taskScoring';
 
 const MS_PER_HOUR = 60 * 60 * 1000;
 const MS_PER_DAY = 24 * MS_PER_HOUR;
@@ -111,7 +112,7 @@ export function getCurrentLifeFocus(tasks: Task[]): string {
   const active = tasks.filter((task) => task.lifecycleStatus === 'active');
   if (active.length === 0) return '恢复 / 观察';
   const [top] = calculateCategoryDistribution(active);
-  return top ? top.category : '未形成中心';
+  return top ? getActivityTypeLabel(top.category) : '未形成中心';
 }
 
 export function calculateGoalProgress(goals: Goal[], tasks: Task[]): number {

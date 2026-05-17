@@ -11,13 +11,13 @@ const navItems: { id: LifeOSModule; label: string }[] = [
   { id: 'task', label: '任务' },
   { id: 'map', label: '人生' },
   { id: 'social', label: '社交' },
-  { id: 'log', label: '数据中心' },
+  { id: 'log', label: '数据' },
   { id: 'me', label: '我' },
 ];
 
 export function LifeOSNav({ activeModule, onModuleChange }: LifeOSNavProps) {
   return (
-    <nav className="sticky top-3 z-30 rounded-[1.75rem] border border-white/70 bg-white/80 p-2 shadow-xl shadow-slate-200/60 backdrop-blur md:top-4" aria-label="Visual Deadline 模块">
+    <nav className="sticky top-3 z-30 rounded-[1.75rem] border border-white/70 bg-white/80 p-2 shadow-xl shadow-slate-200/60 backdrop-blur md:top-4" aria-label="可视模块">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div className="px-3 py-1.5">
           <p className="text-sm font-semibold tracking-tight text-slate-950">{branding.productName}</p>

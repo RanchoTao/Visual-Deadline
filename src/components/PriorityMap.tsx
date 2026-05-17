@@ -143,10 +143,10 @@ export function PriorityMap({ tasks }: PriorityMapProps) {
           <div className="pointer-events-none absolute bottom-16 left-1/2 top-16 border-l border-slate-300/90" />
           <div className="pointer-events-none absolute left-16 right-16 top-1/2 border-t border-slate-300/90" />
 
-          <div className="pointer-events-none absolute left-20 top-20 max-w-[35%] truncate text-xs font-semibold text-sky-700/75">II 重要但不紧急</div>
-          <div className="pointer-events-none absolute right-20 top-20 max-w-[35%] truncate text-right text-xs font-semibold text-rose-700/75">I 紧急且重要</div>
-          <div className="pointer-events-none absolute bottom-24 left-20 max-w-[35%] truncate text-xs font-semibold text-slate-500/80">III 不紧急且不重要</div>
-          <div className="pointer-events-none absolute bottom-24 right-20 max-w-[35%] truncate text-right text-xs font-semibold text-amber-700/70">IV 紧急但不重要</div>
+          <div className="pointer-events-none absolute left-20 top-20 max-w-[35%] truncate text-xs font-semibold text-sky-700/75">二象限 · 重要但不紧急</div>
+          <div className="pointer-events-none absolute right-20 top-20 max-w-[35%] truncate text-right text-xs font-semibold text-rose-700/75">一象限 · 紧急且重要</div>
+          <div className="pointer-events-none absolute bottom-24 left-20 max-w-[35%] truncate text-xs font-semibold text-slate-500/80">三象限 · 不紧急且不重要</div>
+          <div className="pointer-events-none absolute bottom-24 right-20 max-w-[35%] truncate text-right text-xs font-semibold text-amber-700/70">四象限 · 紧急但不重要</div>
 
           <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-center text-[11px] font-medium text-slate-400 [writing-mode:vertical-rl]">
             不紧急 / 时间出生线

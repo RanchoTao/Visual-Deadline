@@ -60,7 +60,7 @@ export function isDeveloperAIKeyMode(settings: Partial<AISettings> | null | unde
 }
 
 export function getAIConnectionLabel(settings: Partial<AISettings> | null | undefined): string {
-  return isDeveloperAIKeyMode(settings) ? '开发者模式：使用本地 API Key' : 'VD Cloud AI 已启用';
+  return isDeveloperAIKeyMode(settings) ? '开发者模式：使用本地 API Key' : 'VD 云端 AI 已启用';
 }
 
 interface ChatCompletionChoice {
@@ -90,7 +90,7 @@ function buildBackendMessage(systemPrompt: string, userPrompt: string): string {
 
 export async function callBackendAI(request: BackendAIRequest): Promise<BackendAIResponse> {
   const session = await supabase.auth.getSession();
-  if (!session?.access_token) throw new Error('请先登录后再使用 VD Cloud AI。');
+  if (!session?.access_token) throw new Error('请先登录后再使用 VD 云端 AI。');
 
   const response = await fetch('/api/ai', {
     method: 'POST',
@@ -109,7 +109,7 @@ export async function callBackendAI(request: BackendAIRequest): Promise<BackendA
   }
 
   if (!response.ok || !payload?.ok) {
-    const message = payload && 'error' in payload && payload.error ? payload.error : `VD Cloud AI 请求失败：${response.status}`;
+    const message = payload && 'error' in payload && payload.error ? payload.error : `VD 云端 AI 请求失败：${response.status}`;
     throw new Error(message);
   }
 

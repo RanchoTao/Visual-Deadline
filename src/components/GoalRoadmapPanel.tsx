@@ -124,7 +124,7 @@ export function GoalRoadmapPanel({ goals, tasks, onSaveGoal, onDeleteGoal, onRoa
     <section className="rounded-[2.25rem] border border-white/70 bg-white/70 p-5 shadow-xl shadow-slate-200/50 backdrop-blur md:p-7" aria-labelledby="long-term-goals-heading">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-sm font-semibold tracking-[0.18em] text-slate-400">LIFE SYSTEM</p>
+          <p className="text-sm font-semibold tracking-[0.18em] text-slate-400">人生系统</p>
           <h2 id="long-term-goals-heading" className="mt-1 text-2xl font-semibold text-slate-950">长期目标 / 人生推进</h2>
           <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500">战略层只保留方向、阶段与风险；路线图默认收起，避免日常视图变重。</p>
         </div>

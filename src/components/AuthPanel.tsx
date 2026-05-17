@@ -51,12 +51,12 @@ export function AuthPanel({ isConfigured, isLoading, error, onSignIn, onSignUp, 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,#dbeafe,transparent_32%),linear-gradient(180deg,#f8fafc,#eef2f7)] px-4 py-10 text-slate-900">
       <section className="mx-auto max-w-xl rounded-[2rem] border border-white/80 bg-white/85 p-7 shadow-2xl shadow-slate-300/60 backdrop-blur">
-        <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">Visual Deadline Cloud</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">可视云同步</p>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">登录以启用云同步</h1>
-        <p className="mt-3 text-sm leading-6 text-slate-500">使用 Supabase 邮箱密码登录后，任务、目标与压力历史会按你的用户 ID 隔离同步。也可以继续使用本机 localStorage。</p>
+        <p className="mt-3 text-sm leading-6 text-slate-500">使用 Supabase 邮箱密码登录后，任务、目标与压力历史会按你的用户 ID 隔离同步。也可以继续使用本机 本地存储。</p>
 
         {!isConfigured && !error ? (
-          <p className="mt-5 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-700 ring-1 ring-amber-100">Supabase environment variables are missing.</p>
+          <p className="mt-5 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-700 ring-1 ring-amber-100">缺少 Supabase 环境变量。</p>
         ) : null}
         {isLoading ? <p className="mt-5 rounded-2xl bg-sky-50 px-4 py-3 text-sm text-sky-700 ring-1 ring-sky-100">正在恢复登录状态…</p> : null}
         {error || formError ? <p className="mt-5 rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-600 ring-1 ring-rose-100">{formError || error}</p> : null}

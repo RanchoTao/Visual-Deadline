@@ -19,7 +19,7 @@ export function HomePage({ pressure, pressureHistory, recommendedTasks, activeTa
       <div className="rounded-[2rem] border border-white/70 bg-white/60 p-5 shadow-xl shadow-slate-200/50 backdrop-blur md:p-6">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <p className="text-sm font-semibold tracking-[0.24em] text-slate-400">HOME · EXECUTION LAYER</p>
+            <p className="text-sm font-semibold tracking-[0.24em] text-slate-400">今日执行</p>
             <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">今日执行中枢</h1>
           </div>
           <p className="max-w-md text-sm leading-6 text-slate-500">只保留高频、短周期、可立即行动的信息：任务、优先级、压力与提醒。</p>
@@ -31,7 +31,7 @@ export function HomePage({ pressure, pressureHistory, recommendedTasks, activeTa
 
       <section className="rounded-[1.5rem] border border-white/60 bg-white/45 px-4 py-3 text-xs text-slate-400 shadow-sm shadow-slate-200/40 backdrop-blur" aria-label="产品品牌信息">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="font-medium text-slate-500">{branding.organizationName} · {branding.productName} v{branding.version} · Built by {branding.author}</p>
+          <p className="font-medium text-slate-500">{branding.organizationName} · {branding.productName} v{branding.version} · 作者：{branding.author}</p>
           <a href={branding.githubUrl} target="_blank" rel="noreferrer" className="font-semibold text-slate-500 underline-offset-4 hover:text-slate-700 hover:underline">GitHub</a>
         </div>
       </section>
