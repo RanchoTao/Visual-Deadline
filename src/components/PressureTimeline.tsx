@@ -3,6 +3,7 @@ import { isBurnoutRiskRecord, isRecentPressureRecord, summarizePressureHistory }
 
 interface PressureTimelineProps {
   records: PressureHistoryRecord[];
+  variant?: 'card' | 'modal';
 }
 
 const eventLabels: Record<NonNullable<PressureHistoryRecord['eventType']>, string> = {
@@ -36,7 +37,7 @@ function pressureToY(pressure: number, chartHeight: number, maxPressure: number)
   return chartHeight - (Math.min(pressure, safeMaxPressure) / safeMaxPressure) * chartHeight;
 }
 
-export function PressureTimeline({ records }: PressureTimelineProps) {
+export function PressureTimeline({ records, variant = 'card' }: PressureTimelineProps) {
   const recentRecords = records.filter((record) => isRecentPressureRecord(record)).slice(-48);
   const stats = summarizePressureHistory(records);
   const chartWidth = 720;
@@ -61,8 +62,10 @@ export function PressureTimeline({ records }: PressureTimelineProps) {
     { label: '近 30 天', active: spanMs <= 30 * 24 * 60 * 60 * 1000 },
   ];
 
+  const shellClassName = variant === 'modal' ? 'p-0' : 'rounded-[2rem] border border-white/70 bg-white/75 p-5 shadow-xl shadow-slate-200/60 backdrop-blur';
+
   return (
-    <section className="rounded-[2rem] border border-white/70 bg-white/75 p-5 shadow-xl shadow-slate-200/60 backdrop-blur">
+    <section className={shellClassName}>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-sm font-semibold text-slate-500">压力曲线</p>

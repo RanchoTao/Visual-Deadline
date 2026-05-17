@@ -15,7 +15,7 @@ export function ModalPortal({ children }: ModalPortalProps) {
   }, []);
 
   return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/20 px-4 py-6 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center overflow-hidden bg-slate-950/45 px-4 py-6 backdrop-blur-md">
       {children}
     </div>,
     document.body,
