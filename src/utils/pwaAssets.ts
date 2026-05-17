@@ -1,9 +1,8 @@
-import appIconUrl from '../../visualdeadline-banner.png';
-
 const APP_NAME = 'Visual Deadline';
 const SHORT_APP_NAME = 'VD';
 const THEME_COLOR = '#f8fafc';
 const BACKGROUND_COLOR = '#f8fafc';
+const APP_ICON_URL = '/assets/images/branding/logo.png';
 
 let manifestObjectUrl: string | undefined;
 
@@ -40,8 +39,8 @@ function createManifestUrl(): string {
     background_color: BACKGROUND_COLOR,
     theme_color: THEME_COLOR,
     icons: [
-      { src: appIconUrl, sizes: '192x192', type: 'image/png', purpose: 'any' },
-      { src: appIconUrl, sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: APP_ICON_URL, sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: APP_ICON_URL, sizes: '512x512', type: 'image/png', purpose: 'any' },
     ],
   };
 
@@ -55,8 +54,8 @@ export function configurePwaAssets(): void {
   upsertMeta('apple-mobile-web-app-capable', 'yes');
   upsertMeta('apple-mobile-web-app-title', APP_NAME);
   upsertMeta('apple-mobile-web-app-status-bar-style', 'default');
-  upsertLink('icon', appIconUrl, { type: 'image/png' });
-  upsertLink('shortcut icon', appIconUrl, { type: 'image/png' });
-  upsertLink('apple-touch-icon', appIconUrl, { sizes: '180x180' });
+  upsertLink('icon', APP_ICON_URL, { type: 'image/png' });
+  upsertLink('shortcut icon', APP_ICON_URL, { type: 'image/png' });
+  upsertLink('apple-touch-icon', APP_ICON_URL, { sizes: '180x180' });
   upsertLink('manifest', createManifestUrl());
 }
