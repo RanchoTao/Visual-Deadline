@@ -1,6 +1,7 @@
 const APP_NAME = 'Visual Deadline';
 const THEME_COLOR = '#f8fafc';
-const LOGO_PATH = '/assets/images/logo.png';
+const FAVICON_PATH = '/favicon.ico';
+const APPLE_TOUCH_ICON_PATH = '/apple-touch-icon.png';
 const MANIFEST_PATH = '/site.webmanifest';
 
 function upsertMeta(name: string, content: string): void {
@@ -30,8 +31,9 @@ export function configurePwaAssets(): void {
   upsertMeta('apple-mobile-web-app-capable', 'yes');
   upsertMeta('apple-mobile-web-app-title', APP_NAME);
   upsertMeta('apple-mobile-web-app-status-bar-style', 'default');
-  upsertLink('icon', LOGO_PATH, { type: 'image/png' });
-  upsertLink('shortcut icon', LOGO_PATH, { type: 'image/png' });
-  upsertLink('apple-touch-icon', LOGO_PATH, { sizes: '180x180' });
+  // Flat public root assets: favicon for browser tabs, Apple icon for iOS, manifest for Android/PWA.
+  upsertLink('icon', FAVICON_PATH, { type: 'image/x-icon' });
+  upsertLink('shortcut icon', FAVICON_PATH, { type: 'image/x-icon' });
+  upsertLink('apple-touch-icon', APPLE_TOUCH_ICON_PATH, { sizes: '180x180' });
   upsertLink('manifest', MANIFEST_PATH);
 }
