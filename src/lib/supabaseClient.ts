@@ -3,6 +3,7 @@ export interface SupabaseUser {
   id: string;
   email?: string;
   identities?: unknown[];
+  email_confirmed_at?: string | null;
 }
 
 export interface SupabaseSession {
@@ -176,6 +177,7 @@ function normalizeStoredSession(value: unknown): SupabaseSession | null {
       id: user.id,
       email: typeof user.email === 'string' ? user.email : undefined,
       identities: Array.isArray(user.identities) ? user.identities : undefined,
+      email_confirmed_at: typeof user.email_confirmed_at === 'string' ? user.email_confirmed_at : null,
     },
   };
 }
@@ -212,7 +214,7 @@ function toSession(payload: { access_token: string; refresh_token: string; expir
     expires_at: payload.expires_in ? Math.floor(Date.now() / 1000) + payload.expires_in : undefined,
     user: payload.user,
   });
-  if (!session) throw new Error('Supabase 登录返回的会话缺少有效 access_token、refresh_token 或 user，请复制调试信息排查。');
+  if (!session) throw new Error('登录没有返回有效会话，请稍后重试或联系支持。');
   return session;
 }
 
@@ -331,9 +333,6 @@ class VisualDeadlineSupabaseClient {
           headers: { apikey: anonKey, 'Content-Type': 'application/json' },
           body: JSON.stringify({ email, password }),
         }));
-        if (!payload.access_token || !payload.refresh_token || !payload.user) {
-          throw new Error('EMAIL_SESSION_MISSING_AFTER_SIGNIN');
-        }
         const session = toSession(payload as { access_token: string; refresh_token: string; expires_in?: number; user: SupabaseUser });
         persistSession(session);
         this.emit(session);
