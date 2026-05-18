@@ -951,7 +951,7 @@ function App() {
   }
 
   if (!session && !hasChosenGuestMode) {
-    return <AuthPanel isConfigured={isSupabaseConfigured} isLoading={isAuthLoading} error={authError} status={authStatus} authDebugInfo={authDebugInfo} onSignIn={signIn} onSignUp={async (email, password, identity) => { setProfile({ ...normalizedProfile, ...identity }); return signUp(email, password, identity); }} onResendVerification={resendVerificationEmail} onContinueAsGuest={() => setHasChosenGuestMode(true)} />;
+    return <AuthPanel isConfigured={isSupabaseConfigured} isLoading={isAuthLoading} error={authError} status={authStatus} authDebugInfo={authDebugInfo} onSignIn={signIn} onSignUp={signUp} onResendVerification={resendVerificationEmail} onContinueAsGuest={() => setHasChosenGuestMode(true)} />;
   }
 
   return (

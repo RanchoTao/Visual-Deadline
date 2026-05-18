@@ -1,4 +1,4 @@
-import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import {
   EMAIL_LINK_EXPIRED_MESSAGE,
   EMAIL_MAYBE_REGISTERED_MESSAGE,
@@ -9,10 +9,6 @@ import {
   getAuthErrorMessage,
 } from '../constants/authMessages';
 import type { AuthDebugEntry } from '../lib/authDebug';
-import type { UserProfile } from '../types/task';
-
-type SignupIdentity = Pick<UserProfile, 'avatarDataUrl' | 'nickname' | 'username'>;
-
 interface AuthPanelProps {
   isConfigured: boolean;
   isLoading: boolean;
@@ -20,7 +16,7 @@ interface AuthPanelProps {
   status?: string;
   authDebugInfo?: AuthDebugEntry;
   onSignIn: (email: string, password: string) => Promise<unknown>;
-  onSignUp: (email: string, password: string, identity: SignupIdentity) => Promise<unknown>;
+  onSignUp: (email: string, password: string) => Promise<unknown>;
   onResendVerification: (email: string) => Promise<unknown>;
   onContinueAsGuest: () => void;
 }
@@ -29,9 +25,6 @@ export function AuthPanel({ isConfigured, isLoading, error, status: authStatus, 
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [nickname, setNickname] = useState('');
-  const [username, setUsername] = useState('');
-  const [avatarDataUrl, setAvatarDataUrl] = useState<string | undefined>();
   const [status, setStatus] = useState<string | undefined>(authStatus);
   const [formError, setFormError] = useState<string | undefined>();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -55,23 +48,11 @@ export function AuthPanel({ isConfigured, isLoading, error, status: authStatus, 
     setVerificationEmail(undefined);
   }
 
-  function handleAvatarChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.addEventListener('load', () => {
-      if (typeof reader.result === 'string') setAvatarDataUrl(reader.result);
-    });
-    reader.readAsDataURL(file);
-  }
-
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setFormError(undefined);
     setStatus(undefined);
     const cleanEmail = email.trim();
-    const cleanUsername = username.trim().replace(/^@/, '');
     if (!cleanEmail || password.length < 6) {
       setFormError('请输入有效邮箱，并使用至少 6 位密码。');
       return;
@@ -85,7 +66,7 @@ export function AuthPanel({ isConfigured, isLoading, error, status: authStatus, 
       if (mode === 'signin') {
         await onSignIn(cleanEmail, password);
       } else {
-        await onSignUp(cleanEmail, password, { avatarDataUrl, nickname: nickname.trim(), username: cleanUsername });
+        await onSignUp(cleanEmail, password);
         setVerificationEmail(cleanEmail);
         setStatus(EMAIL_VERIFICATION_SENT_MESSAGE);
       }
@@ -183,29 +164,6 @@ export function AuthPanel({ isConfigured, isLoading, error, status: authStatus, 
             </div>
 
             <form onSubmit={handleSubmit} className="mt-5 space-y-4">
-              {mode === 'signup' ? (
-                <div className="rounded-[1.75rem] bg-slate-50/80 p-4 ring-1 ring-white/90">
-                  <div className="flex items-center gap-4">
-                    <label className="group flex h-20 w-20 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-white text-2xl font-semibold text-slate-400 shadow-inner ring-1 ring-slate-200 transition duration-300 hover:-translate-y-0.5 hover:shadow-lg">
-                      {avatarDataUrl ? <img src={avatarDataUrl} alt="注册头像预览" className="h-full w-full object-cover" /> : '＋'}
-                      <input type="file" accept="image/*" onChange={handleAvatarChange} className="sr-only" />
-                    </label>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold text-slate-700">创建你的 VD 身份</p>
-                      <p className="mt-1 text-xs leading-5 text-slate-500">上传头像，并设置对外展示的昵称与用户名。</p>
-                    </div>
-                  </div>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    <label className="block text-sm font-semibold text-slate-600">昵称
-                      <input value={nickname} onChange={(event) => setNickname(event.target.value)} className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-300 focus:ring-4 focus:ring-sky-100/70" placeholder="VD 如何称呼你" autoComplete="nickname" />
-                    </label>
-                    <label className="block text-sm font-semibold text-slate-600">用户名
-                      <input value={username} onChange={(event) => setUsername(event.target.value)} className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-300 focus:ring-4 focus:ring-sky-100/70" placeholder="visualdeadline" autoComplete="username" />
-                    </label>
-                  </div>
-                </div>
-              ) : null}
-
               <label className="block text-sm font-semibold text-slate-600">邮箱
                 <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-300 focus:ring-4 focus:ring-sky-100/70" autoComplete="email" />
               </label>

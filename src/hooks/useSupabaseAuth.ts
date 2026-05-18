@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react';
 import { EMAIL_LINK_EXPIRED_MESSAGE, EMAIL_VERIFICATION_RESENT_MESSAGE, EMAIL_VERIFIED_LOGIN_MESSAGE, getAuthErrorMessage } from '../constants/authMessages';
 import { getLastAuthDebugEntry, recordAuthDebugError, type AuthDebugEntry } from '../lib/authDebug';
 import { supabase, type SupabaseSession } from '../lib/supabaseClient';
-import type { UserProfile } from '../types/task';
 
 const EMAIL_CONFIRMATION_REDIRECT_URL = 'https://www.visualdeadline.com';
 
@@ -160,7 +159,7 @@ export function useSupabaseAuth() {
     };
   }, []);
 
-  const signUp = useCallback(async (email: string, password: string, identity?: Pick<UserProfile, 'avatarDataUrl' | 'nickname' | 'username'>) => {
+  const signUp = useCallback(async (email: string, password: string) => {
     setError(undefined);
     setStatus(undefined);
     const nextSession = await supabase.auth.signUp({
@@ -168,11 +167,6 @@ export function useSupabaseAuth() {
       password,
       options: {
         emailRedirectTo: EMAIL_CONFIRMATION_REDIRECT_URL,
-        data: identity ? {
-          avatarDataUrl: identity.avatarDataUrl,
-          nickname: identity.nickname,
-          username: identity.username,
-        } : undefined,
       },
     });
     if (nextSession) setSession(nextSession);
