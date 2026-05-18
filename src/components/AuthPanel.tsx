@@ -34,6 +34,10 @@ export function AuthPanel({ isConfigured, isLoading, error, status: authStatus, 
     setStatus(authStatus);
   }, [authStatus]);
 
+  useEffect(() => {
+    setStatus(authStatus);
+  }, [authStatus]);
+
   function getSubmitErrorMessage(submitError: unknown): string {
     const message = submitError instanceof Error ? submitError.message : '认证失败，请稍后重试。';
     return getAuthErrorMessage(submitError, message);

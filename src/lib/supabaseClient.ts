@@ -395,6 +395,30 @@ class VisualDeadlineSupabaseClient {
     acknowledgeEmailVerificationCallback: async (): Promise<void> => {
       clearStoredCodeVerifier();
     },
+    setSession: async ({ access_token, refresh_token, expires_in }: SetSessionCredentials): Promise<SupabaseSession> => {
+      const { url, anonKey } = getRequiredConfig();
+      const user = await parseResponse<SupabaseUser>(await fetch(`${url}/auth/v1/user`, {
+        headers: { apikey: anonKey, Authorization: `Bearer ${access_token}` },
+      }));
+      const session = toSession({ access_token, refresh_token, expires_in, user });
+      persistSession(session);
+      clearStoredCodeVerifier();
+      this.emit(session);
+      return session;
+    },
+    resendVerificationEmail: async (email: string, emailRedirectTo?: string): Promise<void> => {
+      const { url, anonKey } = getRequiredConfig();
+      const resendUrl = new URL(`${url}/auth/v1/resend`);
+      if (emailRedirectTo) resendUrl.searchParams.set('redirect_to', emailRedirectTo);
+      await parseResponse<unknown>(await fetch(resendUrl, {
+        method: 'POST',
+        headers: { apikey: anonKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, type: 'signup' }),
+      }));
+    },
+    acknowledgeEmailVerificationCallback: async (): Promise<void> => {
+      clearStoredCodeVerifier();
+    },
     refreshSession: async (refreshToken: string): Promise<SupabaseSession | null> => {
       const { url, anonKey } = getRequiredConfig();
       try {
