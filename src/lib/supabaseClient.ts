@@ -40,6 +40,12 @@ interface SignUpCredentials extends EmailPasswordCredentials {
   };
 }
 
+interface SetSessionCredentials {
+  access_token: string;
+  refresh_token: string;
+  expires_in?: number;
+}
+
 const RAW_SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const RAW_SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 const SESSION_STORAGE_KEY = 'vd.supabase.session';
@@ -307,12 +313,10 @@ class VisualDeadlineSupabaseClient {
       this.emit(session);
       return session;
     },
-    exchangeCodeForSession: async (code: string): Promise<SupabaseSession> => {
+    exchangeCodeForSession: async (code: string): Promise<SupabaseSession | null> => {
       const { url, anonKey } = getRequiredConfig();
       const codeVerifier = readStoredCodeVerifier();
-      if (!codeVerifier) {
-        throw new Error('无法完成邮箱验证登录：缺少本机验证凭据。请使用注册时的同一浏览器打开验证链接。');
-      }
+      if (!codeVerifier) return null;
       const payload = await parseResponse<{ access_token: string; refresh_token: string; expires_in?: number; user: SupabaseUser }>(await fetch(`${url}/auth/v1/token?grant_type=pkce`, {
         method: 'POST',
         headers: { apikey: anonKey, 'Content-Type': 'application/json' },
@@ -335,6 +339,30 @@ class VisualDeadlineSupabaseClient {
       persistSession(session);
       this.emit(session);
       return session;
+    },
+    setSession: async ({ access_token, refresh_token, expires_in }: SetSessionCredentials): Promise<SupabaseSession> => {
+      const { url, anonKey } = getRequiredConfig();
+      const user = await parseResponse<SupabaseUser>(await fetch(`${url}/auth/v1/user`, {
+        headers: { apikey: anonKey, Authorization: `Bearer ${access_token}` },
+      }));
+      const session = toSession({ access_token, refresh_token, expires_in, user });
+      persistSession(session);
+      clearStoredCodeVerifier();
+      this.emit(session);
+      return session;
+    },
+    resendVerificationEmail: async (email: string, emailRedirectTo?: string): Promise<void> => {
+      const { url, anonKey } = getRequiredConfig();
+      const resendUrl = new URL(`${url}/auth/v1/resend`);
+      if (emailRedirectTo) resendUrl.searchParams.set('redirect_to', emailRedirectTo);
+      await parseResponse<unknown>(await fetch(resendUrl, {
+        method: 'POST',
+        headers: { apikey: anonKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, type: 'signup' }),
+      }));
+    },
+    acknowledgeEmailVerificationCallback: async (): Promise<void> => {
+      clearStoredCodeVerifier();
     },
     refreshSession: async (refreshToken: string): Promise<SupabaseSession | null> => {
       const { url, anonKey } = getRequiredConfig();

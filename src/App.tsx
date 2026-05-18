@@ -348,7 +348,7 @@ function createAchievement(id: string): Achievement | undefined {
 
 function App() {
   const [publicPath, setPublicPath] = useState(() => window.location.pathname);
-  const { session, isLoading: isAuthLoading, error: authError, isConfigured: isSupabaseConfigured, signIn, signUp, signOut } = useSupabaseAuth();
+  const { session, isLoading: isAuthLoading, error: authError, status: authStatus, isConfigured: isSupabaseConfigured, signIn, signUp, resendVerificationEmail, signOut } = useSupabaseAuth();
   const [hasChosenGuestMode, setHasChosenGuestMode] = useState(false);
   const [cloudStatus, setCloudStatus] = useState<string | undefined>();
   const [cloudToast, setCloudToast] = useState<string | undefined>();
@@ -951,7 +951,7 @@ function App() {
   }
 
   if (!session && !hasChosenGuestMode) {
-    return <AuthPanel isConfigured={isSupabaseConfigured} isLoading={isAuthLoading} error={authError} onSignIn={signIn} onSignUp={async (email, password, identity) => { setProfile({ ...normalizedProfile, ...identity }); return signUp(email, password, identity); }} onContinueAsGuest={() => setHasChosenGuestMode(true)} />;
+    return <AuthPanel isConfigured={isSupabaseConfigured} isLoading={isAuthLoading} error={authError} status={authStatus} onSignIn={signIn} onSignUp={async (email, password, identity) => { setProfile({ ...normalizedProfile, ...identity }); return signUp(email, password, identity); }} onResendVerification={resendVerificationEmail} onContinueAsGuest={() => setHasChosenGuestMode(true)} />;
   }
 
   return (
