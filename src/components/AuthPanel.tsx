@@ -87,7 +87,32 @@ export function AuthPanel({ isConfigured, isLoading, error, status: authStatus, 
         setStatus(EMAIL_VERIFICATION_SENT_MESSAGE);
       }
     } catch (submitError) {
-      setFormError(getSubmitErrorMessage(submitError));
+      const message = getSubmitErrorMessage(submitError);
+      if (message === EMAIL_NOT_CONFIRMED_MESSAGE || message === EMAIL_SESSION_MISSING_MESSAGE || message === EMAIL_MAYBE_REGISTERED_MESSAGE) {
+        setVerificationEmail(cleanEmail);
+      }
+      setFormError(message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function handleResendVerification() {
+    setFormError(undefined);
+    setStatus(undefined);
+    const cleanEmail = verificationEmail ?? email.trim();
+    if (!cleanEmail) {
+      setFormError('请输入邮箱后再重新发送验证邮件。');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await onResendVerification(cleanEmail);
+      setVerificationEmail(cleanEmail);
+      setStatus(EMAIL_VERIFICATION_RESENT_MESSAGE);
+    } catch (resendError) {
+      setFormError(resendError instanceof Error ? resendError.message : '重新发送验证邮件失败，请稍后重试。');
     } finally {
       setIsSubmitting(false);
     }
