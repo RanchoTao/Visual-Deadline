@@ -2,6 +2,7 @@ import { recordAuthDebugError } from './authDebug';
 export interface SupabaseUser {
   id: string;
   email?: string;
+  identities?: unknown[];
 }
 
 export interface SupabaseSession {
@@ -198,6 +199,7 @@ function normalizeStoredSession(value: unknown): SupabaseSession | null {
     user: {
       id: user.id,
       email: typeof user.email === 'string' ? user.email : undefined,
+      identities: Array.isArray(user.identities) ? user.identities : undefined,
     },
   };
 }
@@ -313,7 +315,12 @@ class VisualDeadlineSupabaseClient {
           headers: { apikey: anonKey, 'Content-Type': 'application/json' },
           body: JSON.stringify({ email, password, data: options?.data, code_challenge: codeChallenge, code_challenge_method: 's256' }),
         }));
-        if (!payload.access_token || !payload.refresh_token) return null;
+        if (!payload.access_token || !payload.refresh_token) {
+          if (Array.isArray(payload.user?.identities) && payload.user.identities.length === 0) {
+            throw new Error('USER_ALREADY_REGISTERED_OR_UNVERIFIED');
+          }
+          return null;
+        }
         const session = toSession(payload as { access_token: string; refresh_token: string; expires_in?: number; user: SupabaseUser });
         persistSession(session);
         clearStoredCodeVerifier();
@@ -385,7 +392,7 @@ class VisualDeadlineSupabaseClient {
         await parseResponse<unknown>(await fetch(resendUrl, {
           method: 'POST',
           headers: { apikey: anonKey, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, type: 'signup' }),
+          body: JSON.stringify({ type: 'signup', email }),
         }));
       } catch (error) {
         recordAuthDebugError('resendVerificationEmail', error);
