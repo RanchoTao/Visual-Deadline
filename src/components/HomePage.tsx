@@ -15,7 +15,7 @@ interface HomePageProps {
 
 export function HomePage({ pressure, pressureHistory, recommendedTasks, activeTasks, onRecalibrate, onOpenTasks }: HomePageProps) {
   return (
-    <section className="space-y-7 md:space-y-8">
+    <section className="space-y-4 md:space-y-8">
       <PressureCard pressure={pressure} history={pressureHistory} onRecalibrate={onRecalibrate} />
       <RecommendationCard tasks={recommendedTasks} pressure={pressure} />
       <MiniTaskMatrix tasks={activeTasks} onOpenTasks={onOpenTasks} />

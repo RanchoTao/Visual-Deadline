@@ -120,8 +120,8 @@ export function LogPage({ tasks, goals, profile, pressure, pressureHistory, achi
       <p className="text-sm font-semibold tracking-[0.24em] text-slate-400">数据</p>
       <h1 className="mt-3 text-4xl font-semibold tracking-tight text-slate-950 md:text-5xl">数据</h1>
       <p className="mt-4 max-w-3xl text-sm leading-7 text-slate-500">一个生命状态观测站：追踪你如何工作、如何崩溃、如何恢复、如何演化。VD 不把统计当作后台表格，而把它们当作行为镜像。</p>
-      <div className="mt-6 flex gap-2 overflow-x-auto rounded-[1.5rem] bg-white/60 p-1 ring-1 ring-white/80">
-        {tabs.map((tab) => <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)} className={`min-w-fit rounded-full px-4 py-2 text-left text-xs font-semibold transition ${activeTab === tab.id ? 'bg-slate-950 text-white shadow-sm' : 'text-slate-500 hover:bg-white/80 hover:text-slate-800'}`}><span className="block">{tab.label}</span><span className="block text-[10px] opacity-70">{tab.description}</span></button>)}
+      <div className="mt-5 flex flex-wrap gap-2 rounded-[1.5rem] bg-white/60 p-1 ring-1 ring-white/80 md:mt-6">
+        {tabs.map((tab) => <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)} className={`min-h-11 flex-1 rounded-full px-3 py-2 text-left text-xs font-semibold transition sm:flex-none sm:px-4 ${activeTab === tab.id ? 'bg-slate-950 text-white shadow-sm' : 'text-slate-500 hover:bg-white/80 hover:text-slate-800'}`}><span className="block">{tab.label}</span><span className="block text-[10px] opacity-70">{tab.description}</span></button>)}
       </div>
     </header>
 

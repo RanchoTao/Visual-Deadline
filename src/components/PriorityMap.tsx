@@ -122,7 +122,7 @@ export function PriorityMap({ tasks }: PriorityMapProps) {
   }, []);
 
   return (
-    <section className="rounded-[2rem] bg-white p-5 shadow-sm ring-1 ring-slate-100">
+    <section className="rounded-[1.5rem] bg-white p-4 shadow-sm ring-1 ring-slate-100 md:rounded-[2rem] md:p-5">
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-slate-500">紧急重要矩阵</p>
@@ -134,8 +134,8 @@ export function PriorityMap({ tasks }: PriorityMapProps) {
         </div>
       </div>
 
-      <div className="overflow-x-auto pb-2">
-        <div className="relative mx-auto aspect-square w-full min-w-[34rem] max-w-[44rem] overflow-hidden rounded-[2rem] border border-slate-200 bg-gradient-to-br from-white via-slate-50/80 to-sky-50/40 p-6 shadow-inner">
+      <div className="overflow-hidden pb-2">
+        <div className="relative mx-auto aspect-square w-full max-w-[44rem] overflow-hidden rounded-[1.5rem] border border-slate-200 bg-gradient-to-br from-white via-slate-50/80 to-sky-50/40 p-4 shadow-inner md:min-w-[34rem] md:rounded-[2rem] md:p-6">
           <div className="pointer-events-none absolute inset-x-16 bottom-16 top-16 border border-slate-300/80 bg-[linear-gradient(90deg,rgba(148,163,184,0.08)_1px,transparent_1px),linear-gradient(0deg,rgba(148,163,184,0.08)_1px,transparent_1px)] bg-[size:12.5%_12.5%]" />
           <div className="pointer-events-none absolute bottom-16 left-16 top-16 w-[calc(50%-4rem)] bg-sky-50/35" />
           <div className="pointer-events-none absolute bottom-16 right-16 top-16 w-[calc(50%-4rem)] bg-rose-50/30" />

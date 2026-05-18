@@ -32,7 +32,7 @@ function getUsername(profile: UserProfile): string {
 }
 
 function Avatar({ profile, size = 'md' }: { profile: UserProfile; size?: 'sm' | 'md' | 'lg' }) {
-  const sizeClass = size === 'lg' ? 'h-16 w-16 text-2xl' : size === 'sm' ? 'h-9 w-9 text-sm' : 'h-11 w-11 text-base';
+  const sizeClass = size === 'lg' ? 'h-16 w-16 text-2xl' : size === 'sm' ? 'h-8 w-8 text-sm md:h-9 md:w-9' : 'h-9 w-9 text-sm md:h-11 md:w-11 md:text-base';
   const initial = getDisplayName(profile).slice(0, 1).toUpperCase();
 
   return (
@@ -47,24 +47,24 @@ export function LifeOSNav({ activeModule, profile, isSignedIn, isCloudLoading, s
   const username = getUsername(profile);
 
   return (
-    <header className="sticky top-3 z-30 overflow-visible rounded-[2rem] border border-white/70 bg-white/78 p-3 shadow-2xl shadow-slate-200/70 backdrop-blur-xl transition-all duration-500 md:top-4" aria-label="Visual Deadline 全局导航">
+    <header className="sticky top-2 z-30 overflow-visible rounded-[1.35rem] border border-white/70 bg-white/78 p-2 shadow-xl shadow-slate-200/60 backdrop-blur-xl transition-all duration-500 md:top-4 md:rounded-[2rem] md:p-3 md:shadow-2xl md:shadow-slate-200/70" aria-label="Visual Deadline 全局导航">
       <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-white to-transparent" />
-      <div className="flex items-start justify-between gap-4 px-1 py-1 md:items-center md:px-2">
-        <button type="button" onClick={() => onModuleChange('home')} className="group flex min-w-0 items-center gap-3 rounded-[1.5rem] px-2 py-1.5 text-left transition duration-300 hover:bg-white/55">
-          <span className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl bg-white shadow-lg shadow-slate-300 ring-1 ring-slate-200/70 transition duration-300 group-hover:-translate-y-0.5 group-hover:shadow-xl">
+      <div className="flex items-center justify-between gap-3 px-0.5 py-0.5 md:gap-4 md:px-2 md:py-1">
+        <button type="button" onClick={() => onModuleChange('home')} className="group flex min-w-0 items-center gap-2 rounded-[1.1rem] px-1.5 py-1 text-left transition duration-300 hover:bg-white/55 md:gap-3 md:rounded-[1.5rem] md:px-2 md:py-1.5">
+          <span className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl bg-white shadow-md shadow-slate-300 ring-1 ring-slate-200/70 transition duration-300 group-hover:-translate-y-0.5 group-hover:shadow-xl md:h-12 md:w-12 md:rounded-2xl md:shadow-lg">
             <img src="/logo.png" alt="Visual Deadline 标志" className="h-full w-full object-contain" />
           </span>
           <span className="min-w-0">
-            <span className="block text-base font-semibold tracking-tight text-slate-950">{branding.productName}</span>
+            <span className="block truncate text-sm font-semibold tracking-tight text-slate-950 md:text-base">{branding.productName}</span>
           </span>
         </button>
 
-        <div className="group/avatar relative flex shrink-0 justify-end pb-3 pr-1" onMouseLeave={() => undefined}>
+        <div className="group/avatar relative flex shrink-0 justify-end pr-0.5 md:pb-3 md:pr-1" onMouseLeave={() => undefined}>
           <button type="button" onClick={onOpenProfile} className="rounded-full outline-none transition duration-300 focus-visible:ring-4 focus-visible:ring-sky-100" aria-label="打开个人中心">
             <Avatar profile={profile} />
           </button>
 
-          <div className="pointer-events-none absolute right-0 top-[3.3rem] w-[18rem] translate-y-3 scale-[0.98] opacity-0 transition-all duration-300 ease-out group-hover/avatar:pointer-events-auto group-hover/avatar:translate-y-0 group-hover/avatar:scale-100 group-hover/avatar:opacity-100 group-focus-within/avatar:pointer-events-auto group-focus-within/avatar:translate-y-0 group-focus-within/avatar:scale-100 group-focus-within/avatar:opacity-100">
+          <div className="pointer-events-none absolute right-0 top-11 w-[min(18rem,calc(100vw-1.5rem))] translate-y-3 scale-[0.98] opacity-0 transition-all duration-300 ease-out group-hover/avatar:pointer-events-auto group-hover/avatar:translate-y-0 group-hover/avatar:scale-100 group-hover/avatar:opacity-100 group-focus-within/avatar:pointer-events-auto group-focus-within/avatar:translate-y-0 group-focus-within/avatar:scale-100 group-focus-within/avatar:opacity-100 md:top-[3.3rem] md:w-[18rem]">
             <section className="overflow-hidden rounded-[1.75rem] border border-white/80 bg-white/92 p-4 shadow-2xl shadow-slate-300/70 ring-1 ring-slate-900/5 backdrop-blur-xl">
               <div className="flex items-center gap-3">
                 <Avatar profile={profile} size="lg" />
@@ -108,7 +108,7 @@ export function LifeOSNav({ activeModule, profile, isSignedIn, isCloudLoading, s
         </div>
       </div>
 
-      <nav className="mt-2 rounded-[1.45rem] bg-slate-100/65 p-1" aria-label="Visual Deadline 模块">
+      <nav className="mt-2 hidden rounded-[1.45rem] bg-slate-100/65 p-1 md:block" aria-label="Visual Deadline 模块">
         <div className="grid grid-cols-5 gap-1 sm:flex sm:flex-wrap">
           {navItems.map((item) => {
             const isActive = activeModule === item.id;
