@@ -1,4 +1,6 @@
-import { useState, type ChangeEvent, type FormEvent } from 'react';
+import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
+import { EMAIL_VERIFICATION_SENT_MESSAGE, getAuthErrorMessage } from '../constants/authMessages';
+import type { AuthDebugEntry } from '../lib/authDebug';
 import type { UserProfile } from '../types/task';
 
 type SignupIdentity = Pick<UserProfile, 'avatarDataUrl' | 'nickname' | 'username'>;
@@ -7,29 +9,34 @@ interface AuthPanelProps {
   isConfigured: boolean;
   isLoading: boolean;
   error?: string;
+  status?: string;
+  authDebugInfo?: AuthDebugEntry;
   onSignIn: (email: string, password: string) => Promise<unknown>;
   onSignUp: (email: string, password: string, identity: SignupIdentity) => Promise<unknown>;
+  onResendVerification: (email: string) => Promise<unknown>;
   onContinueAsGuest: () => void;
 }
 
-export function AuthPanel({ isConfigured, isLoading, error, onSignIn, onSignUp, onContinueAsGuest }: AuthPanelProps) {
+export function AuthPanel({ isConfigured, isLoading, error, status: authStatus, authDebugInfo, onSignIn, onSignUp, onResendVerification, onContinueAsGuest }: AuthPanelProps) {
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [nickname, setNickname] = useState('');
   const [username, setUsername] = useState('');
   const [avatarDataUrl, setAvatarDataUrl] = useState<string | undefined>();
-  const [status, setStatus] = useState<string | undefined>();
+  const [status, setStatus] = useState<string | undefined>(authStatus);
   const [formError, setFormError] = useState<string | undefined>();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasAcceptedPolicies, setHasAcceptedPolicies] = useState(false);
+  const [debugCopyStatus, setDebugCopyStatus] = useState<string | undefined>();
+
+  useEffect(() => {
+    setStatus(authStatus);
+  }, [authStatus]);
 
   function getSubmitErrorMessage(submitError: unknown): string {
     const message = submitError instanceof Error ? submitError.message : '认证失败，请稍后重试。';
-    if (mode === 'signin' && message.toLowerCase().includes('email not confirmed')) {
-      return '邮箱尚未验证。请打开验证邮件，建议用系统浏览器打开链接。';
-    }
-    return message;
+    return getAuthErrorMessage(submitError, message);
   }
 
   function handleAvatarChange(event: ChangeEvent<HTMLInputElement>) {
@@ -62,12 +69,43 @@ export function AuthPanel({ isConfigured, isLoading, error, onSignIn, onSignUp, 
         await onSignIn(email.trim(), password);
       } else {
         await onSignUp(email.trim(), password, { avatarDataUrl, nickname: nickname.trim(), username: cleanUsername });
-        setStatus('注册成功，请前往邮箱点击验证链接。验证后再返回登录。你的 VD 身份资料已保存。');
+        setStatus(EMAIL_VERIFICATION_SENT_MESSAGE);
       }
     } catch (submitError) {
       setFormError(getSubmitErrorMessage(submitError));
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+
+  async function handleResendVerification() {
+    setFormError(undefined);
+    setStatus(undefined);
+    const cleanEmail = email.trim();
+    if (!cleanEmail) {
+      setFormError('请输入邮箱后再重新发送验证邮件。');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await onResendVerification(cleanEmail);
+      setStatus(EMAIL_VERIFICATION_SENT_MESSAGE);
+    } catch (resendError) {
+      setFormError(getAuthErrorMessage(resendError, '重新发送验证邮件失败，请稍后重试。'));
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function handleCopyDebugInfo() {
+    if (!authDebugInfo) return;
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(authDebugInfo, null, 2));
+      setDebugCopyStatus('调试信息已复制。');
+    } catch {
+      setDebugCopyStatus('复制失败，请打开控制台查看调试日志。');
     }
   }
 
@@ -84,6 +122,12 @@ export function AuthPanel({ isConfigured, isLoading, error, onSignIn, onSignUp, 
         {isLoading ? <p className="mt-5 rounded-2xl bg-sky-50 px-4 py-3 text-sm text-sky-700 ring-1 ring-sky-100">正在恢复登录状态…</p> : null}
         {error || formError ? <p className="mt-5 rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-600 ring-1 ring-rose-100">{formError || error}</p> : null}
         {status ? <p className="mt-5 rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700 ring-1 ring-emerald-100">{status}</p> : null}
+        {authDebugInfo ? (
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+            <button type="button" onClick={handleCopyDebugInfo} className="rounded-full bg-white/85 px-3 py-1.5 font-semibold text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-50 hover:text-slate-900">复制调试信息</button>
+            {debugCopyStatus ? <span>{debugCopyStatus}</span> : null}
+          </div>
+        ) : null}
 
         <div className="mt-6 grid grid-cols-2 gap-2 rounded-full bg-slate-100 p-1 text-sm font-semibold text-slate-500">
           <button type="button" onClick={() => setMode('signin')} className={`rounded-full px-4 py-2 transition ${mode === 'signin' ? 'bg-white text-slate-900 shadow-sm' : 'hover:text-slate-700'}`}>登录</button>
@@ -120,6 +164,18 @@ export function AuthPanel({ isConfigured, isLoading, error, onSignIn, onSignUp, 
           <label className="block text-sm font-semibold text-slate-600">密码
             <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-300 focus:ring-4 focus:ring-sky-100/70" autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} />
           </label>
+          {mode === 'signin' ? (
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={handleResendVerification}
+                disabled={!isConfigured || isLoading || isSubmitting}
+                className="text-xs font-semibold text-slate-500 underline-offset-4 transition hover:text-slate-800 hover:underline disabled:cursor-not-allowed disabled:text-slate-300"
+              >
+                重新发送验证邮件
+              </button>
+            </div>
+          ) : null}
           {mode === 'signup' ? (
             <label className="flex items-start gap-3 rounded-2xl bg-slate-50/85 px-4 py-3 text-sm leading-6 text-slate-600 ring-1 ring-slate-100">
               <input

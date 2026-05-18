@@ -1,3 +1,4 @@
+import { recordAuthDebugError } from './authDebug';
 export interface SupabaseUser {
   id: string;
   email?: string;
@@ -38,6 +39,12 @@ interface SignUpCredentials extends EmailPasswordCredentials {
     emailRedirectTo?: string;
     data?: Record<string, unknown>;
   };
+}
+
+interface SetSessionCredentials {
+  access_token: string;
+  refresh_token: string;
+  expires_in?: number;
 }
 
 const RAW_SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
@@ -227,7 +234,7 @@ function toSession(payload: { access_token: string; refresh_token: string; expir
     expires_at: payload.expires_in ? Math.floor(Date.now() / 1000) + payload.expires_in : undefined,
     user: payload.user,
   });
-  if (!session) throw new Error('Supabase 登录态异常，请重新登录。');
+  if (!session) throw new Error('Supabase 登录返回的会话缺少有效 access_token、refresh_token 或 user，请复制调试信息排查。');
   return session;
 }
 
@@ -279,62 +286,114 @@ class VisualDeadlineSupabaseClient {
       this.emit(null);
     },
     getSession: async (): Promise<SupabaseSession | null> => {
-      const stored = readStoredSession();
-      if (!stored) return null;
-      if (stored.expires_at && stored.expires_at - 60 < Math.floor(Date.now() / 1000)) {
-        return this.auth.refreshSession(stored.refresh_token);
+      try {
+        const stored = readStoredSession();
+        if (!stored) return null;
+        if (stored.expires_at && stored.expires_at - 60 < Math.floor(Date.now() / 1000)) {
+          return this.auth.refreshSession(stored.refresh_token);
+        }
+        return stored;
+      } catch (error) {
+        recordAuthDebugError('getSession', error);
+        throw error;
       }
-      return stored;
     },
     signUp: async ({ email, password, options }: SignUpCredentials): Promise<SupabaseSession | null> => {
-      const { url, anonKey } = getRequiredConfig();
-      const signUpUrl = new URL(`${url}/auth/v1/signup`);
-      if (options?.emailRedirectTo) signUpUrl.searchParams.set('redirect_to', options.emailRedirectTo);
+      try {
+        const { url, anonKey } = getRequiredConfig();
+        const signUpUrl = new URL(`${url}/auth/v1/signup`);
+        if (options?.emailRedirectTo) signUpUrl.searchParams.set('redirect_to', options.emailRedirectTo);
 
-      const codeVerifier = createCodeVerifier();
-      const codeChallenge = await createCodeChallenge(codeVerifier);
-      storeCodeVerifier(codeVerifier);
+        const codeVerifier = createCodeVerifier();
+        const codeChallenge = await createCodeChallenge(codeVerifier);
+        storeCodeVerifier(codeVerifier);
 
-      const payload = await parseResponse<{ access_token?: string; refresh_token?: string; expires_in?: number; user: SupabaseUser }>(await fetch(signUpUrl, {
-        method: 'POST',
-        headers: { apikey: anonKey, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, data: options?.data, code_challenge: codeChallenge, code_challenge_method: 's256' }),
-      }));
-      if (!payload.access_token || !payload.refresh_token) return null;
-      const session = toSession(payload as { access_token: string; refresh_token: string; expires_in?: number; user: SupabaseUser });
-      persistSession(session);
-      clearStoredCodeVerifier();
-      this.emit(session);
-      return session;
-    },
-    exchangeCodeForSession: async (code: string): Promise<SupabaseSession> => {
-      const { url, anonKey } = getRequiredConfig();
-      const codeVerifier = readStoredCodeVerifier();
-      if (!codeVerifier) {
-        throw new Error('无法完成邮箱验证登录：缺少本机验证凭据。请使用注册时的同一浏览器打开验证链接。');
+        const payload = await parseResponse<{ access_token?: string; refresh_token?: string; expires_in?: number; user: SupabaseUser }>(await fetch(signUpUrl, {
+          method: 'POST',
+          headers: { apikey: anonKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password, data: options?.data, code_challenge: codeChallenge, code_challenge_method: 's256' }),
+        }));
+        if (!payload.access_token || !payload.refresh_token) return null;
+        const session = toSession(payload as { access_token: string; refresh_token: string; expires_in?: number; user: SupabaseUser });
+        persistSession(session);
+        clearStoredCodeVerifier();
+        this.emit(session);
+        return session;
+      } catch (error) {
+        recordAuthDebugError('signUp', error);
+        throw error;
       }
-      const payload = await parseResponse<{ access_token: string; refresh_token: string; expires_in?: number; user: SupabaseUser }>(await fetch(`${url}/auth/v1/token?grant_type=pkce`, {
-        method: 'POST',
-        headers: { apikey: anonKey, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ auth_code: code, code_verifier: codeVerifier }),
-      }));
-      const session = toSession(payload);
-      persistSession(session);
-      clearStoredCodeVerifier();
-      this.emit(session);
-      return session;
+    },
+    exchangeCodeForSession: async (code: string): Promise<SupabaseSession | null> => {
+      try {
+        const { url, anonKey } = getRequiredConfig();
+        const codeVerifier = readStoredCodeVerifier();
+        if (!codeVerifier) return null;
+        const payload = await parseResponse<{ access_token: string; refresh_token: string; expires_in?: number; user: SupabaseUser }>(await fetch(`${url}/auth/v1/token?grant_type=pkce`, {
+          method: 'POST',
+          headers: { apikey: anonKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ auth_code: code, code_verifier: codeVerifier }),
+        }));
+        const session = toSession(payload);
+        persistSession(session);
+        clearStoredCodeVerifier();
+        this.emit(session);
+        return session;
+      } catch (error) {
+        recordAuthDebugError('exchangeCodeForSession', error);
+        throw error;
+      }
     },
     signInWithPassword: async ({ email, password }: EmailPasswordCredentials): Promise<SupabaseSession> => {
-      const { url, anonKey } = getRequiredConfig();
-      const payload = await parseResponse<{ access_token: string; refresh_token: string; expires_in?: number; user: SupabaseUser }>(await fetch(`${url}/auth/v1/token?grant_type=password`, {
-        method: 'POST',
-        headers: { apikey: anonKey, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      }));
-      const session = toSession(payload);
-      persistSession(session);
-      this.emit(session);
-      return session;
+      try {
+        const { url, anonKey } = getRequiredConfig();
+        const payload = await parseResponse<{ access_token: string; refresh_token: string; expires_in?: number; user: SupabaseUser }>(await fetch(`${url}/auth/v1/token?grant_type=password`, {
+          method: 'POST',
+          headers: { apikey: anonKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        }));
+        const session = toSession(payload);
+        persistSession(session);
+        this.emit(session);
+        return session;
+      } catch (error) {
+        recordAuthDebugError('signInWithPassword', error);
+        throw error;
+      }
+    },
+    setSession: async ({ access_token, refresh_token, expires_in }: SetSessionCredentials): Promise<SupabaseSession> => {
+      try {
+        const { url, anonKey } = getRequiredConfig();
+        const user = await parseResponse<SupabaseUser>(await fetch(`${url}/auth/v1/user`, {
+          headers: { apikey: anonKey, Authorization: `Bearer ${access_token}` },
+        }));
+        const session = toSession({ access_token, refresh_token, expires_in, user });
+        persistSession(session);
+        clearStoredCodeVerifier();
+        this.emit(session);
+        return session;
+      } catch (error) {
+        recordAuthDebugError('setSession', error);
+        throw error;
+      }
+    },
+    resendVerificationEmail: async (email: string, emailRedirectTo?: string): Promise<void> => {
+      try {
+        const { url, anonKey } = getRequiredConfig();
+        const resendUrl = new URL(`${url}/auth/v1/resend`);
+        if (emailRedirectTo) resendUrl.searchParams.set('redirect_to', emailRedirectTo);
+        await parseResponse<unknown>(await fetch(resendUrl, {
+          method: 'POST',
+          headers: { apikey: anonKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, type: 'signup' }),
+        }));
+      } catch (error) {
+        recordAuthDebugError('resendVerificationEmail', error);
+        throw error;
+      }
+    },
+    acknowledgeEmailVerificationCallback: async (): Promise<void> => {
+      clearStoredCodeVerifier();
     },
     refreshSession: async (refreshToken: string): Promise<SupabaseSession | null> => {
       const { url, anonKey } = getRequiredConfig();
@@ -348,7 +407,8 @@ class VisualDeadlineSupabaseClient {
         persistSession(session);
         this.emit(session);
         return session;
-      } catch {
+      } catch (error) {
+        recordAuthDebugError('getSession', error);
         persistSession(null);
         this.emit(null);
         return null;
@@ -383,7 +443,14 @@ class VisualDeadlineSupabaseClient {
   }
 
   private emit(session: SupabaseSession | null): void {
-    this.listeners.forEach((listener) => listener(session));
+    this.listeners.forEach((listener) => {
+      try {
+        listener(session);
+      } catch (error) {
+        recordAuthDebugError('onAuthStateChange', error);
+        throw error;
+      }
+    });
   }
 }
 
