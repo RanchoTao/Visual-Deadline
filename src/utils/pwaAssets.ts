@@ -1,8 +1,10 @@
 const APP_NAME = 'Visual Deadline';
 const THEME_COLOR = '#f8fafc';
-const FAVICON_PATH = '/favicon.ico';
-const APPLE_TOUCH_ICON_PATH = '/apple-touch-icon.png';
-const MANIFEST_PATH = '/site.webmanifest';
+const ASSET_VERSION = 'v=2';
+const FAVICON_PNG_PATH = `/favicon.png?${ASSET_VERSION}`;
+const FAVICON_ICO_PATH = `/favicon.ico?${ASSET_VERSION}`;
+const APPLE_TOUCH_ICON_PATH = `/apple-touch-icon.png?${ASSET_VERSION}`;
+const MANIFEST_PATH = `/site.webmanifest?${ASSET_VERSION}`;
 
 function upsertMeta(name: string, content: string): void {
   let meta = document.head.querySelector<HTMLMetaElement>(`meta[name="${name}"]`);
@@ -31,9 +33,10 @@ export function configurePwaAssets(): void {
   upsertMeta('apple-mobile-web-app-capable', 'yes');
   upsertMeta('apple-mobile-web-app-title', APP_NAME);
   upsertMeta('apple-mobile-web-app-status-bar-style', 'default');
-  // Flat public root assets: favicon for browser tabs, Apple icon for iOS, manifest for Android/PWA.
-  upsertLink('icon', FAVICON_PATH, { type: 'image/x-icon' });
-  upsertLink('shortcut icon', FAVICON_PATH, { type: 'image/x-icon' });
+  // Flat public root assets: PNG favicon for modern browser tabs, ICO fallback for legacy tabs,
+  // Apple icon for iOS, and a versioned manifest for Android/PWA install surfaces.
+  upsertLink('icon', FAVICON_PNG_PATH, { type: 'image/png' });
+  upsertLink('shortcut icon', FAVICON_ICO_PATH);
   upsertLink('apple-touch-icon', APPLE_TOUCH_ICON_PATH, { sizes: '180x180' });
   upsertLink('manifest', MANIFEST_PATH);
 }
