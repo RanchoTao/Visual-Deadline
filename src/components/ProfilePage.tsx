@@ -6,6 +6,7 @@ import { DeveloperToolsPanel } from './DeveloperToolsPanel';
 interface ProfilePageProps {
   profile: UserProfile;
   onProfileChange: (profile: UserProfile) => void;
+  isEmailVerified?: boolean;
 }
 
 const profileFields: { key: keyof UserProfile; label: string; placeholder: string; multiline?: boolean }[] = [
@@ -25,7 +26,7 @@ const systemItems = [
   { title: '未来同步', description: '为账号、认证和多设备同步保留结构。' },
 ];
 
-export function ProfilePage({ profile, onProfileChange }: ProfilePageProps) {
+export function ProfilePage({ profile, onProfileChange, isEmailVerified }: ProfilePageProps) {
   function handleAvatarChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -89,6 +90,11 @@ export function ProfilePage({ profile, onProfileChange }: ProfilePageProps) {
               <p className="mt-2 text-xs leading-5 text-slate-500">{item.description}</p>
             </article>
           ))}
+        </div>
+        <div className="mt-4 rounded-3xl bg-white/75 p-4 ring-1 ring-white/80">
+          <p className="text-xs font-semibold tracking-[0.22em] text-slate-400">账号 / 邮箱验证</p>
+          <p className="mt-2 text-sm font-semibold text-slate-700">邮箱验证状态：{isEmailVerified ? '已验证' : '未验证'}</p>
+          <p className="mt-1 text-xs leading-5 text-slate-500">当前阶段邮箱验证状态仅作展示，不影响登录、云同步与本地使用。</p>
         </div>
         <div className="mt-4 rounded-3xl bg-white/75 p-4 ring-1 ring-white/80">
           <p className="text-xs font-semibold tracking-[0.22em] text-slate-400">设置 / 数据与隐私</p>

@@ -348,7 +348,7 @@ function createAchievement(id: string): Achievement | undefined {
 
 function App() {
   const [publicPath, setPublicPath] = useState(() => window.location.pathname);
-  const { session, isLoading: isAuthLoading, error: authError, isConfigured: isSupabaseConfigured, signIn, signUp, signOut } = useSupabaseAuth();
+  const { session, isLoading: isAuthLoading, error: authError, status: authStatus, authDebugInfo, isConfigured: isSupabaseConfigured, signIn, signUp, resendVerificationEmail, signOut } = useSupabaseAuth();
   const [hasChosenGuestMode, setHasChosenGuestMode] = useState(false);
   const [cloudStatus, setCloudStatus] = useState<string | undefined>();
   const [cloudToast, setCloudToast] = useState<string | undefined>();
@@ -938,7 +938,7 @@ function App() {
     map: <LifeMapPage goals={normalizedGoals} tasks={normalizedTasks} onSaveGoal={saveGoal} onDeleteGoal={deleteGoal} onRoadmapGenerated={(artifact) => { saveAIArtifact(artifact); unlockAchievement('roadmap-generated'); }} />,
     social: <SocialPage />,
     log: <LogPage tasks={normalizedTasks} goals={normalizedGoals} profile={normalizedProfile} pressure={pressure} pressureHistory={normalizedPressureHistory} achievements={normalizedAchievements} aiArtifacts={normalizedAIArtifacts} onAIReportGenerated={(artifact) => { saveAIArtifact(artifact); unlockAchievement('ai-report-generated'); }} onDelete={deleteTask} onReviewNoteChange={updateReviewNote} />,
-    me: <ProfilePage profile={normalizedProfile} onProfileChange={setProfile} />,
+    me: <ProfilePage profile={normalizedProfile} onProfileChange={setProfile} isEmailVerified={Boolean(session?.user.email_confirmed_at)} />,
   };
 
 
@@ -951,7 +951,7 @@ function App() {
   }
 
   if (!session && !hasChosenGuestMode) {
-    return <AuthPanel isConfigured={isSupabaseConfigured} isLoading={isAuthLoading} error={authError} onSignIn={signIn} onSignUp={async (email, password, identity) => { setProfile({ ...normalizedProfile, ...identity }); return signUp(email, password, identity); }} onContinueAsGuest={() => setHasChosenGuestMode(true)} />;
+    return <AuthPanel isConfigured={isSupabaseConfigured} isLoading={isAuthLoading} error={authError} status={authStatus} authDebugInfo={authDebugInfo} onSignIn={signIn} onSignUp={async (email, password, identity) => { setProfile({ ...normalizedProfile, ...identity }); return signUp(email, password, identity); }} onResendVerification={resendVerificationEmail} onContinueAsGuest={() => setHasChosenGuestMode(true)} />;
   }
 
   return (
