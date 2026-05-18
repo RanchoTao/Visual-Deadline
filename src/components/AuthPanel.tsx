@@ -1,6 +1,9 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
 import {
   EMAIL_LINK_EXPIRED_MESSAGE,
+  EMAIL_MAYBE_REGISTERED_MESSAGE,
+  EMAIL_NOT_CONFIRMED_MESSAGE,
+  EMAIL_SESSION_MISSING_MESSAGE,
   EMAIL_VERIFICATION_RESENT_MESSAGE,
   EMAIL_VERIFICATION_SENT_MESSAGE,
   getAuthErrorMessage,
@@ -83,7 +86,7 @@ export function AuthPanel({ isConfigured, isLoading, error, status: authStatus, 
         await onSignIn(cleanEmail, password);
       } else {
         await onSignUp(cleanEmail, password, { avatarDataUrl, nickname: nickname.trim(), username: cleanUsername });
-        setMode('signin');
+        setVerificationEmail(cleanEmail);
         setStatus(EMAIL_VERIFICATION_SENT_MESSAGE);
       }
     } catch (submitError) {
@@ -92,27 +95,6 @@ export function AuthPanel({ isConfigured, isLoading, error, status: authStatus, 
         setVerificationEmail(cleanEmail);
       }
       setFormError(message);
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
-
-  async function handleResendVerification() {
-    setFormError(undefined);
-    setStatus(undefined);
-    const cleanEmail = verificationEmail ?? email.trim();
-    if (!cleanEmail) {
-      setFormError('请输入邮箱后再重新发送验证邮件。');
-      return;
-    }
-
-    setIsSubmitting(true);
-    try {
-      await onResendVerification(cleanEmail);
-      setVerificationEmail(cleanEmail);
-      setStatus(EMAIL_VERIFICATION_RESENT_MESSAGE);
-    } catch (resendError) {
-      setFormError(resendError instanceof Error ? resendError.message : '重新发送验证邮件失败，请稍后重试。');
     } finally {
       setIsSubmitting(false);
     }
