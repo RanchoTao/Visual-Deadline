@@ -1,5 +1,6 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
 import {
+  EMAIL_LINK_EXPIRED_MESSAGE,
   EMAIL_MAYBE_REGISTERED_MESSAGE,
   EMAIL_NOT_CONFIRMED_MESSAGE,
   EMAIL_SESSION_MISSING_MESSAGE,
@@ -138,7 +139,7 @@ export function AuthPanel({ isConfigured, isLoading, error, status: authStatus, 
     }
   }
 
-  const shouldShowVerificationActions = Boolean(verificationEmail);
+  const shouldShowVerificationActions = Boolean(verificationEmail) || error === EMAIL_LINK_EXPIRED_MESSAGE;
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,#dbeafe,transparent_32%),linear-gradient(180deg,#f8fafc,#eef2f7)] px-4 py-10 text-slate-900">
@@ -163,7 +164,12 @@ export function AuthPanel({ isConfigured, isLoading, error, status: authStatus, 
         {shouldShowVerificationActions ? (
           <div className="mt-6 rounded-[1.75rem] bg-slate-50/80 p-4 ring-1 ring-white/90">
             <p className="text-sm font-semibold text-slate-700">请验证邮箱</p>
-            <p className="mt-1 text-xs leading-5 text-slate-500">验证邮件已发送至 {verificationEmail}。验证完成后请返回登录。</p>
+            <p className="mt-1 text-xs leading-5 text-slate-500">{verificationEmail ? `验证邮件已发送至 ${verificationEmail}。验证完成后请返回登录。` : '请输入邮箱后重新发送验证邮件。'}</p>
+            {!verificationEmail ? (
+              <label className="mt-3 block text-sm font-semibold text-slate-600">邮箱
+                <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-300 focus:ring-4 focus:ring-sky-100/70" autoComplete="email" />
+              </label>
+            ) : null}
             <div className="mt-4 grid gap-2 sm:grid-cols-2">
               <button type="button" onClick={handleResendVerification} disabled={!isConfigured || isLoading || isSubmitting} className="rounded-full bg-white/85 px-5 py-3 text-sm font-semibold text-slate-700 ring-1 ring-slate-200 transition hover:-translate-y-0.5 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300">重新发送验证邮件</button>
               <button type="button" onClick={handleGoToSignIn} className="rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-slate-300">返回登录</button>

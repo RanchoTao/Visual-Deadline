@@ -363,11 +363,10 @@ class VisualDeadlineSupabaseClient {
       try {
         const { url, anonKey } = getRequiredConfig();
         const resendUrl = new URL(`${url}/auth/v1/resend`);
-        if (emailRedirectTo) resendUrl.searchParams.set('redirect_to', emailRedirectTo);
         await parseResponse<unknown>(await fetch(resendUrl, {
           method: 'POST',
           headers: { apikey: anonKey, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type: 'signup', email }),
+          body: JSON.stringify({ type: 'signup', email, options: emailRedirectTo ? { emailRedirectTo } : undefined }),
         }));
       } catch (error) {
         recordAuthDebugError('resendVerificationEmail', error);

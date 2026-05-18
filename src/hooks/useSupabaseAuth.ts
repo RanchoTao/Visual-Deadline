@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
-import { EMAIL_VERIFICATION_RESENT_MESSAGE, EMAIL_VERIFIED_LOGIN_MESSAGE, getAuthErrorMessage } from '../constants/authMessages';
+import { EMAIL_LINK_EXPIRED_MESSAGE, EMAIL_VERIFICATION_RESENT_MESSAGE, EMAIL_VERIFIED_LOGIN_MESSAGE, getAuthErrorMessage } from '../constants/authMessages';
 import { getLastAuthDebugEntry, recordAuthDebugError, type AuthDebugEntry } from '../lib/authDebug';
 import { supabase, type SupabaseSession } from '../lib/supabaseClient';
 import type { UserProfile } from '../types/task';
 
 const EMAIL_CONFIRMATION_REDIRECT_URL = 'https://www.visualdeadline.com';
+
+function getEmailRedirectTo(): string {
+  return typeof window === 'undefined' ? EMAIL_CONFIRMATION_REDIRECT_URL : window.location.origin;
+}
 const AUTH_CALLBACK_PARAMS = [
   'access_token',
   'refresh_token',
@@ -25,6 +29,7 @@ interface AuthCallbackPayload {
   code: string | null;
   type: string | null;
   error: string | null;
+  errorCode: string | null;
 }
 
 interface AuthCallbackResult {
@@ -52,6 +57,7 @@ function readAuthCallbackParams(): AuthCallbackPayload | null {
     code: getParam('code'),
     type: getParam('type'),
     error,
+    errorCode: getParam('error_code'),
   };
 }
 
@@ -77,6 +83,9 @@ async function handleAuthCallback(): Promise<AuthCallbackResult | null> {
   if (!callbackParams) return null;
 
   try {
+    if (callbackParams.errorCode === 'otp_expired' || callbackParams.error?.includes('Email link is invalid or has expired')) {
+      throw new Error(EMAIL_LINK_EXPIRED_MESSAGE);
+    }
     if (callbackParams.error) throw new Error(callbackParams.error);
 
     if (callbackParams.accessToken && callbackParams.refreshToken) {
@@ -181,7 +190,7 @@ export function useSupabaseAuth() {
   const resendVerificationEmail = useCallback(async (email: string) => {
     setError(undefined);
     setStatus(undefined);
-    await supabase.auth.resendVerificationEmail(email, EMAIL_CONFIRMATION_REDIRECT_URL);
+    await supabase.auth.resendVerificationEmail(email, getEmailRedirectTo());
     setStatus(EMAIL_VERIFICATION_RESENT_MESSAGE);
   }, []);
 
