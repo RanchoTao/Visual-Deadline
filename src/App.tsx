@@ -33,6 +33,7 @@ import {
   normalizeProgressMode,
 } from './utils/taskScoring';
 import { appendPressureHistoryRecord, createPressureHistoryRecord, normalizePressureHistory } from './utils/pressureHistory';
+import { sortActiveTasksByProgress } from './utils/taskDerivedState';
 import { loadCloudData, saveCloudGoals, saveCloudPressureHistory, saveCloudProfile, saveCloudTasks } from './lib/cloudSync';
 import { hasValue, loadValue, savePressure, saveTasks, saveValue, storageKeys } from './storage';
 
@@ -386,7 +387,7 @@ function App() {
   const normalizedProfile = useMemo(() => normalizeProfile(profile), [profile]);
   const normalizedPressureCalibration = useMemo(() => normalizePressureCalibration(pressureCalibration, legacyReferencePressure), [legacyReferencePressure, pressureCalibration]);
   const normalizedPressureHistory = useMemo(() => normalizePressureHistory(pressureHistory), [pressureHistory]);
-  const activeTasks = useMemo(() => normalizedTasks.filter((task) => task.lifecycleStatus === 'active'), [normalizedTasks]);
+  const activeTasks = useMemo(() => sortActiveTasksByProgress(normalizedTasks.filter((task) => task.lifecycleStatus === 'active')), [normalizedTasks]);
   const recommendedTasks = useMemo(() => normalizedTasks.filter((task) => task.lifecycleStatus === 'active').sort((a, b) => getTaskScore(b) - getTaskScore(a)).slice(0, 3), [normalizedTasks]);
   const deadlinePressureTasks = useMemo(() => activeTasks.filter(isDeadlinePressureTask).sort((a, b) => getTaskScore(b) - getTaskScore(a)), [activeTasks]);
   const pressure = useMemo<PressureBreakdown>(() => calculatePressureIndex(normalizedTasks, normalizedPressureCalibration, legacyReferencePressure, new Date(pressureClock)), [normalizedTasks, normalizedPressureCalibration, legacyReferencePressure, pressureClock]);

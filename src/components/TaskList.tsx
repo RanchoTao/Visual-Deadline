@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { LifecycleStatus, Task } from '../types/task';
 import { formatCountdown, formatDeadline } from '../utils/date';
 import { getActivityTypeLabel, getDisplayProgress, getTaskProgress, getTimeProgress, isProgressAuto } from '../utils/taskScoring';
+import { calculatePressureLevel, getDerivedTaskStatus } from '../utils/taskDerivedState';
 import { ProgressBar } from './ProgressBar';
 
 interface TaskListProps {
@@ -18,6 +19,13 @@ export function TaskList({ tasks, onArchive, onDelete, onEdit }: TaskListProps) 
     action();
     setOpenMenuTaskId(undefined);
   }
+
+  const pressureLabelMap = {
+    normal: '正常',
+    light_delay: '轻微延迟',
+    accumulated: '已堆积',
+    severe_delay: '严重堆积',
+  } as const;
 
   return (
     <section className={`relative overflow-visible rounded-[2rem] border border-white/70 bg-white/75 p-5 shadow-xl shadow-slate-200/60 backdrop-blur ${openMenuTaskId ? 'z-40' : 'z-10'}`}>
@@ -39,6 +47,8 @@ export function TaskList({ tasks, onArchive, onDelete, onEdit }: TaskListProps) 
             const taskProgress = getTaskProgress(task);
             const timeProgress = getTimeProgress(task);
             const progressIsAuto = isProgressAuto(task);
+            const derivedStatus = getDerivedTaskStatus(task);
+            const pressureLevel = calculatePressureLevel(task);
 
             return (
               <li key={task.id} className={`relative overflow-visible rounded-3xl border border-white/80 bg-slate-50/80 p-4 shadow-sm shadow-slate-100/70 ${isMenuOpen ? 'z-50' : 'z-0'}`}>
@@ -51,8 +61,11 @@ export function TaskList({ tasks, onArchive, onDelete, onEdit }: TaskListProps) 
                     {task.description ? <p className="mt-2 line-clamp-2 text-sm text-slate-600">{task.description}</p> : null}
                     <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
                       <span className="rounded-full bg-white px-2.5 py-1">重要性 {task.importance}/10</span>
-                      <span className="rounded-full bg-white px-2.5 py-1">{formatCountdown(task.deadline)}</span>
+                      <span className={`rounded-full px-2.5 py-1 ${derivedStatus === 'delayed_observation' ? 'bg-amber-50 text-amber-700' : 'bg-white'}`}>
+                        {derivedStatus === 'delayed_observation' ? '延后观察' : formatCountdown(task.deadline)}
+                      </span>
                       <span className="rounded-full bg-white px-2.5 py-1">截止 {formatDeadline(task.deadline)}</span>
+                      <span className={`rounded-full px-2.5 py-1 ${pressureLevel === 'severe_delay' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'}`}>{pressureLabelMap[pressureLevel]}</span>
                     </div>
                     <div className="mt-3 max-w-sm">
                       <ProgressBar progress={displayProgress} compact />
