@@ -157,6 +157,17 @@ More demo ideas are documented in [`docs/DEMO_GIF_IDEAS.md`](./docs/DEMO_GIF_IDE
 
 ---
 
+## Weekly Update（本周更新）
+
+本周更新聚焦于：**降低任务系统压力，而不是增加焦虑**。
+
+- 活动列表现在默认按进度从高到低排序，并在进度相同时依次按重要性、是否有截止时间、截止时间先后进行比较。
+- 过期未完成任务新增派生状态 `delayed_observation`（中文：延后观察），用于降低视觉压迫感，不改变任务真实完成状态。
+- 新增压力分级：正常 / 轻微延迟 / 已堆积 / 严重堆积，以更柔和方式反映过期程度。
+- 新增周报系统 v0.1（本地计算版），统计本周完成、新增、高重要度、延后观察、严重堆积、平均进度与一句总结建议。
+
+---
+
 ## Architecture Overview
 
 VD is currently a Vite + React + TypeScript application with a local-first browser data model.
