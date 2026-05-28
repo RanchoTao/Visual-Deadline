@@ -8,6 +8,10 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+
+  --vd-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --vd-hover-duration: 160ms;
+  --vd-enter-duration: 260ms;
 }
 
 button,
@@ -17,14 +21,33 @@ textarea {
   font: inherit;
 }
 
-@keyframes task-breathe {
-  0%, 100% {
-    transform: scale(1);
-    opacity: 0.86;
+.interactive-fade {
+  transition:
+    transform var(--vd-hover-duration) var(--vd-ease-out),
+    box-shadow var(--vd-hover-duration) var(--vd-ease-out),
+    border-color var(--vd-hover-duration) var(--vd-ease-out),
+    background-color var(--vd-hover-duration) ease-out;
+}
+
+@keyframes task-card-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
   }
-  50% {
-    transform: scale(1.16);
+  to {
     opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes module-fade {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
   }
 }
 
@@ -39,10 +62,70 @@ textarea {
   }
 }
 
-.animate-task-breathe {
-  animation: task-breathe 3s ease-in-out infinite;
+@keyframes gentle-float {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(0, -4px, 0);
+  }
+}
+
+.task-card-flow {
+  animation: task-card-enter var(--vd-enter-duration) var(--vd-ease-out) both;
+  transform: translate3d(0, 0, 0);
+  transition:
+    transform var(--vd-hover-duration) var(--vd-ease-out),
+    border-color var(--vd-hover-duration) var(--vd-ease-out),
+    box-shadow var(--vd-hover-duration) var(--vd-ease-out),
+    opacity var(--vd-enter-duration) ease-out;
+  will-change: transform, box-shadow;
+  box-shadow: 0 6px 22px -20px rgba(15, 23, 42, 0.55);
+}
+
+.task-card-flow:hover {
+  transform: translate3d(0, -2px, 0);
+  border-color: rgba(148, 163, 184, 0.42);
+  box-shadow: 0 20px 30px -24px rgba(15, 23, 42, 0.42);
+}
+
+.empty-state-panel {
+  border-radius: 1.5rem;
+  border: 1px dashed rgba(148, 163, 184, 0.35);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.76), rgba(248, 250, 252, 0.85));
+}
+
+.empty-state-orb {
+  margin: 0 auto;
+  display: grid;
+  height: 3rem;
+  width: 3rem;
+  place-items: center;
+  border-radius: 9999px;
+  background: rgba(226, 232, 240, 0.8);
+  color: rgb(71, 85, 105);
+  animation: gentle-float 3.8s ease-in-out infinite;
 }
 
 .animate-soft-rise {
   animation: soft-rise 0.42s ease-out both;
+}
+
+.animate-fade-surface {
+  animation: module-fade 220ms var(--vd-ease-out) both;
+}
+
+.animate-module-fade {
+  animation: module-fade var(--vd-enter-duration) var(--vd-ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-card-flow,
+  .animate-fade-surface,
+  .animate-module-fade,
+  .empty-state-orb {
+    animation: none !important;
+    transition: none !important;
+  }
 }

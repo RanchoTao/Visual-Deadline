@@ -956,7 +956,7 @@ function App() {
   }
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top_left,#dbeafe,transparent_32%),radial-gradient(circle_at_top_right,#f8fafc,transparent_30%),linear-gradient(180deg,#f8fafc,#eef2f7)] px-3 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-3 text-slate-900 md:px-8 md:py-8">
+    <main className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top_left,#dbeafe,transparent_36%),radial-gradient(circle_at_bottom_right,#e2e8f0,transparent_34%),linear-gradient(180deg,#f8fafc,#eef2f7)] px-3 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-3 text-slate-900 md:px-8 md:py-8">
       {!onboardingComplete ? <OnboardingFlow onComplete={completeOnboarding} /> : null}
       {taskFormOverlay}
       {isRecalibrationOpen ? (
@@ -1019,7 +1019,7 @@ function App() {
           onSignIn={() => setHasChosenGuestMode(false)}
           onSignOut={signOut}
         />
-        {moduleContent[activeModule]}
+        <div key={activeModule} className="animate-module-fade">{moduleContent[activeModule]}</div>
       </div>
       <MobileBottomNav activeModule={activeModule} onModuleChange={setActiveModule} />
     </main>

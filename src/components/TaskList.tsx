@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import type { LifecycleStatus, Task } from '../types/task';
 import { formatCountdown, formatDeadline } from '../utils/date';
 import { getActivityTypeLabel, getDisplayProgress, getTaskProgress, getTimeProgress, isProgressAuto } from '../utils/taskScoring';
@@ -12,13 +12,8 @@ interface TaskListProps {
   onEdit: (task: Task) => void;
 }
 
-export function TaskList({ tasks, onArchive, onDelete, onEdit }: TaskListProps) {
+export const TaskList = memo(function TaskList({ tasks, onArchive, onDelete, onEdit }: TaskListProps) {
   const [openMenuTaskId, setOpenMenuTaskId] = useState<string | undefined>();
-
-  function runAction(action: () => void) {
-    action();
-    setOpenMenuTaskId(undefined);
-  }
 
   const pressureLabelMap = {
     normal: '正常',
@@ -27,21 +22,32 @@ export function TaskList({ tasks, onArchive, onDelete, onEdit }: TaskListProps) 
     severe_delay: '严重堆积',
   } as const;
 
+  function runAction(action: () => void) {
+    action();
+    setOpenMenuTaskId(undefined);
+  }
+
+  const orderedTasks = useMemo(() => tasks, [tasks]);
+
   return (
-    <section className={`relative overflow-visible rounded-[2rem] border border-white/70 bg-white/75 p-5 shadow-xl shadow-slate-200/60 backdrop-blur ${openMenuTaskId ? 'z-40' : 'z-10'}`}>
+    <section className={`relative overflow-visible rounded-[2rem] border border-white/70 bg-white/80 p-5 shadow-[0_20px_45px_-28px_rgba(15,23,42,0.35)] backdrop-blur-xl ${openMenuTaskId ? 'z-40' : 'z-10'}`}>
       <div className="flex items-center justify-between gap-4">
         <div>
           <p className="text-sm font-semibold text-slate-500">活动列表</p>
           <h2 className="text-2xl font-semibold text-slate-950">进行中的项目</h2>
         </div>
-        <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-600">{tasks.length} 个</span>
+        <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-600">{orderedTasks.length} 个</span>
       </div>
 
-      {tasks.length === 0 ? (
-        <div className="mt-6 rounded-3xl border border-dashed border-slate-200 p-8 text-center text-slate-500">暂无进行中的项目。</div>
+      {orderedTasks.length === 0 ? (
+        <div className="empty-state-panel mt-6 p-9 text-center">
+          <div className="empty-state-orb" aria-hidden="true">✦</div>
+          <p className="mt-4 text-base font-medium text-slate-700">Nothing urgent right now.</p>
+          <p className="mt-2 text-sm text-slate-500">Clear mind. Clear system.</p>
+        </div>
       ) : (
         <ul className="mt-5 grid overflow-visible gap-3 lg:grid-cols-2">
-          {tasks.map((task) => {
+          {orderedTasks.map((task, index) => {
             const isMenuOpen = openMenuTaskId === task.id;
             const displayProgress = getDisplayProgress(task);
             const taskProgress = getTaskProgress(task);
@@ -51,7 +57,7 @@ export function TaskList({ tasks, onArchive, onDelete, onEdit }: TaskListProps) 
             const pressureLevel = calculatePressureLevel(task);
 
             return (
-              <li key={task.id} className={`relative overflow-visible rounded-3xl border border-white/80 bg-slate-50/80 p-4 shadow-sm shadow-slate-100/70 ${isMenuOpen ? 'z-50' : 'z-0'}`}>
+              <li key={task.id} className={`task-card-flow relative overflow-visible rounded-3xl border border-white/80 bg-slate-50/85 p-4 ${isMenuOpen ? 'z-50' : 'z-0'}`} style={{ animationDelay: `${Math.min(index * 45, 280)}ms` }}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
@@ -77,14 +83,14 @@ export function TaskList({ tasks, onArchive, onDelete, onEdit }: TaskListProps) 
                     <button
                       type="button"
                       onClick={() => setOpenMenuTaskId(isMenuOpen ? undefined : task.id)}
-                      className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-xl font-semibold leading-none text-slate-500 shadow-sm hover:bg-slate-100"
+                      className="interactive-fade flex h-10 w-10 items-center justify-center rounded-full bg-white text-xl font-semibold leading-none text-slate-500 shadow-sm hover:bg-slate-100"
                       aria-label={`打开 ${task.title} 的操作菜单`}
                       aria-expanded={isMenuOpen}
                     >
                       ⋯
                     </button>
                     {isMenuOpen ? (
-                      <div className="absolute right-0 top-12 z-[120] w-32 rounded-2xl border border-white/80 bg-white/95 p-1.5 shadow-2xl shadow-slate-300/70 backdrop-blur">
+                      <div className="animate-fade-surface absolute right-0 top-12 z-[120] w-32 rounded-2xl border border-white/80 bg-white/95 p-1.5 shadow-2xl shadow-slate-300/70 backdrop-blur">
                         <button type="button" onClick={() => runAction(() => onArchive(task, 'completed'))} className="w-full rounded-xl px-3 py-2 text-left text-sm font-medium text-emerald-600 hover:bg-emerald-50">
                           完成
                         </button>
@@ -108,4 +114,4 @@ export function TaskList({ tasks, onArchive, onDelete, onEdit }: TaskListProps) 
       )}
     </section>
   );
-}
+});
