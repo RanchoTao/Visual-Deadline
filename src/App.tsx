@@ -1019,7 +1019,9 @@ function App() {
           onSignIn={() => setHasChosenGuestMode(false)}
           onSignOut={signOut}
         />
-        {moduleContent[activeModule]}
+        <div key={activeModule} className="vd-module-transition">
+          {moduleContent[activeModule]}
+        </div>
       </div>
       <MobileBottomNav activeModule={activeModule} onModuleChange={setActiveModule} />
     </main>

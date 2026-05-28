@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import type { LifecycleStatus, Task } from '../types/task';
 import { formatCountdown, formatDeadline } from '../utils/date';
 import { getActivityTypeLabel, getDisplayProgress, getTaskProgress, getTimeProgress, isProgressAuto } from '../utils/taskScoring';
@@ -12,7 +12,7 @@ interface TaskListProps {
   onEdit: (task: Task) => void;
 }
 
-export function TaskList({ tasks, onArchive, onDelete, onEdit }: TaskListProps) {
+function TaskListComponent({ tasks, onArchive, onDelete, onEdit }: TaskListProps) {
   const [openMenuTaskId, setOpenMenuTaskId] = useState<string | undefined>();
 
   function runAction(action: () => void) {
@@ -38,7 +38,11 @@ export function TaskList({ tasks, onArchive, onDelete, onEdit }: TaskListProps) 
       </div>
 
       {tasks.length === 0 ? (
-        <div className="mt-6 rounded-3xl border border-dashed border-slate-200 p-8 text-center text-slate-500">暂无进行中的项目。</div>
+        <div className="mt-6 rounded-3xl border border-dashed border-slate-200/90 bg-white/55 p-9 text-center text-slate-500">
+          <div className="mx-auto mb-3 flex h-11 w-11 vd-empty-state-icon items-center justify-center rounded-2xl bg-slate-100 text-slate-500">◎</div>
+          <p className="text-sm font-medium text-slate-600">Nothing urgent right now.</p>
+          <p className="mt-1 text-xs text-slate-400">Clear mind. Clear system.</p>
+        </div>
       ) : (
         <ul className="mt-5 grid overflow-visible gap-3 lg:grid-cols-2">
           {tasks.map((task) => {
@@ -51,11 +55,12 @@ export function TaskList({ tasks, onArchive, onDelete, onEdit }: TaskListProps) 
             const pressureLevel = calculatePressureLevel(task);
 
             return (
-              <li key={task.id} className={`relative overflow-visible rounded-3xl border border-white/80 bg-slate-50/80 p-4 shadow-sm shadow-slate-100/70 ${isMenuOpen ? 'z-50' : 'z-0'}`}>
+              <li key={task.id} className={`vd-task-enter vd-task-card relative overflow-visible rounded-3xl border bg-slate-50/85 p-4 shadow-sm shadow-slate-100/70 ${task.progress >= 100 ? 'border-emerald-100/90 opacity-75 scale-[0.995]' : 'border-white/80 hover:border-sky-100/90 hover:shadow-md hover:shadow-slate-200/80'} ${isMenuOpen ? 'z-50' : 'z-0'}`}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="font-semibold text-slate-950">{task.title}</h3>
+                      <h3 className={`font-semibold text-slate-950 ${task.progress >= 100 ? 'vd-strike text-slate-500' : ''}`}>{task.title}</h3>
+                      {task.progress >= 100 ? <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-100 text-xs text-emerald-700 transition-all duration-200 ease-out">✓</span> : null}
                       <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-500">{getActivityTypeLabel(task.activityType)}</span>
                     </div>
                     {task.description ? <p className="mt-2 line-clamp-2 text-sm text-slate-600">{task.description}</p> : null}
@@ -109,3 +114,5 @@ export function TaskList({ tasks, onArchive, onDelete, onEdit }: TaskListProps) 
     </section>
   );
 }
+
+export const TaskList = memo(TaskListComponent);

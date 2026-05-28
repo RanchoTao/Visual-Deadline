@@ -10,6 +10,13 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* VD v0.3 — Flow State motion tokens */
+:root {
+  --vd-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --vd-hover-duration: 150ms;
+  --vd-enter-duration: 240ms;
+}
+
 button,
 input,
 select,
@@ -45,4 +52,69 @@ textarea {
 
 .animate-soft-rise {
   animation: soft-rise 0.42s ease-out both;
+}
+
+@keyframes vd-fade-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes vd-line-through {
+  from {
+    transform: scaleX(0);
+    opacity: 0;
+  }
+  to {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+}
+
+@keyframes vd-empty-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+.vd-module-transition {
+  animation: vd-fade-slide-up var(--vd-enter-duration) var(--vd-ease-out) both;
+}
+
+.vd-task-enter {
+  animation: vd-fade-slide-up var(--vd-enter-duration) var(--vd-ease-out) both;
+}
+
+.vd-task-card {
+  transform: translateZ(0);
+  transition: box-shadow var(--vd-hover-duration) var(--vd-ease-out), transform var(--vd-hover-duration) var(--vd-ease-out), border-color var(--vd-hover-duration) var(--vd-ease-out), opacity 220ms var(--vd-ease-out);
+  will-change: transform;
+}
+
+.vd-task-card:hover {
+  transform: translateY(-2px) translateZ(0);
+}
+
+.vd-strike {
+  position: relative;
+}
+
+.vd-strike::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1.5px;
+  transform-origin: left;
+  background: color-mix(in srgb, #64748b 65%, transparent);
+  animation: vd-line-through 220ms var(--vd-ease-out) both;
+}
+
+.vd-empty-state-icon {
+  animation: vd-empty-float 2.8s ease-in-out infinite;
 }
