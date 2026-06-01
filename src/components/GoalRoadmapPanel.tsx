@@ -19,6 +19,7 @@ const categories = ['study', 'research', 'fitness', 'work', 'life', 'social', 'o
 const roadmapFacets = ['AI 路线图', '阶段拆解', '风险分析', '周期建议'] as const;
 
 type RoadmapState = { loadingGoalId?: string; errorGoalId?: string; message?: string };
+type RoadmapNode = { id: string; title: string; timeRange: string; summary: string; details: string[] };
 
 function createGoalInput(goal: Goal): GoalInput {
   return {
@@ -31,8 +32,39 @@ function createGoalInput(goal: Goal): GoalInput {
   };
 }
 
-function getPreviewItems(goal: Goal) {
-  return goal.roadmapSuggestions?.slice(0, 2) ?? [];
+function splitSuggestion(item: string): { section: string; content: string } {
+  const separatorIndex = item.indexOf('：');
+  if (separatorIndex < 0) return { section: '阶段', content: item.trim() };
+  return { section: item.slice(0, separatorIndex).trim(), content: item.slice(separatorIndex + 1).trim() };
+}
+
+function getRoadmapNodes(goal: Goal): RoadmapNode[] {
+  const suggestions = goal.roadmapSuggestions ?? [];
+  const grouped = suggestions.reduce<Record<string, string[]>>((result, item) => {
+    const { section, content } = splitSuggestion(item);
+    (result[section] ??= []).push(content);
+    return result;
+  }, {});
+  const stages = grouped['阶段']?.length ? grouped['阶段'] : suggestions.slice(0, 4);
+  return stages.map((stage, index) => {
+    const [rawTitle, rawTimeRange, rawSummary] = stage.split('｜').map((item) => item.trim());
+    const summary = rawSummary || rawTitle || `推进阶段 ${index + 1}`;
+    return {
+      id: `${goal.id}-stage-${index}`,
+      title: rawSummary ? rawTitle : `阶段 ${index + 1}`,
+      timeRange: rawTimeRange || '时间范围待确认',
+      summary,
+      details: [
+        grouped['里程碑']?.[index] ? `里程碑：${grouped['里程碑'][index]}` : undefined,
+        grouped['周/月方向']?.[index] ? `推进节奏：${grouped['周/月方向'][index]}` : undefined,
+        index === 0 && grouped['第一步行动']?.[0] ? `第一步：${grouped['第一步行动'][0]}` : undefined,
+      ].filter((item): item is string => Boolean(item)),
+    };
+  });
+}
+
+function getRoadmapNotes(goal: Goal): string[] {
+  return (goal.roadmapSuggestions ?? []).filter((item) => splitSuggestion(item).section !== '阶段');
 }
 
 export function GoalRoadmapPanel({ goals, tasks, onSaveGoal, onDeleteGoal, onRoadmapGenerated }: GoalRoadmapPanelProps) {
@@ -45,7 +77,12 @@ export function GoalRoadmapPanel({ goals, tasks, onSaveGoal, onDeleteGoal, onRoa
   const [editingGoalId, setEditingGoalId] = useState<string | undefined>();
   const [expandedGoalId, setExpandedGoalId] = useState<string | undefined>();
   const [roadmapState, setRoadmapState] = useState<RoadmapState>({});
+  const [expandedNodeIds, setExpandedNodeIds] = useState<string[]>([]);
   const isEditing = Boolean(editingGoalId);
+
+  function toggleNode(nodeId: string) {
+    setExpandedNodeIds((current) => current.includes(nodeId) ? current.filter((id) => id !== nodeId) : [...current, nodeId]);
+  }
 
   useEffect(() => {
     if (expandedGoalId && !goals.some((goal) => goal.id === expandedGoalId)) setExpandedGoalId(undefined);
@@ -141,7 +178,10 @@ export function GoalRoadmapPanel({ goals, tasks, onSaveGoal, onDeleteGoal, onRoa
         </label>
         <label className="space-y-2 text-xs font-semibold text-slate-400">
           时间跨度
-          <input type="date" value={targetDate} onChange={(event) => setTargetDate(event.target.value)} className="w-full rounded-2xl border border-transparent bg-white/85 px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-sky-100 focus:ring-4 focus:ring-sky-100/60" />
+          <span className="relative block">
+            {!targetDate ? <span className="pointer-events-none absolute inset-y-0 left-4 flex items-center text-sm font-normal text-slate-400">选择日期</span> : null}
+            <input aria-label="截止日期" type="date" value={targetDate} onChange={(event) => setTargetDate(event.target.value)} className={`w-full rounded-2xl border border-transparent bg-white/85 px-4 py-3 text-sm outline-none transition focus:border-sky-100 focus:ring-4 focus:ring-sky-100/60 ${targetDate ? 'text-slate-700' : 'text-transparent'}`} />
+          </span>
         </label>
         <label className="space-y-2 text-xs font-semibold text-slate-400">
           领域
@@ -164,7 +204,8 @@ export function GoalRoadmapPanel({ goals, tasks, onSaveGoal, onDeleteGoal, onRoa
           {goals.map((goal) => {
             const isExpanded = expandedGoalId === goal.id;
             const isLoading = roadmapState.loadingGoalId === goal.id;
-            const previewItems = getPreviewItems(goal);
+            const roadmapNodes = getRoadmapNodes(goal);
+            const roadmapNotes = getRoadmapNotes(goal);
             return (
               <article key={goal.id} className="rounded-[1.5rem] border border-white/80 bg-white/80 p-4 shadow-sm ring-1 ring-white/80">
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -188,9 +229,9 @@ export function GoalRoadmapPanel({ goals, tasks, onSaveGoal, onDeleteGoal, onRoa
                 {roadmapState.errorGoalId === goal.id && roadmapState.message ? <p className="mt-3 rounded-2xl bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-600 ring-1 ring-rose-100">{roadmapState.message}</p> : null}
                 {isLoading ? <p className="mt-3 rounded-2xl bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-700 ring-1 ring-sky-100">正在生成路线图建议……</p> : null}
 
-                {!isExpanded && previewItems.length ? (
+                {!isExpanded && roadmapNodes.length ? (
                   <div className="mt-3 flex flex-wrap gap-2">
-                    {previewItems.map((item, index) => <span key={`${item}-${index}`} className="max-w-full truncate rounded-full bg-slate-50 px-3 py-1 text-xs text-slate-500 ring-1 ring-slate-100">{item}</span>)}
+                    {roadmapNodes.slice(0, 2).map((node) => <span key={node.id} className="max-w-full truncate rounded-full bg-slate-50 px-3 py-1 text-xs text-slate-500 ring-1 ring-slate-100">{node.title} · {node.summary}</span>)}
                   </div>
                 ) : null}
 
@@ -199,10 +240,30 @@ export function GoalRoadmapPanel({ goals, tasks, onSaveGoal, onDeleteGoal, onRoa
                     <div className="grid gap-2 md:grid-cols-4">
                       {roadmapFacets.map((facet) => <div key={facet} className="rounded-2xl bg-white/80 px-3 py-2 text-xs font-semibold text-slate-500 ring-1 ring-white/80">{facet}</div>)}
                     </div>
-                    {goal.roadmapSuggestions?.length ? (
-                      <ol className="mt-4 space-y-2 text-sm text-slate-600">
-                        {goal.roadmapSuggestions.map((item, index) => <li key={`${item}-${index}`} className="rounded-2xl bg-white/85 px-4 py-3 leading-6 ring-1 ring-white/80"><span className="mr-2 font-semibold text-slate-400">{index + 1}.</span>{item}</li>)}
-                      </ol>
+                    {roadmapNodes.length ? (
+                      <div className="mt-5">
+                        <ol className="space-y-0">
+                          {roadmapNodes.map((node, index) => {
+                            const isNodeExpanded = expandedNodeIds.includes(node.id);
+                            return <li key={node.id} className="relative pl-7">
+                              {index < roadmapNodes.length - 1 ? <span className="absolute left-[0.55rem] top-5 h-full w-px bg-slate-200" /> : null}
+                              <span className="absolute left-0 top-4 h-[1.15rem] w-[1.15rem] rounded-full border-4 border-white bg-slate-800 shadow-sm" />
+                              <article className="mb-3 rounded-2xl bg-white/85 p-4 ring-1 ring-slate-100">
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-xs font-semibold text-slate-400">{node.timeRange}</p>
+                                    <h4 className="mt-1 font-semibold text-slate-900">{node.title}</h4>
+                                    <p className="mt-1 text-sm leading-6 text-slate-500">{node.summary}</p>
+                                  </div>
+                                  <button type="button" onClick={() => toggleNode(node.id)} className="rounded-full bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-600 ring-1 ring-slate-100 hover:bg-slate-100">{isNodeExpanded ? '收起' : '展开'}</button>
+                                </div>
+                                {isNodeExpanded ? <div className="mt-3 border-t border-slate-100 pt-3 text-xs leading-6 text-slate-500">{node.details.length ? node.details.map((detail) => <p key={detail}>{detail}</p>) : <p>核心行动：{node.summary}</p>}</div> : null}
+                              </article>
+                            </li>;
+                          })}
+                        </ol>
+                        {roadmapNotes.length ? <div className="mt-3 flex flex-wrap gap-2">{roadmapNotes.map((item, index) => <span key={`${item}-${index}`} className="max-w-full rounded-full bg-slate-50 px-3 py-1.5 text-xs text-slate-500 ring-1 ring-slate-100">{item}</span>)}</div> : null}
+                      </div>
                     ) : <p className="mt-4 rounded-2xl border border-dashed border-slate-200 p-5 text-sm text-slate-400">尚未生成路线图。生成后将保存阶段拆解、风险与周期建议，但不会自动创建任务。</p>}
                   </div>
                 ) : null}
