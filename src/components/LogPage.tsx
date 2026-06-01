@@ -1,9 +1,10 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import type { Achievement, AIArtifact, AIArtifactInput, Goal, PressureBreakdown, PressureHistoryRecord, Task, UserProfile } from '../types/task';
+import type { Achievement, AIArtifact, AIArtifactInput, Goal, PressureBreakdown, PressureHistoryRecord, Task, TaskInput, UserProfile } from '../types/task';
 import { calculateAverageCompletionLeadHours, calculateAverageDailyPressure, calculateAverageImportance, calculateCategoryDistribution, calculateCompletionRate, calculateConsecutiveUsageDays, calculateDailyCompletionHeatmap, calculateDeadlineSurvivalRatio, calculateGoalProgress, calculateLastMinuteCompletionRatio, countAbandonedTasks, countCompletedTasks, countOverdueTasks, getCurrentLifeFocus, getLatestAIInsight } from '../lib/analytics/lifeStats';
 import { analyzeBehavior } from '../lib/behavior/behaviorAnalytics';
 import { calculateBMI, getHealthReadiness } from '../lib/health/healthMetrics';
 import { buildPressureHistogram, calculateContinuousOverloadDays, calculateOverloadFrequency, calculatePressureVolatility, calculateRecoverySpeed, getPressureInsight } from '../lib/pressure/pressureAnalytics';
+import { parseTaskIntakeResponse } from '../services/taskIntakePrompt';
 import { getActivityTypeLabel } from '../utils/taskScoring';
 import { ActivityLog } from './ActivityLog';
 import { AIReviewPanel } from './AIReviewPanel';
@@ -58,8 +59,48 @@ function getPressureMood(pressure: number): string {
   return '平稳：系统暂时有余裕。';
 }
 
+function formatDeadline(deadline?: string): string {
+  if (!deadline) return '未设置';
+  const date = new Date(deadline);
+  if (Number.isNaN(date.getTime())) return '未设置';
+  return new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+}
+
+function getTaskIntakeDrafts(artifact: AIArtifact): { drafts?: TaskInput[]; notes?: string; error?: string } {
+  try {
+    const result = parseTaskIntakeResponse(artifact.content);
+    return { drafts: result.tasks, notes: result.notes };
+  } catch {
+    return { error: '草稿解析失败，请重新生成' };
+  }
+}
+
+function getAIArtifactSummary(artifact: AIArtifact): string {
+  if (artifact.kind !== 'task-intake') return `${artifact.content.slice(0, 180)}${artifact.content.length > 180 ? '…' : ''}`;
+  const result = getTaskIntakeDrafts(artifact);
+  if (result.error) return result.error;
+  if (!result.drafts?.length) return result.notes || '没有识别到明确任务。';
+  return `整理出 ${result.drafts.length} 个任务草稿：${result.drafts.slice(0, 3).map((draft) => draft.title).join('、')}${result.drafts.length > 3 ? '…' : ''}`;
+}
+
+function AIArtifactCard({ artifact }: { artifact: AIArtifact }) {
+  const taskIntakeResult = artifact.kind === 'task-intake' ? getTaskIntakeDrafts(artifact) : undefined;
+  return <article className="rounded-3xl bg-white/75 p-4 ring-1 ring-white/80">
+    <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-semibold text-slate-950">{artifact.title}</h3><time className="text-xs text-slate-400">{formatTime(artifact.createdAt)}</time></div>
+    {taskIntakeResult ? taskIntakeResult.error ? <p className="mt-3 rounded-2xl bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-600 ring-1 ring-rose-100">{taskIntakeResult.error}</p> : <div className="mt-3 grid gap-3 md:grid-cols-2">
+      {taskIntakeResult.notes ? <p className="text-sm leading-6 text-slate-500 md:col-span-2">{taskIntakeResult.notes}</p> : null}
+      {taskIntakeResult.drafts?.length ? taskIntakeResult.drafts.map((draft, index) => <section key={`${draft.title}-${index}`} className="min-w-0 rounded-2xl bg-slate-50/80 p-3 ring-1 ring-slate-100">
+        <h4 className="font-semibold text-slate-900">{draft.title}</h4>
+        {draft.description ? <p className="mt-2 text-sm leading-6 text-slate-500">{draft.description}</p> : null}
+        <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-slate-500"><span className="rounded-full bg-white px-2.5 py-1 ring-1 ring-slate-100">重要性 {draft.importance}/10</span><span className="rounded-full bg-white px-2.5 py-1 ring-1 ring-slate-100">截止 {formatDeadline(draft.deadline)}</span></div>
+        {draft.decomposition?.length ? <div className="mt-3"><p className="text-xs font-semibold text-slate-500">拆解步骤</p><ul className="mt-1 space-y-1 text-xs leading-5 text-slate-500">{draft.decomposition.slice(0, 5).map((item) => <li key={item}>· {item}</li>)}</ul></div> : null}
+      </section>) : <p className="rounded-2xl border border-dashed border-slate-200 p-4 text-sm text-slate-400 md:col-span-2">没有识别到明确任务。</p>}
+    </div> : <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-500">{artifact.content.slice(0, 360)}{artifact.content.length > 360 ? '…' : ''}</p>}
+  </article>;
+}
+
 function buildTimelineEvents(tasks: Task[], pressureHistory: PressureHistoryRecord[], achievements: Achievement[], aiArtifacts: AIArtifact[]): TimelineEvent[] {
-  const aiEvents: TimelineEvent[] = aiArtifacts.map((artifact) => ({ id: `ai-${artifact.id}`, timestamp: artifact.createdAt, type: 'ai', title: artifact.title, body: `${artifact.content.slice(0, 180)}${artifact.content.length > 180 ? '…' : ''}`, tone: artifact.kind === 'goal-roadmap' ? 'bg-violet-50 text-violet-700 ring-violet-100' : 'bg-sky-50 text-sky-700 ring-sky-100' }));
+  const aiEvents: TimelineEvent[] = aiArtifacts.map((artifact) => ({ id: `ai-${artifact.id}`, timestamp: artifact.createdAt, type: 'ai', title: artifact.title, body: getAIArtifactSummary(artifact), tone: artifact.kind === 'goal-roadmap' ? 'bg-violet-50 text-violet-700 ring-violet-100' : 'bg-sky-50 text-sky-700 ring-sky-100' }));
   const pressureEvents: TimelineEvent[] = pressureHistory.flatMap((record) => {
     const events: TimelineEvent[] = [];
     if (record.eventType === 'recalibration') events.push({ id: `pressure-recalibration-${record.id}`, timestamp: record.timestamp, type: 'pressure', title: '压力重新校准', body: record.note || `压力映射被重新写入，当前指数 ${record.pressure}。`, tone: 'bg-slate-50 text-slate-700 ring-slate-100' });
@@ -137,6 +178,6 @@ export function LogPage({ tasks, goals, profile, pressure, pressureHistory, achi
 
     {activeTab === 'trends' ? <section className="space-y-6"><SectionShell eyebrow="长期视角" title="长期趋势系统"><div className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]"><TinyBars values={pressureHistory.slice(-36).map((record) => record.pressure)} /><div className="space-y-3"><StatCard label="本月高压天数" value={calculateContinuousOverloadDays(pressureHistory)} detail="当前连续样本，未来扩展为月度统计。" /><StatCard label="执行演化" value={behavior.executionConsistency} detail="过去行为形成的稳定性判断。" /></div></div><p className="mt-5 text-sm leading-7 text-slate-500">这里将扩展为月度演化、季节性变化、年度回顾、习惯一致性、压力演化、执行演化与健康演化。</p></SectionShell></section> : null}
 
-    {activeTab === 'ai' ? <section className="space-y-6"><SectionShell eyebrow="AI 洞察" title="第三人称行为观察"><p className="text-sm leading-7 text-slate-500">AI 不负责鼓励你。它负责观察：压力模式、行为倾向、恢复速度、长期任务稳定性、风险和节奏建议。</p><div className="mt-5 grid gap-3">{aiArtifacts.slice(0, 8).map((artifact) => <article key={artifact.id} className="rounded-3xl bg-white/75 p-4 ring-1 ring-white/80"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-semibold text-slate-950">{artifact.title}</h3><time className="text-xs text-slate-400">{formatTime(artifact.createdAt)}</time></div><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-500">{artifact.content.slice(0, 360)}{artifact.content.length > 360 ? '…' : ''}</p></article>)}</div></SectionShell><AIReviewPanel tasks={tasks} pressureHistory={pressureHistory} onAIReportGenerated={onAIReportGenerated} /></section> : null}
+    {activeTab === 'ai' ? <section className="space-y-6"><SectionShell eyebrow="AI 洞察" title="第三人称行为观察"><p className="text-sm leading-7 text-slate-500">AI 不负责鼓励你。它负责观察：压力模式、行为倾向、恢复速度、长期任务稳定性、风险和节奏建议。</p><div className="mt-5 grid gap-3">{aiArtifacts.length ? aiArtifacts.slice(0, 8).map((artifact) => <AIArtifactCard key={artifact.id} artifact={artifact} />) : <div className="rounded-3xl border border-dashed border-slate-200 bg-white/65 p-8 text-center text-sm text-slate-400">尚未生成 AI 洞察。完成一次任务整理或行为分析后，这里会展示可读摘要。</div>}</div></SectionShell><AIReviewPanel tasks={tasks} pressureHistory={pressureHistory} onAIReportGenerated={onAIReportGenerated} /></section> : null}
   </section>;
 }

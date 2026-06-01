@@ -29,7 +29,6 @@ export function AITaskCommandBar({ tasks, onConfirmTasks, onAIArtifactGenerated 
   const [state, setState] = useState<IntakeState>('idle');
   const [drafts, setDrafts] = useState<TaskInput[]>([]);
   const [notes, setNotes] = useState('');
-  const [rawJson, setRawJson] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [canResetAuthState, setCanResetAuthState] = useState(false);
 
@@ -48,7 +47,6 @@ export function AITaskCommandBar({ tasks, onConfirmTasks, onAIArtifactGenerated 
     setCanResetAuthState(false);
     setDrafts([]);
     setNotes('');
-    setRawJson('');
     try {
       const payload = createTaskIntakePayload(trimmedInput, tasks);
       const taskContext = tasks
@@ -66,7 +64,6 @@ export function AITaskCommandBar({ tasks, onConfirmTasks, onAIArtifactGenerated 
       const parsed = parseTaskIntakeResponse(result);
       setDrafts(parsed.tasks);
       setNotes(parsed.notes);
-      setRawJson(parsed.rawJson);
       setState('ready');
       onAIArtifactGenerated?.({
         kind: 'task-intake',
@@ -90,7 +87,6 @@ export function AITaskCommandBar({ tasks, onConfirmTasks, onAIArtifactGenerated 
     setInput('');
     setDrafts([]);
     setNotes('');
-    setRawJson('');
     setCanResetAuthState(false);
     setState('idle');
   }
@@ -98,7 +94,6 @@ export function AITaskCommandBar({ tasks, onConfirmTasks, onAIArtifactGenerated 
   function cancelDrafts() {
     setDrafts([]);
     setNotes('');
-    setRawJson('');
     setErrorMessage('');
     setCanResetAuthState(false);
     setState('idle');
@@ -108,11 +103,6 @@ export function AITaskCommandBar({ tasks, onConfirmTasks, onAIArtifactGenerated 
     await resetCloudAIAuthState();
     setCanResetAuthState(false);
     setErrorMessage('已清除登录缓存。请重新登录后再使用 VD Cloud AI。');
-  }
-
-  async function copyJson() {
-    if (!rawJson || !navigator.clipboard) return;
-    await navigator.clipboard.writeText(rawJson);
   }
 
   return (
@@ -153,7 +143,6 @@ export function AITaskCommandBar({ tasks, onConfirmTasks, onAIArtifactGenerated 
               <h3 className="text-lg font-semibold">待确认任务草稿</h3>
               {notes ? <p className="mt-1 text-sm text-slate-500">{notes}</p> : null}
             </div>
-            {rawJson ? <button type="button" onClick={copyJson} className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-500 hover:bg-slate-200">复制 JSON</button> : null}
           </div>
           {drafts.length === 0 ? (
             <div className="mt-4 rounded-2xl border border-dashed border-slate-200 p-5 text-center text-sm text-slate-400">没有识别到明确任务。</div>
