@@ -32,7 +32,7 @@ import {
   normalizeLifecycleStatus,
   normalizeProgressMode,
 } from './utils/taskScoring';
-import { appendPressureHistoryRecord, createPressureHistoryRecord, normalizePressureHistory } from './utils/pressureHistory';
+import { appendPressureHistoryRecord, createPressureHistoryRecord, normalizePressureHistory, replaceTaskDerivedPressureHistory } from './utils/pressureHistory';
 import { sortActiveTasksByProgress } from './utils/taskDerivedState';
 import { loadCloudData, saveCloudGoals, saveCloudPressureHistory, saveCloudProfile, saveCloudTasks } from './lib/cloudSync';
 import { hasValue, loadValue, savePressure, saveTasks, saveValue, storageKeys } from './storage';
@@ -134,6 +134,7 @@ function normalizeTaskInput(input: TaskInput): TaskInput {
     linkedGoalIds: input.linkedGoalIds?.filter(Boolean),
     activityType: normalizeActivityType(input.activityType),
     lifecycleStatus,
+    completedAt: lifecycleStatus === 'completed' ? input.completedAt : undefined,
   };
 }
 
@@ -362,6 +363,8 @@ function App() {
   const [achievements, setAchievements] = useLocalStorage<Achievement[]>(storageKeys.achievements, []);
   const [aiArtifacts, setAIArtifacts] = useLocalStorage<AIArtifact[]>(storageKeys.aiArtifacts, []);
   const [profile, setProfile] = useLocalStorage<UserProfile>(storageKeys.profile, defaultProfile);
+  const [socialNodes, setSocialNodes] = useLocalStorage<unknown[]>(storageKeys.socialNodes, []);
+  const [socialLayoutVersion, setSocialLayoutVersion] = useLocalStorage<number>(storageKeys.socialLayoutVersion, 0);
   const [onboardingComplete, setOnboardingComplete] = useLocalStorage<boolean>(storageKeys.onboardingComplete, readInitialOnboardingComplete());
   const legacyReferencePressure = readBaselinePressure() ?? 35;
   const [pressureCalibration, setPressureCalibration] = useLocalStorage<PressureCalibrationSnapshot>(storageKeys.pressureCalibration, normalizePressureCalibration(null, legacyReferencePressure));
@@ -417,9 +420,13 @@ function App() {
         const mergedTasks = mergeById(normalizedTasks, cloudData.tasks);
         const mergedGoals = mergeById(normalizedGoals, cloudData.goals);
         const mergedPressureHistory = mergeById(normalizedPressureHistory, cloudData.pressureHistory);
+        const mergedSocialNodes = cloudData.socialNodes ?? socialNodes;
+        const mergedSocialLayoutVersion = cloudData.socialLayoutVersion ?? socialLayoutVersion;
         setTasks(mergedTasks);
         setGoals(mergedGoals);
         setPressureHistory(mergedPressureHistory);
+        setSocialNodes(mergedSocialNodes);
+        setSocialLayoutVersion(mergedSocialLayoutVersion);
         if (cloudData.profile) setProfile(cloudData.profile);
         if (cloudData.pressureCalibration) setPressureCalibration(cloudData.pressureCalibration);
         if (cloudData.onboardingComplete !== null) setOnboardingComplete(cloudData.onboardingComplete);
@@ -432,6 +439,8 @@ function App() {
             profile: cloudData.profile ?? normalizedProfile,
             pressureCalibration: cloudData.pressureCalibration ?? normalizedPressureCalibration,
             onboardingComplete: cloudData.onboardingComplete ?? onboardingComplete,
+            socialNodes: mergedSocialNodes,
+            socialLayoutVersion: mergedSocialLayoutVersion,
           }, session),
         ]);
         setCloudStatus('已同步到云端');
@@ -470,10 +479,10 @@ function App() {
 
   useEffect(() => {
     if (!session || !isCloudReady || isApplyingCloudData.current) return;
-    saveCloudProfile({ profile: normalizedProfile, pressureCalibration: normalizedPressureCalibration, onboardingComplete }, session)
+    saveCloudProfile({ profile: normalizedProfile, pressureCalibration: normalizedPressureCalibration, onboardingComplete, socialNodes, socialLayoutVersion }, session)
       .then(() => setCloudStatus('已同步到云端'))
       .catch((error) => setCloudError(error instanceof Error ? error.message : '个人设置云同步失败。'));
-  }, [isCloudReady, normalizedPressureCalibration, normalizedProfile, onboardingComplete, session]);
+  }, [isCloudReady, normalizedPressureCalibration, normalizedProfile, onboardingComplete, session, socialLayoutVersion, socialNodes]);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => setPressureClock(Date.now()), 60 * 1000);
@@ -604,6 +613,13 @@ function App() {
     const snapshotPressure = calculatePressureIndex(sourceTasks, calibration, legacyReferencePressure);
     const record = createPressureHistoryRecord(snapshotPressure, sourceTasks, eventType, note);
     setPressureHistory((records) => appendPressureHistoryRecord(records, record));
+  }
+
+  function recalculateTaskDerivedPressureHistory(sourceTasks = normalizedTasks, note = '根据当前任务重算压力曲线，已清理可识别的任务推导点。') {
+    const snapshotPressure = calculatePressureIndex(sourceTasks, normalizedPressureCalibration, legacyReferencePressure);
+    const record = createPressureHistoryRecord(snapshotPressure, sourceTasks, 'auto', note, new Date(), 'task_derived');
+    setPressureHistory((records) => replaceTaskDerivedPressureHistory(records, record));
+    setCloudToast('已重算任务推导压力点；手动记录和未标记老数据已保留。');
   }
 
   useEffect(() => {
@@ -790,14 +806,13 @@ function App() {
         return {
           ...task,
           ...normalizedInput,
-          completedAt: normalizedInput.lifecycleStatus === 'completed' ? task.completedAt ?? now : lifecycleChanged ? undefined : task.completedAt,
+          completedAt: normalizedInput.lifecycleStatus === 'completed' ? normalizedInput.completedAt || task.completedAt || now : undefined,
           abandonedAt: normalizedInput.lifecycleStatus === 'abandoned' ? task.abandonedAt ?? now : lifecycleChanged ? undefined : task.abandonedAt,
           updatedAt: now,
         };
       });
       setTasks(nextTasks);
-      if (editingTask.lifecycleStatus !== normalizedInput.lifecycleStatus && normalizedInput.lifecycleStatus === 'completed') recordPressureSnapshot('task_completed', nextTasks, `完成任务：${normalizedInput.title}`);
-      if (editingTask.lifecycleStatus !== normalizedInput.lifecycleStatus && normalizedInput.lifecycleStatus === 'abandoned') recordPressureSnapshot('task_abandoned', nextTasks, `放弃任务：${normalizedInput.title}`);
+      recalculateTaskDerivedPressureHistory(nextTasks, `修改任务后重算压力曲线：${normalizedInput.title}`);
     } else {
       const newTask = createTask(normalizedInput);
       const nextTasks = [newTask, ...normalizedTasks];
@@ -834,16 +849,23 @@ function App() {
         : item,
     );
     setTasks(nextTasks);
-    recordPressureSnapshot(lifecycleStatus === 'completed' ? 'task_completed' : 'task_abandoned', nextTasks, `${lifecycleStatus === 'completed' ? '完成' : '放弃'}任务：${task.title}`);
+    recalculateTaskDerivedPressureHistory(nextTasks, `${lifecycleStatus === 'completed' ? '完成' : '放弃'}任务后重算压力曲线：${task.title}`);
   }
 
   function deleteTask(taskId: string) {
     const deletedTask = normalizedTasks.find((task) => task.id === taskId);
     const nextTasks = normalizedTasks.filter((task) => task.id !== taskId);
     setTasks(nextTasks);
-    recordPressureSnapshot('manual', nextTasks, deletedTask ? `删除任务：${deletedTask.title}` : '删除任务');
+    recalculateTaskDerivedPressureHistory(nextTasks, deletedTask ? `删除任务后重算压力曲线：${deletedTask.title}` : '删除任务后重算压力曲线');
   }
 
+
+  function restoreTask(task: Task) {
+    const now = new Date().toISOString();
+    const nextTasks = normalizedTasks.map((item) => item.id === task.id ? { ...item, lifecycleStatus: 'active' as const, progress: item.progress >= 100 ? 0 : item.progress, taskProgress: (item.taskProgress ?? item.progress) >= 100 ? 0 : item.taskProgress, completedAt: undefined, abandonedAt: undefined, updatedAt: now } : item);
+    setTasks(nextTasks);
+    recalculateTaskDerivedPressureHistory(nextTasks, `恢复任务后重算压力曲线：${task.title}`);
+  }
 
   function updateReviewNote(taskId: string, reviewNote: string) {
     const now = new Date().toISOString();
@@ -937,8 +959,8 @@ function App() {
     home: <HomePage pressure={pressure} pressureHistory={normalizedPressureHistory} recommendedTasks={recommendedTasks} activeTasks={activeTasks} onRecalibrate={openRecalibration} onOpenTasks={() => setActiveModule('task')} />,
     task: taskModule,
     map: <LifeMapPage goals={normalizedGoals} tasks={normalizedTasks} onSaveGoal={saveGoal} onDeleteGoal={deleteGoal} onRoadmapGenerated={(artifact) => { saveAIArtifact(artifact); unlockAchievement('roadmap-generated'); }} />,
-    social: <SocialPage />,
-    log: <LogPage tasks={normalizedTasks} goals={normalizedGoals} profile={normalizedProfile} pressure={pressure} pressureHistory={normalizedPressureHistory} achievements={normalizedAchievements} aiArtifacts={normalizedAIArtifacts} onAIReportGenerated={(artifact) => { saveAIArtifact(artifact); unlockAchievement('ai-report-generated'); }} onDelete={deleteTask} onReviewNoteChange={updateReviewNote} />,
+    social: <SocialPage storedNodes={socialNodes} setStoredNodes={setSocialNodes} layoutVersion={socialLayoutVersion} setLayoutVersion={setSocialLayoutVersion} />,
+    log: <LogPage tasks={normalizedTasks} goals={normalizedGoals} profile={normalizedProfile} pressure={pressure} pressureHistory={normalizedPressureHistory} achievements={normalizedAchievements} aiArtifacts={normalizedAIArtifacts} onRecalculatePressureHistory={() => recalculateTaskDerivedPressureHistory()} onAIReportGenerated={(artifact) => { saveAIArtifact(artifact); unlockAchievement('ai-report-generated'); }} onDelete={deleteTask} onEdit={startEditing} onRestore={restoreTask} onReviewNoteChange={updateReviewNote} />,
     me: <ProfilePage profile={normalizedProfile} onProfileChange={setProfile} isEmailVerified={Boolean(session?.user.email_confirmed_at)} />,
   };
 

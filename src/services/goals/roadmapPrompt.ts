@@ -14,7 +14,7 @@ Rules:
 
 Return JSON shape:
 {
-  "stages": ["阶段建议，含阶段目标与顺序"],
+  "stages": [{ "title": "阶段名", "timeRange": "时间范围", "coreAction": "一句话核心行动" }],
   "milestones": ["关键里程碑，含可验证结果"],
   "weeklyMonthlyDirection": ["每周或每月推进方向"],
   "risks": ["风险与规避建议"],
@@ -59,6 +59,19 @@ function toStringList(value: unknown): string[] {
   return value.filter((item): item is string => typeof item === 'string' && Boolean(item.trim())).map((item) => item.trim());
 }
 
+function toStageList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (typeof item === 'string' && item.trim()) return [item.trim()];
+    if (!item || typeof item !== 'object') return [];
+    const stage = item as Record<string, unknown>;
+    const title = typeof stage.title === 'string' ? stage.title.trim() : '';
+    const timeRange = typeof stage.timeRange === 'string' ? stage.timeRange.trim() : '';
+    const coreAction = typeof stage.coreAction === 'string' ? stage.coreAction.trim() : '';
+    return title || coreAction ? [`${title || '未命名阶段'}｜${timeRange || '时间范围待确认'}｜${coreAction || title}`] : [];
+  });
+}
+
 function addSection(items: string[], title: string, values: string[]): void {
   values.slice(0, 6).forEach((value) => items.push(`${title}：${value}`));
 }
@@ -74,7 +87,7 @@ export function parseGoalRoadmapResponse(content: string): { roadmapSuggestions:
   if (!parsed || typeof parsed !== 'object') throw new Error('AI 返回 JSON 结构无效。');
   const payload = parsed as { stages?: unknown; milestones?: unknown; weeklyMonthlyDirection?: unknown; risks?: unknown; firstActions?: unknown; roadmapSuggestions?: unknown; notes?: unknown };
   const roadmapSuggestions: string[] = [];
-  addSection(roadmapSuggestions, '阶段', toStringList(payload.stages));
+  addSection(roadmapSuggestions, '阶段', toStageList(payload.stages));
   addSection(roadmapSuggestions, '里程碑', toStringList(payload.milestones));
   addSection(roadmapSuggestions, '周/月方向', toStringList(payload.weeklyMonthlyDirection));
   addSection(roadmapSuggestions, '风险', toStringList(payload.risks));

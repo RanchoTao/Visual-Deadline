@@ -12,6 +12,8 @@ interface ProfileData {
   profile: UserProfile | null;
   pressureCalibration: PressureCalibrationSnapshot | null;
   onboardingComplete: boolean | null;
+  socialNodes?: unknown[];
+  socialLayoutVersion?: number;
 }
 
 interface ProfileRow {
@@ -30,6 +32,8 @@ export interface CloudData {
   profile: UserProfile | null;
   pressureCalibration: PressureCalibrationSnapshot | null;
   onboardingComplete: boolean | null;
+  socialNodes: unknown[] | null;
+  socialLayoutVersion: number | null;
 }
 
 const encode = (value: string) => encodeURIComponent(value).replace(/'/g, '%27');
@@ -112,6 +116,8 @@ export async function loadCloudData(session: SupabaseSession): Promise<CloudData
       profile: profileData?.profile ?? null,
       pressureCalibration: profileData?.pressureCalibration ?? null,
       onboardingComplete: typeof profileData?.onboardingComplete === 'boolean' ? profileData.onboardingComplete : null,
+      socialNodes: Array.isArray(profileData?.socialNodes) ? profileData.socialNodes : null,
+      socialLayoutVersion: typeof profileData?.socialLayoutVersion === 'number' ? profileData.socialLayoutVersion : null,
     };
   })());
 }
@@ -128,7 +134,7 @@ export async function saveCloudPressureHistory(records: PressureHistoryRecord[],
   await withCloudSyncErrors(replaceJsonRows('pressure_logs', records, session));
 }
 
-export async function saveCloudProfile(input: { profile: UserProfile; pressureCalibration: PressureCalibrationSnapshot; onboardingComplete: boolean }, session: SupabaseSession): Promise<void> {
+export async function saveCloudProfile(input: { profile: UserProfile; pressureCalibration: PressureCalibrationSnapshot; onboardingComplete: boolean; socialNodes: unknown[]; socialLayoutVersion: number }, session: SupabaseSession): Promise<void> {
   await withCloudSyncErrors(supabase.rest('profiles', {
     method: 'POST',
     headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
@@ -141,6 +147,8 @@ export async function saveCloudProfile(input: { profile: UserProfile; pressureCa
         profile: input.profile,
         pressureCalibration: input.pressureCalibration,
         onboardingComplete: input.onboardingComplete,
+        socialNodes: input.socialNodes,
+        socialLayoutVersion: input.socialLayoutVersion,
       },
       updated_at: new Date().toISOString(),
     }),

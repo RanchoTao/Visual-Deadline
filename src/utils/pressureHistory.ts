@@ -1,4 +1,4 @@
-import type { PressureBreakdown, PressureHistoryEventType, PressureHistoryRecord, Task } from '../types/task';
+import type { PressureBreakdown, PressureHistoryEventType, PressureHistoryRecord, PressureHistorySource, Task } from '../types/task';
 
 const AUTO_RECORD_WINDOW_MS = 30 * 60 * 1000;
 const EVENT_SETTLE_WINDOW_MS = 2 * 60 * 1000;
@@ -36,6 +36,7 @@ export function normalizePressureHistory(records: unknown): PressureHistoryRecor
       recoveryRelief: typeof record.recoveryRelief === 'number' && Number.isFinite(record.recoveryRelief) ? Math.max(0, record.recoveryRelief) : 0,
       note: record.note || undefined,
       eventType: record.eventType || 'auto',
+      source: record.source === 'manual' || record.source === 'task_derived' ? record.source : undefined,
     }))
     .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
     .slice(-MAX_HISTORY_RECORDS);
@@ -47,6 +48,7 @@ export function createPressureHistoryRecord(
   eventType: PressureHistoryEventType = 'auto',
   note?: string,
   timestamp = new Date(),
+  source: PressureHistorySource = eventType === 'manual' || eventType === 'recalibration' ? 'manual' : 'task_derived',
 ): PressureHistoryRecord {
   const todayCounts = countTasksForToday(tasks, timestamp);
 
@@ -61,6 +63,7 @@ export function createPressureHistoryRecord(
     recoveryRelief: pressure.recoveryRelief,
     note,
     eventType,
+    source,
   };
 }
 
@@ -95,6 +98,11 @@ export function appendPressureHistoryRecord(records: PressureHistoryRecord[], ne
   }
 
   return [...safeRecords, nextRecord].slice(-MAX_HISTORY_RECORDS);
+}
+
+export function replaceTaskDerivedPressureHistory(records: PressureHistoryRecord[], nextRecord: PressureHistoryRecord): PressureHistoryRecord[] {
+  const preservedRecords = normalizePressureHistory(records).filter((record) => record.source !== 'task_derived');
+  return appendPressureHistoryRecord(preservedRecords, { ...nextRecord, source: 'task_derived' });
 }
 
 export function summarizePressureHistory(records: PressureHistoryRecord[], now = new Date()) {
