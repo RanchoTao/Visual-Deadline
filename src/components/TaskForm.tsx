@@ -9,6 +9,12 @@ interface TaskFormProps {
   onSubmit: (task: TaskInput) => void;
 }
 
+function toOptionalDatetimeLocalValue(value?: string): string | undefined {
+  if (!value) return undefined;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : toDatetimeLocalValue(date);
+}
+
 const activityTypes: ActivityType[] = ['task', 'schedule', 'study', 'research', 'fitness', 'exercise', 'work', 'life', 'social', 'recovery', 'entertainment', 'other'];
 
 const defaultValues: TaskInput = {
@@ -23,10 +29,10 @@ const defaultValues: TaskInput = {
 };
 
 export function TaskForm({ task, onCancel, onSubmit }: TaskFormProps) {
-  const [values, setValues] = useState<TaskInput>(task ?? defaultValues);
+  const [values, setValues] = useState<TaskInput>(task ? { ...task, deadline: toOptionalDatetimeLocalValue(task.deadline), completedAt: toOptionalDatetimeLocalValue(task.completedAt) } : defaultValues);
 
   useEffect(() => {
-    setValues(task ?? defaultValues);
+    setValues(task ? { ...task, deadline: toOptionalDatetimeLocalValue(task.deadline), completedAt: toOptionalDatetimeLocalValue(task.completedAt) } : defaultValues);
   }, [task]);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -39,6 +45,7 @@ export function TaskForm({ task, onCancel, onSubmit }: TaskFormProps) {
       title: values.title.trim(),
       description: values.description?.trim() || undefined,
       deadline: values.deadline || undefined,
+      completedAt: values.lifecycleStatus === 'completed' ? values.completedAt || new Date().toISOString() : undefined,
       importance: clampImportance(values.importance),
       progress: clampProgress(values.progress),
       progressMode: values.progressMode,
@@ -86,11 +93,13 @@ export function TaskForm({ task, onCancel, onSubmit }: TaskFormProps) {
       {task ? (
         <div>
           <label className="text-sm font-medium text-slate-600" htmlFor="lifecycleStatus">状态</label>
-          <select id="lifecycleStatus" value={values.lifecycleStatus} onChange={(event) => setValues({ ...values, lifecycleStatus: event.target.value as LifecycleStatus })} className="mt-2 w-full rounded-2xl border border-slate-200/80 bg-white/80 px-4 py-3 outline-none transition focus:border-sky-200 focus:ring-4 focus:ring-sky-100/70">
+          <select id="lifecycleStatus" value={values.lifecycleStatus} onChange={(event) => { const lifecycleStatus = event.target.value as LifecycleStatus; setValues({ ...values, lifecycleStatus, progress: lifecycleStatus === 'active' && values.progress >= 100 ? 0 : values.progress, taskProgress: lifecycleStatus === 'active' && (values.taskProgress ?? values.progress) >= 100 ? 0 : values.taskProgress }); }} className="mt-2 w-full rounded-2xl border border-slate-200/80 bg-white/80 px-4 py-3 outline-none transition focus:border-sky-200 focus:ring-4 focus:ring-sky-100/70">
             <option value="active">进行中</option><option value="completed">已完成</option><option value="abandoned">已放弃</option>
           </select>
         </div>
       ) : null}
+
+      {task && values.lifecycleStatus === 'completed' ? <div><label className="text-sm font-medium text-slate-600" htmlFor="completedAt">完成时间</label><input id="completedAt" type="datetime-local" value={values.completedAt ?? ''} onChange={(event) => setValues({ ...values, completedAt: event.target.value })} className="mt-2 w-full rounded-2xl border border-slate-200/80 bg-white/80 px-4 py-3 outline-none transition focus:border-sky-200 focus:ring-4 focus:ring-sky-100/70" /></div> : null}
 
       <div className="flex flex-wrap justify-end gap-3 pt-1">
         <button type="button" onClick={onCancel} className="rounded-full px-5 py-2.5 text-sm font-medium text-slate-500 hover:bg-slate-100">取消</button>

@@ -31,7 +31,7 @@ export interface Task {
   updatedAt: string;
 }
 
-export type TaskInput = Omit<Task, 'id' | 'schemaVersion' | 'createdAt' | 'updatedAt' | 'completedAt' | 'abandonedAt'>;
+export type TaskInput = Omit<Task, 'id' | 'schemaVersion' | 'createdAt' | 'updatedAt' | 'completedAt' | 'abandonedAt'> & { completedAt?: string };
 
 export type PressureState = 'steady' | 'manageable' | 'high' | 'overload' | 'burnout';
 
@@ -70,6 +70,7 @@ export interface PressureCalibrationSnapshot {
 
 
 export type PressureHistoryEventType = 'auto' | 'task_created' | 'task_completed' | 'task_abandoned' | 'recalibration' | 'manual';
+export type PressureHistorySource = 'manual' | 'task_derived';
 
 export interface PressureHistoryRecord {
   id: string;
@@ -82,6 +83,7 @@ export interface PressureHistoryRecord {
   recoveryRelief: number;
   note?: string;
   eventType?: PressureHistoryEventType;
+  source?: PressureHistorySource;
 }
 
 export interface PressureBreakdown {

@@ -53,7 +53,7 @@ export function TaskPage({ tasks, activeTasks, achievements, pressure, onAddTask
         </div>
         <p className="mt-3 rounded-2xl bg-slate-50 px-3 py-2 text-sm text-slate-600">{weeklyReport.summary}</p>
       </section>
-      <PriorityMap tasks={activeTasks} />
+      <PriorityMap tasks={activeTasks} onEditTask={onEditTask} onCompleteTask={(task) => onArchiveTask(task, 'completed')} onDeleteTask={onDeleteTask} />
       <AITaskAnalysisPanel tasks={tasks} pressure={pressure} onAIConnected={onAIConnected} onAIReportGenerated={onAIReportGenerated} />
       <TaskList tasks={activeTasks} onArchive={onArchiveTask} onDelete={onDeleteTask} onEdit={onEditTask} />
       <AchievementsPanel achievements={achievements} />

@@ -1,7 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import { applyNodeChanges, Background, Controls, ReactFlow, type Edge, type Node, type NodeChange } from '@xyflow/react';
-import { useLocalStorage } from '../hooks/useLocalStorage';
-import { storageKeys } from '../storage';
 import type { SocialPersonData } from '../types/task';
 
 const CURRENT_SOCIAL_LAYOUT_VERSION = 10;
@@ -235,9 +233,14 @@ function formatLastInteraction(value?: string): string {
   return new Intl.DateTimeFormat('zh-CN', { month: 'short', day: 'numeric' }).format(new Date(timestamp));
 }
 
-export function SocialPage() {
-  const [storedNodes, setStoredNodes] = useLocalStorage<SocialNode[]>(storageKeys.socialNodes, seedNodes());
-  const [layoutVersion, setLayoutVersion] = useLocalStorage<number>(storageKeys.socialLayoutVersion, 0);
+interface SocialPageProps {
+  storedNodes: unknown[];
+  setStoredNodes: Dispatch<SetStateAction<unknown[]>>;
+  layoutVersion: number;
+  setLayoutVersion: Dispatch<SetStateAction<number>>;
+}
+
+export function SocialPage({ storedNodes, setStoredNodes, layoutVersion, setLayoutVersion }: SocialPageProps) {
   const normalizedNodes = useMemo(() => normalizeNodes(storedNodes), [storedNodes]);
   const relationshipEdges = useMemo(() => buildRelationshipEdges(normalizedNodes), [normalizedNodes]);
   const [editingNode, setEditingNode] = useState<SocialNode | undefined>();
