@@ -26,6 +26,8 @@ interface TaskCluster {
 
 const MIN_POINT_POSITION = 9;
 const MAX_POINT_POSITION = 91;
+const MOBILE_MATRIX_MIN_POSITION = 18;
+const MOBILE_MATRIX_MAX_POSITION = 82;
 
 function formatCurrentTime(date: Date): string {
   const year = date.getFullYear();
@@ -67,7 +69,7 @@ function getPositionedTask(task: Task): PositionedTask {
 function clusterPositionedTasks(tasks: PositionedTask[]): TaskCluster[] {
   const clusters = new Map<string, PositionedTask[]>();
   tasks.forEach((task) => {
-    const id = `${Math.round(task.left / 14)}-${Math.round(task.bottom / 14)}`;
+    const id = `${Math.round(task.left / 12)}-${Math.round(task.bottom / 12)}`;
     clusters.set(id, [...(clusters.get(id) ?? []), task]);
   });
   return Array.from(clusters, ([id, clusterTasks]) => ({
@@ -76,6 +78,11 @@ function clusterPositionedTasks(tasks: PositionedTask[]): TaskCluster[] {
     left: clusterTasks.reduce((sum, item) => sum + item.left, 0) / clusterTasks.length,
     bottom: clusterTasks.reduce((sum, item) => sum + item.bottom, 0) / clusterTasks.length,
   }));
+}
+
+function getMobileMatrixPosition(value: number): number {
+  const safeRange = MOBILE_MATRIX_MAX_POSITION - MOBILE_MATRIX_MIN_POSITION;
+  return MOBILE_MATRIX_MIN_POSITION + (clampPosition(value) / 100) * safeRange;
 }
 
 function getHoverCardStyle(positionedTask: PositionedTask): CSSProperties {
@@ -94,12 +101,12 @@ function getHoverCardStyle(positionedTask: PositionedTask): CSSProperties {
 function taskPointTone(task: Task): string {
   const urgent = getUrgencyScore(task.deadline) >= 30;
 
-  if (task.lifecycleStatus === 'abandoned') return 'h-5 w-5 border-white bg-slate-300 opacity-45 shadow-slate-100';
-  if (isTaskComplete(task)) return 'h-5 w-5 border-white bg-emerald-300 opacity-70 shadow-emerald-100';
-  if (task.importance >= 8 && urgent) return 'h-7 w-7 border-white bg-rose-400 shadow-rose-100';
-  if (task.importance >= 8) return 'h-6 w-6 border-white bg-amber-400 shadow-amber-100';
-  if (urgent) return 'h-6 w-6 border-white bg-sky-400 shadow-sky-100';
-  return 'h-5 w-5 border-white bg-slate-400 shadow-slate-100';
+  if (task.lifecycleStatus === 'abandoned') return 'h-3 w-3 border-slate-100 bg-slate-300 opacity-50';
+  if (isTaskComplete(task)) return 'h-3 w-3 border-emerald-50 bg-emerald-300 opacity-75';
+  if (task.importance >= 8 && urgent) return 'h-3 w-3 border-rose-100 bg-rose-500 ring-1 ring-rose-200/70';
+  if (task.importance >= 8) return 'h-3 w-3 border-amber-100 bg-amber-400';
+  if (urgent) return 'h-3 w-3 border-sky-100 bg-sky-400';
+  return 'h-2.5 w-2.5 border-slate-100 bg-slate-400';
 }
 
 function TaskDetailContent({ task }: { task: Task }) {
@@ -170,26 +177,26 @@ export function PriorityMap({ tasks, onEditTask, onCompleteTask, onDeleteTask }:
 
       <div className="overflow-hidden pb-2">
         <div className="relative mx-auto aspect-square w-full max-w-[44rem] overflow-hidden rounded-[1.5rem] border border-slate-200 bg-gradient-to-br from-white via-slate-50/80 to-sky-50/40 p-4 shadow-inner md:min-w-[34rem] md:rounded-[2rem] md:p-6">
-          <div className="pointer-events-none absolute inset-x-16 bottom-16 top-16 border border-slate-300/80 bg-[linear-gradient(90deg,rgba(148,163,184,0.08)_1px,transparent_1px),linear-gradient(0deg,rgba(148,163,184,0.08)_1px,transparent_1px)] bg-[size:12.5%_12.5%]" />
-          <div className="pointer-events-none absolute bottom-16 left-16 top-16 w-[calc(50%-4rem)] bg-sky-50/35" />
-          <div className="pointer-events-none absolute bottom-16 right-16 top-16 w-[calc(50%-4rem)] bg-rose-50/30" />
-          <div className="pointer-events-none absolute bottom-16 left-16 right-16 top-1/2 bg-white/55" />
-          <div className="pointer-events-none absolute bottom-16 left-1/2 top-16 border-l border-slate-300/90" />
-          <div className="pointer-events-none absolute left-16 right-16 top-1/2 border-t border-slate-300/90" />
+          <div className="pointer-events-none absolute inset-x-10 bottom-12 top-12 border border-slate-300/80 bg-[linear-gradient(90deg,rgba(148,163,184,0.08)_1px,transparent_1px),linear-gradient(0deg,rgba(148,163,184,0.08)_1px,transparent_1px)] bg-[size:12.5%_12.5%] md:inset-x-16 md:bottom-16 md:top-16" />
+          <div className="pointer-events-none absolute bottom-12 left-10 top-12 w-[calc(50%-2.5rem)] bg-sky-50/35 md:bottom-16 md:left-16 md:top-16 md:w-[calc(50%-4rem)]" />
+          <div className="pointer-events-none absolute bottom-12 right-10 top-12 w-[calc(50%-2.5rem)] bg-rose-50/30 md:bottom-16 md:right-16 md:top-16 md:w-[calc(50%-4rem)]" />
+          <div className="pointer-events-none absolute bottom-12 left-10 right-10 top-1/2 bg-white/55 md:bottom-16 md:left-16 md:right-16" />
+          <div className="pointer-events-none absolute bottom-12 left-1/2 top-12 border-l border-slate-300/90 md:bottom-16 md:top-16" />
+          <div className="pointer-events-none absolute left-10 right-10 top-1/2 border-t border-slate-300/90 md:left-16 md:right-16" />
 
-          <div className="pointer-events-none absolute left-20 top-20 max-w-[35%] truncate text-xs font-semibold text-sky-700/75">II 重要但不紧急</div>
-          <div className="pointer-events-none absolute right-20 top-20 max-w-[35%] truncate text-right text-xs font-semibold text-rose-700/75">I 紧急且重要</div>
-          <div className="pointer-events-none absolute bottom-24 left-20 max-w-[35%] truncate text-xs font-semibold text-slate-500/80">III 不紧急且不重要</div>
-          <div className="pointer-events-none absolute bottom-24 right-20 max-w-[35%] truncate text-right text-xs font-semibold text-amber-700/70">IV 紧急但不重要</div>
+          <div className="pointer-events-none absolute left-11 top-14 z-0 max-w-[35%] truncate rounded-full bg-white/55 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700/75 md:left-20 md:top-20 md:bg-transparent md:px-0 md:py-0 md:text-xs">II 重要但不紧急</div>
+          <div className="pointer-events-none absolute right-11 top-14 z-0 max-w-[35%] truncate rounded-full bg-white/55 px-1.5 py-0.5 text-right text-[10px] font-semibold text-rose-700/75 md:right-20 md:top-20 md:bg-transparent md:px-0 md:py-0 md:text-xs">I 紧急且重要</div>
+          <div className="pointer-events-none absolute bottom-16 left-11 z-0 max-w-[35%] truncate rounded-full bg-white/55 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500/80 md:bottom-24 md:left-20 md:bg-transparent md:px-0 md:py-0 md:text-xs">III 不紧急且不重要</div>
+          <div className="pointer-events-none absolute bottom-16 right-11 z-0 max-w-[35%] truncate rounded-full bg-white/55 px-1.5 py-0.5 text-right text-[10px] font-semibold text-amber-700/70 md:bottom-24 md:right-20 md:bg-transparent md:px-0 md:py-0 md:text-xs">IV 紧急但不重要</div>
 
-          <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-center text-[11px] font-medium text-slate-400 [writing-mode:vertical-rl]">
+          <div className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-center text-[10px] font-medium text-slate-400 [writing-mode:vertical-rl] md:left-3 md:text-[11px]">
             不紧急 / 时间出生线
           </div>
-          <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-center text-[11px] font-medium text-rose-400 [writing-mode:vertical-rl]">
+          <div className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-center text-[10px] font-medium text-rose-400 [writing-mode:vertical-rl] md:right-3 md:text-[11px]">
             非常紧急 / 时间死亡线
           </div>
-          <div className="pointer-events-none absolute left-1/2 top-5 -translate-x-1/2 text-[11px] font-medium text-rose-400">重要性高 / 重要性死亡线</div>
-          <div className="pointer-events-none absolute bottom-5 left-1/2 -translate-x-1/2 text-[11px] font-medium text-slate-400">重要性低 / 重要性出生线</div>
+          <div className="pointer-events-none absolute left-1/2 top-4 -translate-x-1/2 whitespace-nowrap text-[10px] font-medium text-rose-400 md:top-5 md:text-[11px]">重要性高 / 重要性死亡线</div>
+          <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] font-medium text-slate-400 md:bottom-5 md:text-[11px]">重要性低 / 重要性出生线</div>
 
           {positionedTasks.length === 0 ? (
             <div className="pointer-events-none absolute bottom-28 left-1/2 -translate-x-1/2 rounded-full bg-white/65 px-4 py-2 text-xs text-slate-400 ring-1 ring-white/70 backdrop-blur">
@@ -215,7 +222,7 @@ export function PriorityMap({ tasks, onEditTask, onCompleteTask, onDeleteTask }:
                 aria-label={`查看任务 ${task.title}`}
               >
                 <span
-                  className={`block rounded-full border-4 shadow-md transition group-hover:scale-110 ${taskPointTone(task)} ${active ? 'scale-110 ring-4 ring-sky-100/80' : ''} ${isTaskActive(task) ? 'animate-task-breathe' : ''}`}
+                  className={`block rounded-full border-2 transition group-hover:scale-110 ${taskPointTone(task)} ${active ? 'scale-110 ring-2 ring-sky-100/80' : ''} ${isTaskActive(task) ? 'animate-task-breathe' : ''}`}
                   style={isTaskActive(task) ? { animationDuration: `${getPulseDuration(task)}s` } : undefined}
                 />
                 <span className={`absolute top-1/2 max-w-28 -translate-y-1/2 truncate rounded-full bg-white/90 px-2.5 py-1 text-xs font-medium text-slate-600 shadow-sm ring-1 ring-white/80 backdrop-blur group-hover:max-w-40 ${left > 78 ? 'right-6' : 'left-6'}`}>
@@ -228,7 +235,7 @@ export function PriorityMap({ tasks, onEditTask, onCompleteTask, onDeleteTask }:
           <div className="md:hidden">
             {mobileClusters.map((cluster) => {
               const firstTask = cluster.tasks[0].task;
-              return <button key={cluster.id} type="button" onClick={() => { setSelectedTaskId(firstTask.id); setSelectedClusterId(cluster.id); }} className="absolute z-10 -translate-x-1/2 translate-y-1/2 rounded-full border-4 border-white bg-slate-800 text-xs font-bold text-white shadow-md" style={{ left: `${cluster.left}%`, bottom: `${cluster.bottom}%`, width: cluster.tasks.length > 1 ? '2rem' : '1.25rem', height: cluster.tasks.length > 1 ? '2rem' : '1.25rem' }} aria-label={cluster.tasks.length > 1 ? `查看附近 ${cluster.tasks.length} 个任务` : `查看任务 ${firstTask.title}`}>{cluster.tasks.length > 1 ? cluster.tasks.length : ''}</button>;
+              return <button key={cluster.id} type="button" onClick={() => { setSelectedTaskId(firstTask.id); setSelectedClusterId(cluster.id); }} className="absolute z-10 flex -translate-x-1/2 translate-y-1/2 items-center justify-center rounded-full border border-white bg-sky-500 text-[10px] font-semibold leading-none text-white ring-1 ring-sky-100" style={{ left: `${getMobileMatrixPosition(cluster.left)}%`, bottom: `${getMobileMatrixPosition(cluster.bottom)}%`, width: cluster.tasks.length > 1 ? '1.5rem' : '0.75rem', height: cluster.tasks.length > 1 ? '1.5rem' : '0.75rem' }} aria-label={cluster.tasks.length > 1 ? `查看附近 ${cluster.tasks.length} 个任务` : `查看任务 ${firstTask.title}`}>{cluster.tasks.length > 1 ? cluster.tasks.length : ''}</button>;
             })}
           </div>
 
@@ -257,7 +264,7 @@ export function PriorityMap({ tasks, onEditTask, onCompleteTask, onDeleteTask }:
                     关闭
                   </button>
                 </div>
-                {selectedCluster && selectedCluster.tasks.length > 1 ? <div className="mb-4 rounded-2xl bg-slate-50 p-3 ring-1 ring-slate-100 md:hidden"><p className="text-xs font-semibold text-slate-500">附近 {selectedCluster.tasks.length} 个任务</p><div className="mt-2 flex flex-wrap gap-2">{selectedCluster.tasks.map(({ task }) => <button key={task.id} type="button" onClick={() => setSelectedTaskId(task.id)} className={`rounded-full px-3 py-1.5 text-xs font-semibold ${selectedTask.id === task.id ? 'bg-slate-950 text-white' : 'bg-white text-slate-600 ring-1 ring-slate-100'}`}>{task.title}</button>)}</div></div> : null}
+                {selectedCluster && selectedCluster.tasks.length > 1 ? <div className="mb-4 rounded-2xl bg-slate-50 p-3 ring-1 ring-slate-100 md:hidden"><p className="text-xs font-semibold text-slate-500">附近 {selectedCluster.tasks.length} 个任务</p><div className="mt-2 flex flex-wrap gap-2">{selectedCluster.tasks.map(({ task }) => <button key={task.id} type="button" onClick={() => setSelectedTaskId(task.id)} className={`rounded-full px-3 py-1.5 text-xs font-semibold ${selectedTask.id === task.id ? 'bg-sky-100 text-sky-800 ring-1 ring-sky-200' : 'bg-white text-slate-600 ring-1 ring-slate-100'}`}>{task.title}</button>)}</div></div> : null}
                 <TaskDetailContent task={selectedTask} />
                 <div className="mt-5 flex flex-wrap justify-end gap-2">
                   {onEditTask ? <button type="button" onClick={() => { closeTaskDetail(); onEditTask(selectedTask); }} className="rounded-full bg-slate-100 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-200">编辑</button> : null}
@@ -269,7 +276,7 @@ export function PriorityMap({ tasks, onEditTask, onCompleteTask, onDeleteTask }:
           ) : null}
         </div>
       </div>
-      <div className="mt-5 md:hidden"><h3 className="text-sm font-semibold text-slate-700">当前最值得关注的任务 Top 5</h3>{topTasks.length ? <ol className="mt-3 space-y-2">{topTasks.map((task, index) => <li key={task.id}><button type="button" onClick={() => setSelectedTaskId(task.id)} className="flex w-full items-center justify-between gap-3 rounded-2xl bg-slate-50 px-3 py-2 text-left ring-1 ring-slate-100"><span className="min-w-0 truncate text-sm font-medium text-slate-700">{index + 1}. {task.title}</span><span className="shrink-0 text-xs text-slate-400">重要性 {task.importance} · 紧急 {getUrgencyScore(task.deadline)}</span></button></li>)}</ol> : <p className="mt-3 rounded-2xl border border-dashed border-slate-200 p-4 text-center text-sm text-slate-400">暂无进行中的任务。</p>}</div>
+      <div className="mt-5 pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:hidden"><h3 className="text-sm font-semibold text-slate-700">当前最值得关注的任务 Top 5</h3>{topTasks.length ? <ol className="mt-3 space-y-2">{topTasks.map((task, index) => <li key={task.id}><button type="button" onClick={() => setSelectedTaskId(task.id)} className="flex w-full items-center justify-between gap-3 rounded-2xl bg-slate-50 px-3 py-2 text-left ring-1 ring-slate-100"><span className="min-w-0 truncate text-sm font-medium text-slate-700">{index + 1}. {task.title}</span><span className="shrink-0 text-xs text-slate-400">重要性 {task.importance} · 紧急 {getUrgencyScore(task.deadline)}</span></button></li>)}</ol> : <p className="mt-3 rounded-2xl border border-dashed border-slate-200 p-4 text-center text-sm text-slate-400">暂无进行中的任务。</p>}</div>
     </section>
   );
 }
