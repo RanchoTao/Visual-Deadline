@@ -167,6 +167,66 @@ export interface GoalInput {
 
 export type LifeOSModule = 'home' | 'task' | 'map' | 'social' | 'log' | 'me';
 
+export type MobileTab = 'today' | 'tasks' | 'profile' | 'settings';
+
+export type DailyQuestItemType = 'main' | 'daily' | 'side' | 'recovery';
+
+export type DailyQuestItemStatus = 'todo' | 'done' | 'carried';
+
+export type ReminderType = 'daily_quest' | 'evening_review' | 'deadline';
+
+export type NotificationPermissionState = 'default' | 'granted' | 'denied' | 'unsupported' | 'site_only';
+
+export interface DailyQuestItem {
+  id: string;
+  title: string;
+  type: DailyQuestItemType;
+  currentValue: number;
+  targetValue: number;
+  unit: string;
+  status: DailyQuestItemStatus;
+  priority: Importance;
+  estimatedMinutes: number;
+  sourceTaskId?: string;
+  successCriteria: string;
+}
+
+export interface SystemCorrection {
+  triggered: boolean;
+  message: string;
+  nextDayAdjustment: DailyQuestItem[];
+  intensityHint?: string;
+}
+
+export interface DailyQuest {
+  id: string;
+  date: string;
+  title: string;
+  summary: string;
+  difficulty: '低' | '中' | '高';
+  completionRate: number;
+  items: DailyQuestItem[];
+  systemCorrection: SystemCorrection;
+}
+
+export interface DailyReview {
+  id: string;
+  date: string;
+  completedCount: number;
+  totalCount: number;
+  completionRate: number;
+  userNote?: string;
+  aiSummary?: string;
+  nextDayAdjustment: DailyQuestItem[];
+}
+
+export interface ReminderSettings {
+  reminderEnabled: boolean;
+  reminderTime: string;
+  reminderType: ReminderType[];
+  notificationPermission: NotificationPermissionState;
+}
+
 export interface UserProfile {
   nickname: string;
   username: string;

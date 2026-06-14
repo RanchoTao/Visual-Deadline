@@ -1,10 +1,10 @@
 import { type ReactElement, useEffect, useMemo, useRef, useState } from 'react';
 import { AchievementToast } from './components/AchievementToast';
 import { AuthPanel } from './components/AuthPanel';
+import { DesktopShell } from './components/DesktopShell';
 import { HomePage } from './components/HomePage';
 import { LifeMapPage } from './components/LifeMapPage';
-import { LifeOSNav } from './components/LifeOSNav';
-import { MobileBottomNav } from './components/MobileBottomNav';
+import { MobileShell } from './components/MobileShell';
 import { LogPage } from './components/LogPage';
 import { OnboardingFlow } from './components/OnboardingFlow';
 import { ProfilePage } from './components/ProfilePage';
@@ -15,7 +15,7 @@ import { TaskPage } from './components/TaskPage';
 import { TermsPage } from './components/TermsPage';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useSupabaseAuth } from './hooks/useSupabaseAuth';
-import type { Achievement, AIArtifact, AIArtifactInput, ActivityType, Goal, GoalInput, LifecycleStatus, LifeOSModule, PressureBreakdown, PressureCalibrationSnapshot, PressureHistoryEventType, PressureHistoryRecord, Task, TaskInput, UserProfile } from './types/task';
+import type { Achievement, AIArtifact, AIArtifactInput, ActivityType, DailyQuest, DailyReview, Goal, GoalInput, LifecycleStatus, LifeOSModule, MobileTab, PressureBreakdown, PressureCalibrationSnapshot, PressureHistoryEventType, PressureHistoryRecord, ReminderSettings, Task, TaskInput, UserProfile } from './types/task';
 import {
   achievementCatalog,
   calculatePressureIndex,
@@ -34,12 +34,20 @@ import {
 } from './utils/taskScoring';
 import { appendPressureHistoryRecord, createPressureHistoryRecord, normalizePressureHistory, replaceTaskDerivedPressureHistory } from './utils/pressureHistory';
 import { sortActiveTasksByProgress } from './utils/taskDerivedState';
+import { createDailyReviewFromQuest, generateDailyQuest } from './utils/dailyQuest';
 import { loadCloudData, saveCloudGoals, saveCloudPressureHistory, saveCloudProfile, saveCloudTasks } from './lib/cloudSync';
 import { hasValue, loadValue, savePressure, saveTasks, saveValue, storageKeys } from './storage';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const WELCOME_BACK_GAP_MS = 2 * 60 * 60 * 1000;
 const WELCOME_BACK_ACTIVE_WRITE_MS = 60 * 1000;
+
+const defaultReminderSettings: ReminderSettings = {
+  reminderEnabled: false,
+  reminderTime: '08:30',
+  reminderType: ['daily_quest', 'evening_review', 'deadline'],
+  notificationPermission: 'default',
+};
 
 const defaultProfile: UserProfile = {
   nickname: '',
@@ -369,7 +377,12 @@ function App() {
   const legacyReferencePressure = readBaselinePressure() ?? 35;
   const [pressureCalibration, setPressureCalibration] = useLocalStorage<PressureCalibrationSnapshot>(storageKeys.pressureCalibration, normalizePressureCalibration(null, legacyReferencePressure));
   const [pressureHistory, setPressureHistory] = useLocalStorage<PressureHistoryRecord[]>(storageKeys.pressureHistory, []);
+  const [storedDailyQuest, setStoredDailyQuest] = useLocalStorage<DailyQuest | null>(storageKeys.dailyQuest, null);
+  const [dailyReview, setDailyReview] = useLocalStorage<DailyReview | null>(storageKeys.dailyReview, null);
+  const [reminderSettings, setReminderSettings] = useLocalStorage<ReminderSettings>(storageKeys.reminderSettings, defaultReminderSettings);
   const [activeModule, setActiveModule] = useState<LifeOSModule>('home');
+  const [activeMobileTab, setActiveMobileTab] = useState<MobileTab>('today');
+  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
   const [isRecalibrationOpen, setIsRecalibrationOpen] = useState(false);
   const [recalibrationPressure, setRecalibrationPressure] = useState(legacyReferencePressure);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -400,6 +413,27 @@ function App() {
   }, [legacyReferencePressure, normalizedTasks, recalibrationPressure]);
 
   const syncStateLabel = cloudError || cloudStatus || (session ? (isCloudReady ? '云端已连接，数据在后台同步。' : '正在建立云端连接…') : '本地模式运行，登录后可启用云同步。');
+  const isMobileViewport = viewportWidth < 768;
+
+  const dailyQuest = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    if (storedDailyQuest?.date === today) return storedDailyQuest;
+    return generateDailyQuest(normalizedTasks, dailyReview ?? undefined);
+  }, [dailyReview, normalizedTasks, storedDailyQuest]);
+
+  useEffect(() => {
+    if (storedDailyQuest?.id === dailyQuest.id && JSON.stringify(storedDailyQuest) === JSON.stringify(dailyQuest)) return;
+    setStoredDailyQuest(dailyQuest);
+  }, [dailyQuest, setStoredDailyQuest, storedDailyQuest]);
+
+  useEffect(() => {
+    function handleResize() {
+      setViewportWidth(window.innerWidth);
+    }
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     if (!session) {
@@ -889,6 +923,45 @@ function App() {
     setIsFormOpen(true);
   }
 
+  function completeDailyQuestItem(itemId: string) {
+    const nextQuest: DailyQuest = {
+      ...dailyQuest,
+      items: dailyQuest.items.map((item) => item.id === itemId ? { ...item, currentValue: item.targetValue, status: 'done' } : item),
+    };
+    const completedCount = nextQuest.items.filter((item) => item.status === 'done').length;
+    nextQuest.completionRate = nextQuest.items.length === 0 ? 0 : Math.round((completedCount / nextQuest.items.length) * 100);
+    nextQuest.systemCorrection = {
+      ...nextQuest.systemCorrection,
+      nextDayAdjustment: nextQuest.items.filter((item) => item.status !== 'done'),
+      message: nextQuest.completionRate >= 80 ? '连续完成良好，任务等级可适度提升。' : nextQuest.systemCorrection.message,
+    };
+    setStoredDailyQuest(nextQuest);
+  }
+
+  function openDailyReview() {
+    const review = createDailyReviewFromQuest(dailyQuest);
+    setDailyReview(review);
+    setCloudToast(`今日总结已生成：完成 ${review.completedCount}/${review.totalCount}。`);
+  }
+
+  async function requestReminderPermission() {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      setReminderSettings({ ...defaultReminderSettings, ...reminderSettings, reminderEnabled: false, notificationPermission: 'unsupported' });
+      setCloudToast('当前环境不支持浏览器通知，已降级为站内提醒。');
+      return;
+    }
+
+    const permission = await Notification.requestPermission();
+    if (permission === 'granted') {
+      setReminderSettings({ ...defaultReminderSettings, ...reminderSettings, reminderEnabled: true, notificationPermission: 'granted' });
+      setCloudToast('提醒已开启');
+      return;
+    }
+
+    setReminderSettings({ ...defaultReminderSettings, ...reminderSettings, reminderEnabled: false, notificationPermission: 'denied' });
+    setCloudToast('提醒权限未开启，你仍然可以使用站内提醒。');
+  }
+
   const taskFormOverlay = isFormOpen ? (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/20 px-4 py-6 backdrop-blur-sm">
       <section className="max-h-[calc(100vh-3rem)] w-full max-w-5xl overflow-y-auto rounded-[2rem] border border-white/80 bg-white/90 p-5 shadow-2xl shadow-slate-300/60">
@@ -955,13 +1028,15 @@ function App() {
     />
   );
 
+  const profileModule = <ProfilePage profile={normalizedProfile} onProfileChange={setProfile} isEmailVerified={Boolean(session?.user.email_confirmed_at)} />;
+
   const moduleContent: Record<LifeOSModule, ReactElement> = {
     home: <HomePage pressure={pressure} pressureHistory={normalizedPressureHistory} recommendedTasks={recommendedTasks} activeTasks={activeTasks} onRecalibrate={openRecalibration} onOpenTasks={() => setActiveModule('task')} />,
     task: taskModule,
     map: <LifeMapPage goals={normalizedGoals} tasks={normalizedTasks} onSaveGoal={saveGoal} onDeleteGoal={deleteGoal} onRoadmapGenerated={(artifact) => { saveAIArtifact(artifact); unlockAchievement('roadmap-generated'); }} />,
     social: <SocialPage storedNodes={socialNodes} setStoredNodes={setSocialNodes} layoutVersion={socialLayoutVersion} setLayoutVersion={setSocialLayoutVersion} />,
     log: <LogPage tasks={normalizedTasks} goals={normalizedGoals} profile={normalizedProfile} pressure={pressure} pressureHistory={normalizedPressureHistory} achievements={normalizedAchievements} aiArtifacts={normalizedAIArtifacts} onRecalculatePressureHistory={() => recalculateTaskDerivedPressureHistory()} onAIReportGenerated={(artifact) => { saveAIArtifact(artifact); unlockAchievement('ai-report-generated'); }} onDelete={deleteTask} onEdit={startEditing} onRestore={restoreTask} onReviewNoteChange={updateReviewNote} />,
-    me: <ProfilePage profile={normalizedProfile} onProfileChange={setProfile} isEmailVerified={Boolean(session?.user.email_confirmed_at)} />,
+    me: profileModule,
   };
 
 
@@ -978,7 +1053,7 @@ function App() {
   }
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top_left,#dbeafe,transparent_36%),radial-gradient(circle_at_bottom_right,#e2e8f0,transparent_34%),linear-gradient(180deg,#f8fafc,#eef2f7)] px-3 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-3 text-slate-900 md:px-8 md:py-8">
+    <div className={isMobileViewport ? "min-h-screen overflow-x-hidden bg-slate-950" : "min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top_left,#dbeafe,transparent_36%),radial-gradient(circle_at_bottom_right,#e2e8f0,transparent_34%),linear-gradient(180deg,#f8fafc,#eef2f7)] px-3 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-3 text-slate-900 md:px-8 md:py-8"}>
       {!onboardingComplete ? <OnboardingFlow onComplete={completeOnboarding} /> : null}
       {taskFormOverlay}
       {isRecalibrationOpen ? (
@@ -1029,22 +1104,33 @@ function App() {
         </aside>
       ) : null}
 
-      <div className="mx-auto max-w-6xl space-y-4 md:space-y-6">
-        <LifeOSNav
+      {isMobileViewport ? (
+        <MobileShell
+          activeTab={activeMobileTab}
+          quest={dailyQuest}
+          reminderSettings={{ ...defaultReminderSettings, ...reminderSettings }}
+          taskModule={taskModule}
+          profileModule={profileModule}
+          onTabChange={setActiveMobileTab}
+          onDesktopModuleChange={setActiveModule}
+          onCompleteQuestItem={completeDailyQuestItem}
+          onOpenReview={openDailyReview}
+          onRequestReminder={requestReminderPermission}
+        />
+      ) : (
+        <DesktopShell
           activeModule={activeModule}
           profile={normalizedProfile}
           isSignedIn={Boolean(session)}
           isCloudLoading={isCloudLoading}
           syncStateLabel={syncStateLabel}
+          content={moduleContent[activeModule]}
           onModuleChange={setActiveModule}
-          onOpenProfile={() => setActiveModule('me')}
           onSignIn={() => setHasChosenGuestMode(false)}
           onSignOut={signOut}
         />
-        <div key={activeModule} className="animate-module-fade">{moduleContent[activeModule]}</div>
-      </div>
-      <MobileBottomNav activeModule={activeModule} onModuleChange={setActiveModule} />
-    </main>
+      )}
+    </div>
   );
 }
 
