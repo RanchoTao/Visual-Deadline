@@ -37,7 +37,7 @@ function Avatar({ profile, size = 'md' }: { profile: UserProfile; size?: 'sm' | 
 
   return (
     <span className={`${sizeClass} flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-slate-900 via-slate-700 to-sky-500 font-semibold text-white shadow-lg shadow-slate-300/70 ring-2 ring-white/90 transition duration-300 ease-out group-hover/avatar:-translate-y-0.5 group-hover/avatar:scale-105`}>
-      {profile.avatarDataUrl ? <img src={profile.avatarDataUrl} alt="用户头像" className="h-full w-full object-cover" /> : initial}
+      {profile.avatarUrl ? <img src={profile.avatarUrl} alt="用户头像" className="h-full w-full object-cover" /> : initial}
     </span>
   );
 }

@@ -1,7 +1,8 @@
-import type { ChangeEvent } from 'react';
+import { useEffect, useState, type ChangeEvent } from 'react';
 import type { UserProfile } from '../types/task';
 import { DataSafetyPanel } from './DataSafetyPanel';
 import { DeveloperToolsPanel } from './DeveloperToolsPanel';
+import { uploadAvatar } from '../services/avatarStorage';
 
 interface ProfilePageProps {
   profile: UserProfile;
@@ -27,15 +28,37 @@ const systemItems = [
 ];
 
 export function ProfilePage({ profile, onProfileChange, isEmailVerified }: ProfilePageProps) {
-  function handleAvatarChange(event: ChangeEvent<HTMLInputElement>) {
+  const [avatarPreview, setAvatarPreview] = useState<string>();
+  const [avatarError, setAvatarError] = useState('');
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+
+  useEffect(() => () => {
+    if (avatarPreview) URL.revokeObjectURL(avatarPreview);
+  }, [avatarPreview]);
+
+  async function handleAvatarChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
-
-    const reader = new FileReader();
-    reader.addEventListener('load', () => {
-      if (typeof reader.result === 'string') onProfileChange({ ...profile, avatarDataUrl: reader.result });
+    event.target.value = '';
+    setAvatarError('');
+    const preview = URL.createObjectURL(file);
+    setAvatarPreview((previous) => {
+      if (previous) URL.revokeObjectURL(previous);
+      return preview;
     });
-    reader.readAsDataURL(file);
+    setIsUploadingAvatar(true);
+    try {
+      const uploaded = await uploadAvatar(file);
+      onProfileChange({ ...profile, ...uploaded });
+      setAvatarPreview(undefined);
+      URL.revokeObjectURL(preview);
+    } catch (error) {
+      setAvatarError(error instanceof Error ? error.message : '头像上传失败，请稍后重试。');
+      setAvatarPreview(undefined);
+      URL.revokeObjectURL(preview);
+    } finally {
+      setIsUploadingAvatar(false);
+    }
   }
 
   return (
@@ -43,16 +66,18 @@ export function ProfilePage({ profile, onProfileChange, isEmailVerified }: Profi
       <div className="rounded-[2rem] border border-white/70 bg-white/75 p-6 shadow-xl shadow-slate-200/60 backdrop-blur">
       <div className="flex flex-wrap items-center gap-5">
         <div className="flex h-28 w-28 items-center justify-center overflow-hidden rounded-[2rem] bg-slate-100 text-4xl font-semibold text-slate-400 shadow-inner ring-1 ring-white/80">
-          {profile.avatarDataUrl ? <img src={profile.avatarDataUrl} alt="个人头像" className="h-full w-full object-cover" /> : (profile.nickname || '我').slice(0, 1)}
+          {avatarPreview || profile.avatarUrl ? <img src={avatarPreview || profile.avatarUrl} alt="个人头像" className="h-full w-full object-cover" /> : (profile.nickname || '我').slice(0, 1)}
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-400">我 · 系统设置</p>
           <h1 className="mt-2 text-4xl font-semibold tracking-tight text-slate-950">个人中心</h1>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">头像、昵称、用户名、系统状态与数据安全都放在这里。当前信息会作为 VD 的身份层持久保存。</p>
-          <label className="mt-4 inline-flex cursor-pointer rounded-full bg-white/85 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">
-            选择头像
-            <input type="file" accept="image/*" onChange={handleAvatarChange} className="sr-only" />
+          <label className={`mt-4 inline-flex rounded-full bg-white/85 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 ${isUploadingAvatar ? 'cursor-wait opacity-60' : 'cursor-pointer hover:bg-slate-50'}`}>
+            {isUploadingAvatar ? '压缩并上传中…' : '选择头像'}
+            <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => void handleAvatarChange(event)} disabled={isUploadingAvatar} className="sr-only" />
           </label>
+          <p className="mt-2 text-xs text-slate-400">JPEG / PNG / WebP，最大 5 MB；将裁剪为 512×512 WebP。</p>
+          {avatarError ? <p role="alert" className="mt-2 rounded-xl bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-600 ring-1 ring-rose-100">{avatarError} 原头像已保留。</p> : null}
         </div>
       </div>
 

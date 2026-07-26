@@ -21,6 +21,8 @@ interface ProfileRow {
   user_id: string;
   email: string | null;
   display_name: string | null;
+  avatar_url: string | null;
+  avatar_storage_path: string | null;
   data: ProfileData | null;
   updated_at?: string;
 }
@@ -106,14 +108,14 @@ export async function loadCloudData(session: SupabaseSession): Promise<CloudData
       loadJsonRows<Task>('tasks', session),
       loadJsonRows<Goal>('goals', session),
       loadJsonRows<PressureHistoryRecord>('pressure_logs', session),
-      supabase.rest<ProfileRow[]>(`profiles?select=id,user_id,email,display_name,data,updated_at&user_id=eq.${encode(session.user.id)}&limit=1`, { method: 'GET' }, session),
+      supabase.rest<ProfileRow[]>(`profiles?select=id,user_id,email,display_name,avatar_url,avatar_storage_path,data,updated_at&user_id=eq.${encode(session.user.id)}&limit=1`, { method: 'GET' }, session),
     ]);
     const profileData = profiles[0]?.data;
     return {
       tasks,
       goals,
       pressureHistory,
-      profile: profileData?.profile ?? null,
+      profile: profileData?.profile ? { ...profileData.profile, avatarUrl: profiles[0]?.avatar_url ?? undefined, avatarDataUrl: undefined } as UserProfile : null,
       pressureCalibration: profileData?.pressureCalibration ?? null,
       onboardingComplete: typeof profileData?.onboardingComplete === 'boolean' ? profileData.onboardingComplete : null,
       socialNodes: Array.isArray(profileData?.socialNodes) ? profileData.socialNodes : null,
@@ -143,8 +145,10 @@ export async function saveCloudProfile(input: { profile: UserProfile; pressureCa
       user_id: session.user.id,
       email: session.user.email ?? null,
       display_name: input.profile.nickname || null,
+      avatar_url: input.profile.avatarUrl || null,
+      avatar_storage_path: input.profile.avatarUrl ? `${session.user.id}/avatar.webp` : null,
       data: {
-        profile: input.profile,
+        profile: { ...input.profile, avatarUrl: undefined },
         pressureCalibration: input.pressureCalibration,
         onboardingComplete: input.onboardingComplete,
         socialNodes: input.socialNodes,
