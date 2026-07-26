@@ -6,6 +6,9 @@ import { defaultAISettings, getAIConnectionLabel, isCloudAIAuthStateError, norma
 import type { AISettings } from '../services/aiClient';
 import { buildTaskIntakeUserPrompt, createTaskIntakePayload, parseTaskIntakeResponse, taskIntakeSystemPrompt } from '../services/taskIntakePrompt';
 import { getActivityTypeLabel } from '../utils/taskScoring';
+import { MultimodalComposer } from './MultimodalComposer';
+import type { MultimodalIntake } from '../types/intake';
+import { supabase } from '../lib/supabaseClient';
 
 interface AITaskCommandBarProps {
   tasks: Task[];
@@ -33,9 +36,9 @@ export function AITaskCommandBar({ tasks, onConfirmTasks, onAIArtifactGenerated 
   const [canResetAuthState, setCanResetAuthState] = useState(false);
 
 
-  async function structureTasks() {
-    const trimmedInput = input.trim();
-    if (!trimmedInput) {
+  async function structureTasks(intake?: MultimodalIntake) {
+    const trimmedInput = intake?.text.trim() || input.trim();
+    if (!trimmedInput && !intake?.assets.length) {
       setState('error');
       setCanResetAuthState(false);
       setErrorMessage('请先输入最近要做的事。');
@@ -48,7 +51,14 @@ export function AITaskCommandBar({ tasks, onConfirmTasks, onAIArtifactGenerated 
     setDrafts([]);
     setNotes('');
     try {
-      const payload = createTaskIntakePayload(trimmedInput, tasks);
+      if (intake?.assets.length) {
+        const session = await supabase.auth.getSession();
+        if (!session) throw new Error('请先登录后提交附件。');
+        const response = await fetch('/api/intake', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` }, body: JSON.stringify(intake) });
+        if (!response.ok) throw new Error((await response.json().catch(() => null))?.error || '附件处理请求失败。');
+      }
+      const sourceSummary = intake?.assets.length ? `${trimmedInput}\n\n附件：${intake.assets.map((asset) => asset.fileName).join('、')}` : trimmedInput;
+      const payload = createTaskIntakePayload(sourceSummary, tasks);
       const taskContext = tasks
         .filter((task) => task.lifecycleStatus === 'active')
         .slice(0, 30)
@@ -84,7 +94,7 @@ export function AITaskCommandBar({ tasks, onConfirmTasks, onAIArtifactGenerated 
   function confirmDrafts() {
     if (drafts.length === 0) return;
     onConfirmTasks(drafts);
-    setInput('');
+      setInput('');
     setDrafts([]);
     setNotes('');
     setCanResetAuthState(false);
@@ -116,16 +126,9 @@ export function AITaskCommandBar({ tasks, onConfirmTasks, onAIArtifactGenerated 
         <span className="rounded-full bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-500 ring-1 ring-white/80">{getAIConnectionLabel(settings)}</span>
       </div>
 
-      <div className="mt-5 flex flex-col gap-3 lg:flex-row">
-        <textarea
-          value={input}
-          onChange={(event) => setInput(event.target.value)}
-          className="min-h-24 flex-1 rounded-[1.5rem] border border-slate-200/80 bg-white/85 px-4 py-3 text-sm leading-6 text-slate-700 outline-none placeholder:text-slate-400 focus:border-sky-200 focus:ring-4 focus:ring-sky-100/70"
-          placeholder="例如：这周五前交数学分析作业，今晚跑步，周末整理数据结构笔记。"
-        />
-        <button type="button" onClick={structureTasks} disabled={state === 'loading'} className="rounded-[1.5rem] bg-white/85 px-6 py-3 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300 lg:w-36">
-          {state === 'loading' ? '整理中…' : '整理为任务'}
-        </button>
+      <div className="mt-5">
+        <MultimodalComposer disabled={state === 'loading'} onSubmit={structureTasks} placeholder="例如：这周五前交数学分析作业；也可以添加图片、文档或录音。" />
+        {state === 'loading' ? <p className="mt-2 text-xs font-semibold text-sky-600">正在验证附件并整理任务草稿，请勿重复提交…</p> : null}
       </div>
 
       {state === 'error' && errorMessage ? (

@@ -422,6 +422,26 @@ class VisualDeadlineSupabaseClient {
     return parseResponse<T>(await fetch(`${url}/rest/v1/${path}`, { ...init, headers }));
   }
 
+  async uploadStorageObject(bucket: string, path: string, file: Blob, session?: SupabaseSession | null): Promise<void> {
+    const { url, anonKey } = getRequiredConfig();
+    const activeSession = session ?? (await this.auth.getSession());
+    if (!activeSession) throw new Error('请先登录后上传附件。');
+    await parseResponse(await fetch(`${url}/storage/v1/object/${encodeURIComponent(bucket)}/${path.split('/').map(encodeURIComponent).join('/')}`, {
+      method: 'POST',
+      headers: { apikey: anonKey, Authorization: `Bearer ${activeSession.access_token}`, 'Content-Type': file.type || 'application/octet-stream', 'x-upsert': 'false' },
+      body: file,
+    }));
+  }
+
+  async removeStorageObject(bucket: string, path: string, session?: SupabaseSession | null): Promise<void> {
+    const { url, anonKey } = getRequiredConfig();
+    const activeSession = session ?? (await this.auth.getSession());
+    if (!activeSession) return;
+    await parseResponse(await fetch(`${url}/storage/v1/object/${encodeURIComponent(bucket)}/${path.split('/').map(encodeURIComponent).join('/')}`, {
+      method: 'DELETE', headers: { apikey: anonKey, Authorization: `Bearer ${activeSession.access_token}` },
+    }));
+  }
+
   private emit(session: SupabaseSession | null): void {
     this.listeners.forEach((listener) => {
       try {
