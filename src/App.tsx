@@ -58,7 +58,7 @@ const defaultProfile: UserProfile = {
   skills: '',
   longTermGoals: '',
   currentStage: '',
-  avatarDataUrl: undefined,
+  avatarUrl: undefined,
 };
 
 type LegacyTask = Partial<Omit<Task, 'schemaVersion' | 'activityType' | 'lifecycleStatus'>> & {
@@ -280,7 +280,7 @@ function normalizeProfile(profile: unknown): UserProfile {
     skills: storedProfile.skills ?? '',
     longTermGoals: storedProfile.longTermGoals ?? '',
     currentStage: storedProfile.currentStage ?? '',
-    avatarDataUrl: storedProfile.avatarDataUrl || undefined,
+    avatarUrl: typeof storedProfile.avatarUrl === 'string' && !storedProfile.avatarUrl.startsWith('data:') ? storedProfile.avatarUrl : undefined,
   };
 }
 

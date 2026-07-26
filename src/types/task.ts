@@ -236,7 +236,7 @@ export interface UserProfile {
   skills: string;
   longTermGoals: string;
   currentStage: string;
-  avatarDataUrl?: string;
+  avatarUrl?: string;
 }
 
 export interface LifeMapNodeData {

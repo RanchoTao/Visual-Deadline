@@ -123,13 +123,34 @@ export function loadValue<T>(key: string, fallback: T): T {
   if (!canUseStorage()) return fallback;
   const item = window.localStorage.getItem(key);
   if (item === null) return fallback;
-  return JSON.parse(item) as T;
+  const parsed = JSON.parse(item) as T;
+  if (key === storageKeys.profile && parsed && typeof parsed === 'object') {
+    const profile = { ...(parsed as Record<string, unknown>) };
+    let changed = false;
+    for (const field of ['avatar', 'avatarDataUrl']) {
+      if (typeof profile[field] === 'string' && (profile[field] as string).startsWith('data:')) {
+        delete profile[field];
+        changed = true;
+      }
+    }
+    if (changed) {
+      try { window.localStorage.setItem(key, JSON.stringify(profile)); } catch { /* The sanitized in-memory value remains usable. */ }
+    }
+    return profile as T;
+  }
+  return parsed;
 }
 
 export function saveValue<T>(key: string, value: T): void {
   if (!canUseStorage()) return;
-  window.localStorage.setItem(key, JSON.stringify(value));
-  notifyStorageChange(key);
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+    notifyStorageChange(key);
+  } catch (error) {
+    const quotaExceeded = error instanceof DOMException && (error.name === 'QuotaExceededError' || error.code === 22);
+    setRecoveryNotice(quotaExceeded ? '浏览器本地空间已满，本次更改未写入本地；任务数据不会被删除。' : '本地数据暂时无法保存，请稍后重试。');
+    console.error('[VD_STORAGE_WRITE_FAILED]', { key, quotaExceeded, error });
+  }
 }
 
 export function clearValue(key: string): void {

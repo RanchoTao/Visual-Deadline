@@ -200,7 +200,13 @@ function persistSession(session: SupabaseSession | null): void {
   if (typeof window === 'undefined') return;
   if (session) {
     const normalizedSession = normalizeStoredSession(session);
-    if (normalizedSession) window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(normalizedSession));
+    if (normalizedSession) {
+      try {
+        window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(normalizedSession));
+      } catch (error) {
+        console.error('[VD_AUTH_STORAGE_WRITE_FAILED]', error);
+      }
+    }
     else clearLegacySupabaseStorage();
   } else {
     clearLegacySupabaseStorage();
@@ -420,6 +426,31 @@ class VisualDeadlineSupabaseClient {
     headers.set('Content-Type', 'application/json');
     if (activeSession) headers.set('Authorization', `Bearer ${activeSession.access_token}`);
     return parseResponse<T>(await fetch(`${url}/rest/v1/${path}`, { ...init, headers }));
+  }
+
+  async uploadStorageObject(bucket: string, path: string, file: Blob, session?: SupabaseSession | null, upsert = false): Promise<void> {
+    const { url, anonKey } = getRequiredConfig();
+    const activeSession = session ?? (await this.auth.getSession());
+    if (!activeSession) throw new Error('请先登录后上传附件。');
+    await parseResponse(await fetch(`${url}/storage/v1/object/${encodeURIComponent(bucket)}/${path.split('/').map(encodeURIComponent).join('/')}`, {
+      method: 'POST',
+      headers: { apikey: anonKey, Authorization: `Bearer ${activeSession.access_token}`, 'Content-Type': file.type || 'application/octet-stream', 'x-upsert': String(upsert) },
+      body: file,
+    }));
+  }
+
+  getPublicStorageUrl(bucket: string, path: string): string {
+    const { url } = getRequiredConfig();
+    return `${url}/storage/v1/object/public/${encodeURIComponent(bucket)}/${path.split('/').map(encodeURIComponent).join('/')}`;
+  }
+
+  async removeStorageObject(bucket: string, path: string, session?: SupabaseSession | null): Promise<void> {
+    const { url, anonKey } = getRequiredConfig();
+    const activeSession = session ?? (await this.auth.getSession());
+    if (!activeSession) return;
+    await parseResponse(await fetch(`${url}/storage/v1/object/${encodeURIComponent(bucket)}/${path.split('/').map(encodeURIComponent).join('/')}`, {
+      method: 'DELETE', headers: { apikey: anonKey, Authorization: `Bearer ${activeSession.access_token}` },
+    }));
   }
 
   private emit(session: SupabaseSession | null): void {
