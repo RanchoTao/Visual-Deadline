@@ -1,24 +1,19 @@
 import { branding, footerBranding } from '../constants/branding';
-import type { PressureBreakdown, PressureHistoryRecord, Task } from '../types/task';
+import type { Task } from '../types/task';
 import { MiniTaskMatrix } from './MiniTaskMatrix';
-import { PressureCard } from './PressureCard';
 import { RecommendationCard } from './RecommendationCard';
 
 interface HomePageProps {
-  pressure: PressureBreakdown;
-  pressureHistory: PressureHistoryRecord[];
   recommendedTasks: Task[];
   activeTasks: Task[];
-  onRecalibrate: () => void;
   onOpenTasks: () => void;
 }
 
-export function HomePage({ pressure, pressureHistory, recommendedTasks, activeTasks, onRecalibrate, onOpenTasks }: HomePageProps) {
+export function HomePage({ recommendedTasks, activeTasks, onOpenTasks }: HomePageProps) {
   return (
     <section className="space-y-4 md:space-y-8">
-      <PressureCard pressure={pressure} history={pressureHistory} onRecalibrate={onRecalibrate} />
-      <RecommendationCard tasks={recommendedTasks} pressure={pressure} />
       <MiniTaskMatrix tasks={activeTasks} onOpenTasks={onOpenTasks} />
+      <RecommendationCard tasks={recommendedTasks} />
 
       <section className="rounded-[1.5rem] border border-white/60 bg-white/45 px-4 py-3 text-xs text-slate-400 shadow-sm shadow-slate-200/40 backdrop-blur" aria-label="产品品牌信息">
         <div className="flex min-h-8 flex-col justify-center gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">

@@ -73,9 +73,9 @@ export function MiniTaskMatrix({ tasks, onOpenTasks }: MiniTaskMatrixProps) {
     <section className="rounded-[2rem] border border-white/70 bg-white/75 p-4 shadow-xl shadow-slate-200/60 backdrop-blur md:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold text-slate-500">当前任务热区</p>
-          <h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">当前截止压力区</h2>
-          <p className="mt-1 text-xs leading-5 text-slate-400">只显示 72 小时内或已逾期任务，完整矩阵保留在任务页。</p>
+          <p className="text-sm font-semibold text-sky-700">当前行动</p>
+          <h2 className="mt-1 text-3xl font-semibold tracking-tight text-slate-950">当前任务热区</h2>
+          <p className="mt-1 text-sm leading-5 text-slate-500">聚焦当前最值得处理的任务。</p>
         </div>
         <div className="flex flex-wrap items-start gap-2">
           <div className="rounded-2xl bg-slate-50 px-4 py-2 text-right ring-1 ring-white/80">
@@ -102,7 +102,7 @@ export function MiniTaskMatrix({ tasks, onOpenTasks }: MiniTaskMatrixProps) {
 
           {visibleTasks.length === 0 ? (
             <div className="absolute inset-x-6 top-1/2 -translate-y-1/2 rounded-[1.5rem] border border-dashed border-slate-200 bg-white/75 px-4 py-6 text-center text-sm font-medium text-slate-400 backdrop-blur">
-              当前没有明显截止压力，适合推进长期任务或恢复精力。
+              当前没有临近截止的任务，可以推进重要的长期事项。
             </div>
           ) : null}
 
@@ -123,7 +123,7 @@ export function MiniTaskMatrix({ tasks, onOpenTasks }: MiniTaskMatrixProps) {
       </button>
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-        <span>{hiddenCount > 0 ? `仅显示最紧急的 ${MAX_VISIBLE_TASKS} 项，完整列表在任务页。` : `当前显示 ${visibleTasks.length} 项截止压力任务。`}</span>
+        <span>{hiddenCount > 0 ? `仅显示最紧急的 ${MAX_VISIBLE_TASKS} 项，完整列表在任务页。` : `当前显示 ${visibleTasks.length} 项活跃任务。`}</span>
         {visibleTasks[0] ? <span className="rounded-full bg-slate-50 px-2.5 py-1 ring-1 ring-white/80">最近截止：{visibleTasks[0].title} · {formatCountdown(visibleTasks[0].deadline)}</span> : null}
       </div>
     </section>

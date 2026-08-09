@@ -1,5 +1,7 @@
 import { branding } from '../constants/branding';
 import type { LifeOSModule, UserProfile } from '../types/task';
+import type { VDNotification } from '../types/notification';
+import { NotificationCenter } from './NotificationCenter';
 
 interface LifeOSNavProps {
   activeModule: LifeOSModule;
@@ -11,6 +13,8 @@ interface LifeOSNavProps {
   onOpenProfile: () => void;
   onSignIn: () => void;
   onSignOut: () => void;
+  notifications: VDNotification[];
+  onMarkNotificationRead: (id: string) => void;
 }
 
 const navItems: { id: LifeOSModule; label: string }[] = [
@@ -42,7 +46,7 @@ function Avatar({ profile, size = 'md' }: { profile: UserProfile; size?: 'sm' | 
   );
 }
 
-export function LifeOSNav({ activeModule, profile, isSignedIn, isCloudLoading, syncStateLabel, onModuleChange, onOpenProfile, onSignIn, onSignOut }: LifeOSNavProps) {
+export function LifeOSNav({ activeModule, profile, isSignedIn, isCloudLoading, syncStateLabel, onModuleChange, onOpenProfile, onSignIn, onSignOut, notifications, onMarkNotificationRead }: LifeOSNavProps) {
   const displayName = getDisplayName(profile);
   const username = getUsername(profile);
 
@@ -59,7 +63,7 @@ export function LifeOSNav({ activeModule, profile, isSignedIn, isCloudLoading, s
           </span>
         </button>
 
-        <div className="group/avatar relative flex shrink-0 justify-end pr-0.5 md:pb-3 md:pr-1" onMouseLeave={() => undefined}>
+        <div className="flex shrink-0 items-start gap-1 md:pb-3"><NotificationCenter notifications={notifications} onMarkRead={onMarkNotificationRead} /><div className="group/avatar relative flex justify-end pr-0.5 md:pr-1" onMouseLeave={() => undefined}>
           <button type="button" onClick={onOpenProfile} className="rounded-full outline-none transition duration-300 focus-visible:ring-4 focus-visible:ring-sky-100" aria-label="打开个人中心">
             <Avatar profile={profile} />
           </button>
@@ -105,7 +109,7 @@ export function LifeOSNav({ activeModule, profile, isSignedIn, isCloudLoading, s
               )}
             </section>
           </div>
-        </div>
+        </div></div>
       </div>
 
       <nav className="mt-2 hidden rounded-[1.45rem] bg-slate-100/65 p-1 md:block" aria-label="Visual Deadline 模块">
