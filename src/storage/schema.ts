@@ -32,6 +32,8 @@ export const storageKeys = {
   dailyQuest: 'visualized-deadline.dailyQuest',
   dailyReview: 'visualized-deadline.dailyReview',
   reminderSettings: 'visualized-deadline.reminderSettings',
+  notifications: 'visualized-deadline.notifications',
+  roadmaps: 'visualized-deadline.roadmaps',
   lifeMapNodes: 'visualized-deadline.lifeMap.nodes',
   lifeMapLayoutVersion: 'visualized-deadline.lifeMap.layoutVersion',
   socialNodes: 'visualized-deadline.social.nodes',

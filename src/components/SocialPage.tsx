@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
+import { useEffect, useMemo, useState, type ChangeEvent, type Dispatch, type SetStateAction } from 'react';
 import { applyNodeChanges, Background, Controls, ReactFlow, type Edge, type Node, type NodeChange } from '@xyflow/react';
 import type { SocialPersonData } from '../types/task';
 
@@ -245,6 +245,7 @@ export function SocialPage({ storedNodes, setStoredNodes, layoutVersion, setLayo
   const relationshipEdges = useMemo(() => buildRelationshipEdges(normalizedNodes), [normalizedNodes]);
   const [editingNode, setEditingNode] = useState<SocialNode | undefined>();
   const [contactSort, setContactSort] = useState<ContactSortState | undefined>();
+  const [importMessage, setImportMessage] = useState('');
   const contacts = normalizedNodes.filter((node) => node.id !== 'me');
   const sortedContacts = contactSort
     ? [...contacts].sort((a, b) => {
@@ -256,6 +257,24 @@ export function SocialPage({ storedNodes, setStoredNodes, layoutVersion, setLayo
       })
     : contacts;
   const clusterCounts = socialClusters.map((cluster) => ({ ...cluster, count: contacts.filter((node) => node.data?.cluster === cluster.id).length })).filter((cluster) => cluster.count > 0);
+
+  async function importContacts(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    const text = await file.text();
+    const names = file.name.toLowerCase().endsWith('.vcf')
+      ? [...text.matchAll(/^FN(?:;[^:]*)?:(.+)$/gim)].map((match) => match[1].replace(/\\,/g, ',').trim())
+      : text.split(/\r?\n/).slice(1).map((row) => row.split(',')[0]?.replace(/^"|"$/g, '').trim()).filter(Boolean);
+    const existingNames = new Set(contacts.map((node) => getSocialData(node).name.toLowerCase()));
+    const uniqueNames = [...new Set(names)].filter((name) => name && !existingNames.has(name.toLowerCase()));
+    const imported = uniqueNames.map((name, index) => {
+      const data = normalizeSocialData({ name, relationshipType: '其他关系', roleCategory: '其他关系', notes: `由用户授权文件 ${file.name} 导入` });
+      return { id: crypto.randomUUID(), position: targetPosition({ id: `${name}-${index}`, position: CENTER, data } as SocialNode, contacts.length + index), data } as SocialNode;
+    });
+    setStoredNodes((current) => [...normalizeNodes(current), ...imported]);
+    setImportMessage(imported.length ? `已导入 ${imported.length} 位联系人。` : '没有发现新的联系人。');
+  }
 
   useEffect(() => {
     if (layoutVersion < CURRENT_SOCIAL_LAYOUT_VERSION) {
@@ -345,8 +364,9 @@ export function SocialPage({ storedNodes, setStoredNodes, layoutVersion, setLayo
             <h1 className="mt-2 text-4xl font-semibold tracking-tight text-slate-950">社交</h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">好感度决定关系距离；拖动联系人只移动并固定当前节点。</p>
           </div>
-          <div className="flex flex-wrap gap-2"><button type="button" onClick={relayoutSocialGraph} className="rounded-full bg-white/85 px-4 py-3 text-sm font-semibold text-slate-600 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">重新布局</button><button type="button" onClick={addPerson} className="rounded-full bg-white/85 px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">添加联系人</button></div>
+          <div className="flex flex-wrap gap-2"><label className="cursor-pointer rounded-full bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-700 ring-1 ring-sky-100">导入联系人<input type="file" accept=".csv,.vcf,text/csv,text/vcard" onChange={(event) => void importContacts(event)} className="sr-only" /></label><button type="button" onClick={relayoutSocialGraph} className="rounded-full bg-white/85 px-4 py-3 text-sm font-semibold text-slate-600 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">重新布局</button><button type="button" onClick={addPerson} className="rounded-full bg-white/85 px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">添加联系人</button></div>
         </div>
+        <div className="mt-4 rounded-2xl bg-slate-50/80 px-4 py-3 text-xs leading-5 text-slate-500">支持用户授权的 CSV（首列姓名）与 vCard。Web/PWA 无法正规读取微信好友列表；VD 不使用逆向协议或数据库抓取。{importMessage ? <strong className="ml-2 text-emerald-700">{importMessage}</strong> : null}</div>
         <div className="mt-5 flex flex-wrap gap-2">
           {clusterCounts.length === 0 ? <span className="rounded-full bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-400">暂无联系人</span> : clusterCounts.map((cluster) => <span key={cluster.id} className="rounded-full px-3 py-1.5 text-xs font-semibold text-slate-600 ring-1 ring-white/80" style={{ backgroundColor: cluster.color }}>{cluster.label} · {cluster.count}</span>)}
         </div>

@@ -15,6 +15,8 @@ import { TaskPage } from './components/TaskPage';
 import { TermsPage } from './components/TermsPage';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useSupabaseAuth } from './hooks/useSupabaseAuth';
+import type { Roadmap } from './types/roadmap';
+import type { VDNotification } from './types/notification';
 import type { Achievement, AIArtifact, AIArtifactInput, ActivityType, DailyQuest, DailyReview, Goal, GoalInput, LifecycleStatus, LifeOSModule, MobileTab, PressureBreakdown, PressureCalibrationSnapshot, PressureHistoryEventType, PressureHistoryRecord, ReminderSettings, Task, TaskInput, UserProfile } from './types/task';
 import {
   achievementCatalog,
@@ -370,6 +372,8 @@ function App() {
   const [goals, setGoals] = useLocalStorage<Goal[]>(storageKeys.goals, []);
   const [achievements, setAchievements] = useLocalStorage<Achievement[]>(storageKeys.achievements, []);
   const [aiArtifacts, setAIArtifacts] = useLocalStorage<AIArtifact[]>(storageKeys.aiArtifacts, []);
+  const [roadmaps, setRoadmaps] = useLocalStorage<Roadmap[]>(storageKeys.roadmaps, []);
+  const [notifications, setNotifications] = useLocalStorage<VDNotification[]>(storageKeys.notifications, [{ id: 'notification-ia', type: 'SYSTEM', title: '消息中心已启用', summary: '周报、风险提醒与系统建议将统一在这里送达。', content: 'VD 的后台分析结果会写入消息中心，不再占用首页的行动空间。', isRead: false, createdAt: new Date().toISOString() }]);
   const [profile, setProfile] = useLocalStorage<UserProfile>(storageKeys.profile, defaultProfile);
   const [socialNodes, setSocialNodes] = useLocalStorage<unknown[]>(storageKeys.socialNodes, []);
   const [socialLayoutVersion, setSocialLayoutVersion] = useLocalStorage<number>(storageKeys.socialLayoutVersion, 0);
@@ -1015,27 +1019,23 @@ function App() {
     <TaskPage
       tasks={normalizedTasks}
       activeTasks={activeTasks}
-      achievements={normalizedAchievements}
-      pressure={pressure}
       onAddTask={() => setIsFormOpen(true)}
       onConfirmAITasks={addTaskDrafts}
       onAIArtifactGenerated={saveAIArtifact}
       onArchiveTask={archiveTask}
       onDeleteTask={deleteTask}
       onEditTask={startEditing}
-      onAIConnected={() => unlockAchievement('ai-first-connection')}
-      onAIReportGenerated={(artifact) => { saveAIArtifact(artifact); unlockAchievement('ai-report-generated'); }}
     />
   );
 
   const profileModule = <ProfilePage profile={normalizedProfile} onProfileChange={setProfile} isEmailVerified={Boolean(session?.user.email_confirmed_at)} />;
 
   const moduleContent: Record<LifeOSModule, ReactElement> = {
-    home: <HomePage pressure={pressure} pressureHistory={normalizedPressureHistory} recommendedTasks={recommendedTasks} activeTasks={activeTasks} onRecalibrate={openRecalibration} onOpenTasks={() => setActiveModule('task')} />,
+    home: <HomePage recommendedTasks={recommendedTasks} activeTasks={activeTasks} onOpenTasks={() => setActiveModule('task')} />,
     task: taskModule,
-    map: <LifeMapPage goals={normalizedGoals} tasks={normalizedTasks} onSaveGoal={saveGoal} onDeleteGoal={deleteGoal} onRoadmapGenerated={(artifact) => { saveAIArtifact(artifact); unlockAchievement('roadmap-generated'); }} />,
+    map: <LifeMapPage goals={normalizedGoals} tasks={normalizedTasks} roadmaps={roadmaps} onSaveRoadmap={(roadmap) => setRoadmaps((current) => [roadmap, ...current])} onSaveGoal={saveGoal} onDeleteGoal={deleteGoal} onRoadmapGenerated={(artifact) => { saveAIArtifact(artifact); unlockAchievement('roadmap-generated'); }} />,
     social: <SocialPage storedNodes={socialNodes} setStoredNodes={setSocialNodes} layoutVersion={socialLayoutVersion} setLayoutVersion={setSocialLayoutVersion} />,
-    log: <LogPage tasks={normalizedTasks} goals={normalizedGoals} profile={normalizedProfile} pressure={pressure} pressureHistory={normalizedPressureHistory} achievements={normalizedAchievements} aiArtifacts={normalizedAIArtifacts} onRecalculatePressureHistory={() => recalculateTaskDerivedPressureHistory()} onAIReportGenerated={(artifact) => { saveAIArtifact(artifact); unlockAchievement('ai-report-generated'); }} onDelete={deleteTask} onEdit={startEditing} onRestore={restoreTask} onReviewNoteChange={updateReviewNote} />,
+    log: <LogPage tasks={normalizedTasks} goals={normalizedGoals} profile={normalizedProfile} pressure={pressure} pressureHistory={normalizedPressureHistory} achievements={normalizedAchievements} aiArtifacts={normalizedAIArtifacts} onRecalculatePressureHistory={() => recalculateTaskDerivedPressureHistory()} onRecalibrate={openRecalibration} onAIReportGenerated={(artifact) => { saveAIArtifact(artifact); unlockAchievement('ai-report-generated'); }} onDelete={deleteTask} onEdit={startEditing} onRestore={restoreTask} onReviewNoteChange={updateReviewNote} />,
     me: profileModule,
   };
 
@@ -1128,6 +1128,8 @@ function App() {
           onModuleChange={setActiveModule}
           onSignIn={() => setHasChosenGuestMode(false)}
           onSignOut={signOut}
+          notifications={notifications}
+          onMarkNotificationRead={(id) => setNotifications((current) => current.map((item) => item.id === id ? { ...item, isRead: true } : item))}
         />
       )}
     </div>
