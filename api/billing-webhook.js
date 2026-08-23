@@ -143,6 +143,10 @@ async function handleTransactionCompleted(supabaseUrl, serviceRoleKey, event) {
   const order = await findOrderByTransaction(supabaseUrl, serviceRoleKey, transactionId);
   if (!order) return { transactionId, outcome: 'ignored_unknown_order' };
 
+  // A refund can be delivered before a delayed transaction.completed webhook. Never
+  // let an older payment event downgrade a final refunded state and re-grant access.
+  if (order.status === 'refunded') return { transactionId, outcome: 'ignored_completed_after_full_refund' };
+
   const planCode = planFromCompletedTransaction(data);
   if (!planCode || planCode !== order.plan_code) return { transactionId, outcome: 'ignored_price_mismatch' };
   if (data.currency_code && data.currency_code !== 'CNY') return { transactionId, outcome: 'ignored_currency_mismatch' };
@@ -154,7 +158,7 @@ async function handleTransactionCompleted(supabaseUrl, serviceRoleKey, event) {
 
   const paidAt = data.billed_at || data.updated_at || event.occurred_at || new Date().toISOString();
   await patchOrder(supabaseUrl, serviceRoleKey, order.id, {
-    status: 'paid',
+    status: order.status === 'partially_refunded' ? 'partially_refunded' : 'paid',
     provider_customer_id: data.customer_id || null,
     paid_at: paidAt,
     provider_error_code: null,
@@ -167,7 +171,7 @@ async function handleTransactionCompleted(supabaseUrl, serviceRoleKey, event) {
     p_granted_at: paidAt,
   });
 
-  return { transactionId, outcome: 'membership_granted' };
+  return { transactionId, outcome: order.status === 'partially_refunded' ? 'membership_granted_after_partial_refund' : 'membership_granted' };
 }
 
 async function handleAdjustment(supabaseUrl, serviceRoleKey, event) {
