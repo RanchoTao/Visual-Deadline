@@ -2,6 +2,7 @@ import { useEffect, useState, type ChangeEvent } from 'react';
 import type { UserProfile } from '../types/task';
 import { DataSafetyPanel } from './DataSafetyPanel';
 import { DeveloperToolsPanel } from './DeveloperToolsPanel';
+import { MembershipPanel } from './MembershipPanel';
 import { uploadAvatar } from '../services/avatarStorage';
 
 interface ProfilePageProps {
@@ -104,6 +105,8 @@ export function ProfilePage({ profile, onProfileChange, isEmailVerified }: Profi
         ))}
       </div>
       </div>
+
+      <MembershipPanel />
 
       <section className="rounded-[2rem] border border-white/70 bg-white/75 p-5 shadow-xl shadow-slate-200/60 backdrop-blur">
         <p className="text-sm font-semibold text-slate-500">系统与隐私</p>
