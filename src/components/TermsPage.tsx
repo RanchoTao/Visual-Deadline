@@ -47,10 +47,12 @@ const sections = [
     ],
   },
   {
-    title: '七、费用与服务变更',
+    title: '七、会员、支付与退款',
     paragraphs: [
-      '当前功能可能包含免费能力。未来如推出付费功能、订阅计划或额度限制，我们会在相关页面说明价格、权益与规则。',
-      '我们可能根据产品发展、技术调整、安全要求或法律法规变化，新增、修改、暂停或终止部分功能。重大变更会尽量通过产品页面或其他合理方式提示。',
+      'VD 当前提供月会员与年会员两种固定期限会员：月会员人民币 19 元，购买后增加 1 个自然月有效期；年会员人民币 199 元，购买后增加 1 个自然年有效期。两种方案均为一次性购买，不自动续费。已有有效会员再次购买时，新时长从当前有效期末尾继续累加。',
+      '会员支付当前由 Paddle 等第三方支付基础设施处理。支付方式、交易审核、税费展示、退款到账时间等环节可能同时受支付服务商、支付渠道和适用法律规则影响。VD 不会以浏览器页面显示“支付完成”作为开通依据，只有服务端确认支付成功后才会授予会员时长。',
+      '如发生重复扣款、明显支付错误或因 VD 系统问题导致已购买会员无法正常使用，可以联系我们处理。普通退款申请原则上可在购买后 7 日内提出，是否批准会结合会员使用情况、支付服务商规则和适用法律要求处理。获批的全额退款会撤销该笔订单对应的会员时长；部分退款按实际处理结果记录。',
+      '随着产品发展，我们可能调整会员价格、权益或支付方式。已经完成的订单及已授予会员时长不会仅因后续价格调整被追溯缩短；重大规则变更会尽量通过产品页面或其他合理方式提示。',
     ],
   },
   {
@@ -69,7 +71,7 @@ const sections = [
   },
   {
     title: '十、联系我们',
-    paragraphs: ['如你对本协议有任何问题，可以通过 RanchoTao@gmail.com 联系我们。'],
+    paragraphs: ['如你对本协议、会员或支付有任何问题，可以通过 RanchoTao@gmail.com 联系我们。'],
   },
 ];
 
@@ -81,7 +83,7 @@ export function TermsPage({ onBack }: TermsPageProps) {
           <div>
             <p className="text-sm font-semibold tracking-[0.24em] text-slate-400">VD（Visual Deadline）</p>
             <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950 md:text-5xl">用户协议</h1>
-            <p className="mt-4 text-sm leading-6 text-slate-500">更新日期：2026年5月17日 · 生效日期：2026年5月17日</p>
+            <p className="mt-4 text-sm leading-6 text-slate-500">更新日期：2026年8月23日 · 生效日期：2026年8月23日</p>
           </div>
           <div className="flex flex-wrap gap-2">
             {onBack ? (
@@ -109,7 +111,7 @@ export function TermsPage({ onBack }: TermsPageProps) {
         </div>
 
         <footer className="mt-10 border-t border-slate-100 pt-6 text-sm leading-6 text-slate-500">
-          <p>VD（Visual Deadline）用户协议 v1.0</p>
+          <p>VD（Visual Deadline）用户协议 v1.1</p>
         </footer>
       </article>
     </main>
