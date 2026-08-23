@@ -1,6 +1,10 @@
+import { useEffect, useState } from 'react';
 import { branding } from '../constants/branding';
+import { supabase } from '../lib/supabaseClient';
+import { getBillingSnapshot, isActiveMembership } from '../services/billing';
 import type { LifeOSModule, UserProfile } from '../types/task';
 import type { VDNotification } from '../types/notification';
+import { MembershipPanel } from './MembershipPanel';
 import { NotificationCenter } from './NotificationCenter';
 
 interface LifeOSNavProps {
@@ -49,87 +53,174 @@ function Avatar({ profile, size = 'md' }: { profile: UserProfile; size?: 'sm' | 
 export function LifeOSNav({ activeModule, profile, isSignedIn, isCloudLoading, syncStateLabel, onModuleChange, onOpenProfile, onSignIn, onSignOut, notifications, onMarkNotificationRead }: LifeOSNavProps) {
   const displayName = getDisplayName(profile);
   const username = getUsername(profile);
+  const [isMembershipOpen, setIsMembershipOpen] = useState(false);
+  const [isPlus, setIsPlus] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function refreshMembership() {
+      const session = await supabase.auth.getSession();
+      if (!session) {
+        if (!cancelled) setIsPlus(false);
+        return;
+      }
+      try {
+        const snapshot = await getBillingSnapshot(session);
+        if (!cancelled) setIsPlus(isActiveMembership(snapshot.membership));
+      } catch {
+        if (!cancelled) setIsPlus(false);
+      }
+    }
+
+    void refreshMembership();
+    const subscription = supabase.auth.onAuthStateChange(() => void refreshMembership());
+    const handleBillingRefresh = () => void refreshMembership();
+    window.addEventListener('vd:paddle-event', handleBillingRefresh);
+
+    return () => {
+      cancelled = true;
+      subscription.data.subscription.unsubscribe();
+      window.removeEventListener('vd:paddle-event', handleBillingRefresh);
+    };
+  }, []);
 
   return (
-    <header className="sticky top-2 z-30 overflow-visible rounded-[1.35rem] border border-white/70 bg-white/78 p-2 shadow-xl shadow-slate-200/60 backdrop-blur-xl transition-all duration-500 md:top-4 md:rounded-[2rem] md:p-3 md:shadow-2xl md:shadow-slate-200/70" aria-label="Visual Deadline 全局导航">
-      <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-white to-transparent" />
-      <div className="flex items-center justify-between gap-3 px-0.5 py-0.5 md:gap-4 md:px-2 md:py-1">
-        <button type="button" onClick={() => onModuleChange('home')} className="group flex min-w-0 items-center gap-2 rounded-[1.1rem] px-1.5 py-1 text-left transition duration-300 hover:bg-white/55 md:gap-3 md:rounded-[1.5rem] md:px-2 md:py-1.5">
-          <span className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl bg-white shadow-md shadow-slate-300 ring-1 ring-slate-200/70 transition duration-300 group-hover:-translate-y-0.5 group-hover:shadow-xl md:h-12 md:w-12 md:rounded-2xl md:shadow-lg">
-            <img src="/logo.png" alt="Visual Deadline 标志" className="h-full w-full object-contain" />
-          </span>
-          <span className="min-w-0">
-            <span className="block truncate text-sm font-semibold tracking-tight text-slate-950 md:text-base">{branding.productName}</span>
-          </span>
-        </button>
-
-        <div className="flex shrink-0 items-start gap-1 md:pb-3"><NotificationCenter notifications={notifications} onMarkRead={onMarkNotificationRead} /><div className="group/avatar relative flex justify-end pr-0.5 md:pr-1" onMouseLeave={() => undefined}>
-          <button type="button" onClick={onOpenProfile} className="rounded-full outline-none transition duration-300 focus-visible:ring-4 focus-visible:ring-sky-100" aria-label="打开个人中心">
-            <Avatar profile={profile} />
+    <>
+      <header className="sticky top-2 z-30 overflow-visible rounded-[1.35rem] border border-white/70 bg-white/78 p-2 shadow-xl shadow-slate-200/60 backdrop-blur-xl transition-all duration-500 md:top-4 md:rounded-[2rem] md:p-3 md:shadow-2xl md:shadow-slate-200/70" aria-label="Visual Deadline 全局导航">
+        <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-white to-transparent" />
+        <div className="flex items-center justify-between gap-3 px-0.5 py-0.5 md:gap-4 md:px-2 md:py-1">
+          <button type="button" onClick={() => onModuleChange('home')} className="group flex min-w-0 items-center gap-2 rounded-[1.1rem] px-1.5 py-1 text-left transition duration-300 hover:bg-white/55 md:gap-3 md:rounded-[1.5rem] md:px-2 md:py-1.5">
+            <span className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl bg-white shadow-md shadow-slate-300 ring-1 ring-slate-200/70 transition duration-300 group-hover:-translate-y-0.5 group-hover:shadow-xl md:h-12 md:w-12 md:rounded-2xl md:shadow-lg">
+              <img src="/logo.png" alt="Visual Deadline 标志" className="h-full w-full object-contain" />
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-semibold tracking-tight text-slate-950 md:text-base">{branding.productName}</span>
+            </span>
           </button>
 
-          <div className="pointer-events-none absolute right-0 top-11 w-[min(18rem,calc(100vw-1.5rem))] translate-y-3 scale-[0.98] opacity-0 transition-all duration-300 ease-out group-hover/avatar:pointer-events-auto group-hover/avatar:translate-y-0 group-hover/avatar:scale-100 group-hover/avatar:opacity-100 group-focus-within/avatar:pointer-events-auto group-focus-within/avatar:translate-y-0 group-focus-within/avatar:scale-100 group-focus-within/avatar:opacity-100 md:top-[3.3rem] md:w-[18rem]">
-            <section className="overflow-hidden rounded-[1.75rem] border border-white/80 bg-white/92 p-4 shadow-2xl shadow-slate-300/70 ring-1 ring-slate-900/5 backdrop-blur-xl">
-              <div className="flex items-center gap-3">
-                <Avatar profile={profile} size="lg" />
-                <div className="min-w-0">
-                  <p className="truncate text-base font-semibold text-slate-950">{displayName}</p>
-                  <p className="mt-0.5 truncate text-sm text-slate-500">@{username}</p>
-                </div>
-              </div>
-
-              <div className="my-4 h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent" />
-
-              <div className="space-y-1 text-sm font-medium text-slate-600">
-                <button type="button" onClick={onOpenProfile} className="flex w-full items-center justify-between rounded-2xl px-3 py-2.5 text-left transition duration-200 hover:bg-slate-50 hover:text-slate-950">
-                  个人中心 <span className="text-slate-300">⌘</span>
-                </button>
-                <button type="button" onClick={onOpenProfile} className="flex w-full items-center justify-between rounded-2xl px-3 py-2.5 text-left transition duration-200 hover:bg-slate-50 hover:text-slate-950">
-                  账号设置 <span className="text-slate-300">→</span>
-                </button>
-                <div className="rounded-2xl bg-slate-50/85 px-3 py-2.5 text-left">
-                  <p className="font-semibold text-slate-700">数据同步状态</p>
-                  <p className={`mt-1 text-xs leading-5 ${syncStateLabel.includes('失败') || syncStateLabel.includes('denied') ? 'text-rose-600' : 'text-slate-500'}`}>{syncStateLabel}</p>
-                </div>
-                <button type="button" onClick={onOpenProfile} className="flex w-full items-center justify-between rounded-2xl px-3 py-2.5 text-left transition duration-200 hover:bg-slate-50 hover:text-slate-950">
-                  安全与隐私 <span className="text-slate-300">→</span>
-                </button>
-              </div>
-
-              <div className="my-4 h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent" />
-
-              {isSignedIn ? (
-                <button type="button" onClick={onSignOut} disabled={isCloudLoading} className="w-full rounded-2xl px-3 py-2.5 text-left text-sm font-semibold text-rose-500 transition duration-200 hover:bg-rose-50 disabled:cursor-not-allowed disabled:text-slate-300">
-                  退出登录
-                </button>
-              ) : (
-                <button type="button" onClick={onSignIn} className="w-full rounded-2xl bg-slate-950 px-3 py-2.5 text-center text-sm font-semibold text-white shadow-lg shadow-slate-200 transition duration-200 hover:-translate-y-0.5 hover:shadow-xl">
-                  登录同步
-                </button>
-              )}
-            </section>
-          </div>
-        </div></div>
-      </div>
-
-      <nav className="mt-2 hidden rounded-[1.45rem] bg-slate-100/65 p-1 md:block" aria-label="Visual Deadline 模块">
-        <div className="grid grid-cols-5 gap-1 sm:flex sm:flex-wrap">
-          {navItems.map((item) => {
-            const isActive = activeModule === item.id;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => onModuleChange(item.id)}
-                className={`rounded-full px-3 py-2 text-sm font-semibold transition-all duration-300 ease-out md:px-4 ${isActive ? 'bg-white text-slate-950 shadow-sm shadow-slate-200' : 'text-slate-500 hover:-translate-y-0.5 hover:bg-white/65 hover:text-slate-700'}`}
-                aria-current={isActive ? 'page' : undefined}
-              >
-                {item.label}
+          <div className="flex shrink-0 items-center gap-2 md:pb-3">
+            <NotificationCenter notifications={notifications} onMarkRead={onMarkNotificationRead} />
+            <button
+              type="button"
+              onClick={() => setIsMembershipOpen(true)}
+              className={`rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide ring-1 transition hover:-translate-y-0.5 md:px-3 md:py-1.5 md:text-xs ${isPlus ? 'bg-slate-950 text-white ring-slate-900 shadow-md shadow-slate-300/50' : 'bg-white/85 text-slate-500 ring-slate-200 hover:bg-slate-50 hover:text-slate-800'}`}
+              aria-label={isPlus ? '管理 VD Plus' : '升级 VD Plus'}
+            >
+              {isPlus ? 'Plus' : 'Free'}
+            </button>
+            <div className="group/avatar relative flex justify-end pr-0.5 md:pr-1" onMouseLeave={() => undefined}>
+              <button type="button" onClick={onOpenProfile} className="rounded-full outline-none transition duration-300 focus-visible:ring-4 focus-visible:ring-sky-100" aria-label="打开个人中心">
+                <Avatar profile={profile} />
               </button>
-            );
-          })}
+
+              <div className="pointer-events-none absolute right-0 top-11 w-[min(18rem,calc(100vw-1.5rem))] translate-y-3 scale-[0.98] opacity-0 transition-all duration-300 ease-out group-hover/avatar:pointer-events-auto group-hover/avatar:translate-y-0 group-hover/avatar:scale-100 group-hover/avatar:opacity-100 group-focus-within/avatar:pointer-events-auto group-focus-within/avatar:translate-y-0 group-focus-within/avatar:scale-100 group-focus-within/avatar:opacity-100 md:top-[3.3rem] md:w-[18rem]">
+                <section className="overflow-hidden rounded-[1.75rem] border border-white/80 bg-white/92 p-4 shadow-2xl shadow-slate-300/70 ring-1 ring-slate-900/5 backdrop-blur-xl">
+                  <div className="flex items-center gap-3">
+                    <Avatar profile={profile} size="lg" />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="truncate text-base font-semibold text-slate-950">{displayName}</p>
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${isPlus ? 'bg-slate-950 text-white' : 'bg-slate-100 text-slate-500'}`}>{isPlus ? 'Plus' : 'Free'}</span>
+                      </div>
+                      <p className="mt-0.5 truncate text-sm text-slate-500">@{username}</p>
+                    </div>
+                  </div>
+
+                  <div className="my-4 h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent" />
+
+                  <div className="space-y-1 text-sm font-medium text-slate-600">
+                    <button type="button" onClick={onOpenProfile} className="flex w-full items-center justify-between rounded-2xl px-3 py-2.5 text-left transition duration-200 hover:bg-slate-50 hover:text-slate-950">
+                      个人中心 <span className="text-slate-300">⌘</span>
+                    </button>
+                    <button type="button" onClick={() => setIsMembershipOpen(true)} className="flex w-full items-center justify-between rounded-2xl px-3 py-2.5 text-left transition duration-200 hover:bg-slate-50 hover:text-slate-950">
+                      {isPlus ? '管理 VD Plus' : '升级 VD Plus'} <span className="text-slate-300">→</span>
+                    </button>
+                    <button type="button" onClick={onOpenProfile} className="flex w-full items-center justify-between rounded-2xl px-3 py-2.5 text-left transition duration-200 hover:bg-slate-50 hover:text-slate-950">
+                      账号设置 <span className="text-slate-300">→</span>
+                    </button>
+                    <div className="rounded-2xl bg-slate-50/85 px-3 py-2.5 text-left">
+                      <p className="font-semibold text-slate-700">数据同步状态</p>
+                      <p className={`mt-1 text-xs leading-5 ${syncStateLabel.includes('失败') || syncStateLabel.includes('denied') ? 'text-rose-600' : 'text-slate-500'}`}>{syncStateLabel}</p>
+                    </div>
+                    <button type="button" onClick={onOpenProfile} className="flex w-full items-center justify-between rounded-2xl px-3 py-2.5 text-left transition duration-200 hover:bg-slate-50 hover:text-slate-950">
+                      安全与隐私 <span className="text-slate-300">→</span>
+                    </button>
+                  </div>
+
+                  <div className="my-4 h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent" />
+
+                  {isSignedIn ? (
+                    <button type="button" onClick={onSignOut} disabled={isCloudLoading} className="w-full rounded-2xl px-3 py-2.5 text-left text-sm font-semibold text-rose-500 transition duration-200 hover:bg-rose-50 disabled:cursor-not-allowed disabled:text-slate-300">
+                      退出登录
+                    </button>
+                  ) : (
+                    <button type="button" onClick={onSignIn} className="w-full rounded-2xl bg-slate-950 px-3 py-2.5 text-center text-sm font-semibold text-white shadow-lg shadow-slate-200 transition duration-200 hover:-translate-y-0.5 hover:shadow-xl">
+                      登录同步
+                    </button>
+                  )}
+                </section>
+              </div>
+            </div>
+          </div>
         </div>
-      </nav>
-    </header>
+
+        <nav className="mt-2 hidden rounded-[1.45rem] bg-slate-100/65 p-1 md:block" aria-label="Visual Deadline 模块">
+          <div className="grid grid-cols-5 gap-1 sm:flex sm:flex-wrap">
+            {navItems.map((item) => {
+              const isActive = activeModule === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => onModuleChange(item.id)}
+                  className={`rounded-full px-3 py-2 text-sm font-semibold transition-all duration-300 ease-out md:px-4 ${isActive ? 'bg-white text-slate-950 shadow-sm shadow-slate-200' : 'text-slate-500 hover:-translate-y-0.5 hover:bg-white/65 hover:text-slate-700'}`}
+                  aria-current={isActive ? 'page' : undefined}
+                >
+                  {item.label}
+                </button>
+              );
+            })}
+          </div>
+        </nav>
+      </header>
+
+      {isMembershipOpen ? (
+        <div className="fixed inset-0 z-[180] overflow-y-auto bg-slate-950/95 px-4 py-8 text-white backdrop-blur-xl md:px-8 md:py-12" role="dialog" aria-modal="true" aria-label="升级 VD Plus">
+          <div className="mx-auto max-w-5xl">
+            <div className="mb-7 flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-semibold tracking-[0.24em] text-slate-500">VD MEMBERSHIP</p>
+                <h2 className="mt-2 text-3xl font-semibold tracking-tight text-white md:text-4xl">升级套餐</h2>
+                <p className="mt-2 text-sm text-slate-400">Free 保留基础体验；Plus 解锁会员身份，并作为后续高级功能的统一权限层。</p>
+              </div>
+              <button type="button" onClick={() => setIsMembershipOpen(false)} className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/5 text-2xl font-light text-slate-400 transition hover:bg-white/10 hover:text-white" aria-label="关闭升级套餐">×</button>
+            </div>
+
+            <div className="grid gap-5 lg:grid-cols-[0.72fr_1.28fr]">
+              <section className="rounded-[2rem] border border-white/10 bg-white/[0.045] p-6 shadow-2xl shadow-black/20">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-2xl font-semibold">Free</h3>
+                  {!isPlus ? <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-slate-300">当前套餐</span> : null}
+                </div>
+                <p className="mt-6 text-5xl font-semibold tracking-tight">¥0</p>
+                <p className="mt-2 text-sm text-slate-500">永久免费基础版</p>
+                <div className="my-6 h-px bg-white/10" />
+                <ul className="space-y-4 text-sm leading-6 text-slate-300">
+                  <li>✓ 任务、目标与压力可视化</li>
+                  <li>✓ 本地优先的数据管理</li>
+                  <li>✓ 登录后的基础云同步</li>
+                  <li>✓ 基础人生与数据模块</li>
+                </ul>
+              </section>
+
+              <div className="text-slate-900">
+                <MembershipPanel />
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }
