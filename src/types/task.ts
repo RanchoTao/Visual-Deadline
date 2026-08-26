@@ -21,6 +21,9 @@ export interface Task {
   stages?: string[];
   milestoneSuggestions?: string[];
   linkedGoalIds?: string[];
+  nextAction?: string;
+  plannerTaskId?: string;
+  plannerLocked?: boolean;
   activityType: ActivityType;
   lifecycleStatus: LifecycleStatus;
   completedAt?: string;
@@ -152,6 +155,8 @@ export interface Goal {
   priority: Importance;
   linkedTaskIds: string[];
   roadmapSuggestions?: string[];
+  lifeLayer?: import('./lifePlanning').GoalLayer;
+  planningStatus?: import('./lifePlanning').GoalStatus;
   createdAt: string;
   updatedAt: string;
 }
