@@ -1,0 +1,311 @@
+\documentclass[11pt,a4paper,openany]{ctexrep}
+\usepackage[a4paper,margin=2.35cm]{geometry}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{tcolorbox}
+\usepackage{fancyhdr}
+\usepackage{microtype}
+\usepackage{ifthen}
+
+\definecolor{VDPurple}{HTML}{6D5DFB}
+\definecolor{VDDark}{HTML}{161521}
+\definecolor{VDMuted}{HTML}{64748B}
+\definecolor{VDLight}{HTML}{F5F3FF}
+\definecolor{VDGreen}{HTML}{15803D}
+\definecolor{VDOrange}{HTML}{C2410C}
+\definecolor{VDGray}{HTML}{475569}
+
+\hypersetup{colorlinks=true,linkcolor=VDPurple,urlcolor=VDPurple,pdftitle={Visual Deadline 产品介绍、功能详解与使用指南},pdfauthor={Flysoon Tech 飞升科技}}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlist{itemsep=0.25em,topsep=0.35em}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\textcolor{VDMuted}{Visual Deadline}}
+\fancyhead[R]{\textcolor{VDMuted}{产品介绍与功能详解}}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.2pt}
+
+\newcommand{\statusdone}{\textcolor{VDGreen}{\textbf{已实现}}}
+\newcommand{\statuspartial}{\textcolor{VDOrange}{\textbf{部分实现}}}
+\newcommand{\statusplanned}{\textcolor{VDGray}{\textbf{预留/规划}}}
+\newcommand{\shotroot}{../assets/screenshots}
+\newcommand{\VDscreenshot}[3]{%
+  \begin{figure}[htbp]
+    \centering
+    \IfFileExists{\shotroot/#1}{%
+      \includegraphics[width=0.96\textwidth,height=0.70\textheight,keepaspectratio]{\shotroot/#1}%
+    }{%
+      \begin{tcolorbox}[width=0.96\textwidth,height=6.3cm,colback=VDLight,colframe=VDPurple,boxrule=0.6pt,arc=3mm,valign=center]
+        \centering
+        {\Large\textcolor{VDPurple}{截图待补}}\\[0.8em]
+        \texttt{#1}\\[0.6em]
+        \textcolor{VDMuted}{#3}
+      \end{tcolorbox}%
+    }
+    \caption{#2}
+  \end{figure}
+}
+
+\title{\Huge\bfseries Visual Deadline\\[0.6em]\Large 把时间、目标、压力与人生放进同一个坐标系\\[1.2em]\large 产品介绍、功能详解与使用指南}
+\author{Flysoon Tech 飞升科技\\Rancho Tao}
+\date{代码审计版 v0.1\\2026年9月2日}
+
+\begin{document}
+\maketitle
+
+\begin{tcolorbox}[colback=VDLight,colframe=VDPurple,title=文档状态]
+本文基于 2026-09-02 的主分支代码整理。当前版本包含完整文字说明和 24 个截图占位；真实截图加入指定目录后会自动替换占位框。健康平台接入、微信好友直接读取等预留能力没有被描述为正式上线功能。
+\end{tcolorbox}
+
+\tableofcontents
+\clearpage
+
+\chapter{VD 是什么}
+
+Visual Deadline（VD）不是把事项排成一列的传统待办清单，而是一套围绕任务、期限、压力、长期目标、关系和行为记录建立的个人操作系统。它试图回答的不是“还有多少件事没做”，而是：此刻哪些事情正在占用注意力、压力来自哪里、应该先移动哪一块，以及今天的行动如何连接更长的人生方向。
+
+VD 的核心口号是“Visualize pressure, not just tasks”。截止时间产生紧迫性，重要程度决定延误代价，主观压力校准让统一公式适应不同个体，完成和恢复则改变后续负载。系统因此把任务看作动态压力场，而非静态文本。
+
+\section{适合谁}
+
+VD 尤其适合同时处理学习、科研、工程、创作、身体训练和社交责任的人。它也适合那些目标很多、容易因注意力分散而失去当前执行窗口的用户。VD 给出的建议是辅助信息，不替代医学、心理、法律、财务或教育专业判断。
+
+\chapter{系统全景}
+
+当前产品由首页、任务、人生、社交、数据五个一级模块组成，并由账号、消息、会员、同步和安全能力提供全局支撑。
+
+\begin{longtable}{p{2.3cm}p{4.2cm}p{7.0cm}}
+\toprule
+模块 & 核心问题 & 主要能力 \\
+\midrule
+首页 & 现在先做什么？ & 当前任务热区、最近截止、Top 3 建议 \\
+任务 & 事项如何被看见和推进？ & 紧急—重要矩阵、任务/项目、AI 录入、进度与归档 \\
+人生 & 今天如何连接长期方向？ & NOW、Planning、Life Map、Timeline \\
+社交 & 哪些关系值得被记住？ & 联系人、好感度距离、关系图谱、CSV/vCard 导入 \\
+数据 & 我的行为正在形成什么模式？ & 执行、压力、人生结构、趋势、健康准备、AI 洞察 \\
+\bottomrule
+\end{longtable}
+
+\chapter{三分钟快速上手}
+
+\begin{enumerate}
+  \item 选择邮箱登录或继续使用本地模式。
+  \item 在初始问答中倒出最近占用注意力的事项。
+  \item 凭直觉给出当前主观压力。
+  \item 为事项补充重要性和截止时间。
+  \item 进入首页查看任务热区与下一步建议。
+  \item 进入任务页继续拆解和推进；定期回到数据页观察压力与执行模式。
+\end{enumerate}
+
+\VDscreenshot{01_auth_local_mode.png}{登录、注册与本地模式}{展示邮箱密码入口、云同步说明和继续使用本地模式。}
+\VDscreenshot{02_onboarding.png}{三步初始问答}{展示注意力倒出、主观压力校准以及任务信息补全。}
+
+\chapter{首页：当前行动}
+
+首页刻意保持窄：先给出当前任务热区，再给出最多三项下一步建议。任务热区把时间紧迫度与重要性放入同一坐标，靠近“截止死亡线”的事项更需要立即关注；没有临近截止任务时，系统鼓励推进重要的长期事项或恢复精力。
+
+Top 3 依据截止时间、重要性、任务状态和压力信号计算优先分。它是一种可解释的排序建议，用户仍然保留最终决策权。
+
+\VDscreenshot{03_home_task_heatmap.png}{首页当前任务热区}{展示活跃任务、最近截止时间及任务在坐标中的位置。}
+\VDscreenshot{04_home_top3.png}{下一步建议 Top 3}{展示推荐理由、重要性、剩余时间和优先分。}
+
+\chapter{任务系统}
+
+\section{紧急—重要矩阵}
+
+任务页使用四象限组织任务，同时把时间与重要性理解为连续轴：越接近截止线，时间压力越高；越靠近重要性死亡线，延误代价越高。“出生线”表示事项刚进入系统或影响仍低，“死亡线”表示已经逼近必须处理的边界。
+
+\section{任务生命周期}
+
+任务可以创建、编辑、推进、完成、放弃、删除或恢复。活动列表同时展示重要性、截止时间、真实/自动进度和派生逾期状态。自动进度用于估算时间消耗和截止压力，不应被当作实际完成证据。
+
+\section{AI 任务录入}
+
+用户可以用自然语言描述近期事项，系统尝试抽取任务、阶段和拆解建议。AI 结果必须先形成可确认草稿，用户确认后才写入 VD。附件和录音入口是否能够完成解析取决于浏览器能力、文件格式和后端配置。
+
+\VDscreenshot{05_task_matrix.png}{完整任务矩阵}{展示四象限、任务节点和时间/重要性轴。}
+\VDscreenshot{06_task_ai_intake.png}{AI 自然语言任务录入}{展示文本、附件、录音入口和确认后写入原则。}
+
+\chapter{人生系统：Life OS}
+
+Life OS 的基本判断是：Goal Space 可以很大，但 Execution Window 必须很窄。长期目标不是为了让首页堆满方向，而是为了帮助系统约束今天真正值得推进的少量行动。
+
+\section{NOW}
+
+NOW 聚合今日可用时间、注意力和精力估计，并把已接受计划缩窄成最多三项今日焦点。注意力和精力是规划输入，不是医学测量。
+
+\VDscreenshot{07_life_now.png}{Life OS NOW}{展示今日资源、当前焦点和下一步行动。}
+
+\section{Planning}
+
+Planning 接收时间、Attention、Energy 和预算等资源快照，把目标标记为主攻、次要推进、维持、主动等待或被阻塞，并生成七日滚动计划。Small Replan 用于局部调整；计划只有在用户接受后才进入当前执行窗口。
+
+\VDscreenshot{08_life_planning.png}{Planning 与七日滚动计划}{展示资源输入、Active Goals、暂不推进事项及计划动作。}
+
+\section{Life Map}
+
+Life Map 使用 Direction、Long-term Goal、Stage、Phase、Milestone、Task 的层级描述人生结构，并用依赖边说明“什么必须先完成”。节点和画布支持选择、拖动、缩放和适应视图。当前版本包含用于展示结构的演示节点。
+
+\VDscreenshot{09_life_map.png}{Life Map 目标图谱}{展示层级路径、依赖边、筛选和节点详情。}
+
+\section{Timeline}
+
+Timeline 把人生阶段、年度目标、本周执行和今天放入统一时间坐标，并提供人生全景、十年、一年、一月、本周与今日尺度。示例人生阶段和目标属于种子数据，用户后续需要用自己的内容替换。
+
+\VDscreenshot{10_life_timeline.png}{人生时间坐标轴}{展示人生阶段、年度目标、本周行动和时间尺度。}
+
+\chapter{社交系统}
+
+社交页把“我”置于关系图谱中心，联系人根据好感度等信号形成不同距离。用户可以添加、编辑和拖动节点，重新布局或缩放画布，并通过列表进行查找和复盘。
+
+当前支持用户主动授权的 CSV（首列姓名）和 vCard 导入。Web/PWA 无法正规读取微信好友列表，VD 不使用逆向协议或数据库抓取，因此“微信好友直接导入”属于未实现能力。
+
+\VDscreenshot{11_social_graph.png}{社交图谱}{展示“我”节点、联系人距离和关系画布。}
+\VDscreenshot{12_social_contacts.png}{通讯录与导入}{展示联系人列表、添加、CSV/vCard 导入和限制说明。}
+
+\chapter{数据中心：行为镜像}
+
+数据中心不是后台表格，而是一个生命状态观测站。它追踪用户如何工作、如何积累压力、如何恢复以及结构如何演化。数据不足时，系统应保持“观察期”而非给出过度确定的结论。
+
+\section{总览}
+总览展示累计闭环任务、当前压力、七日均值、连续记录、当前行为状态和长期档案。低信息量重复记录默认折叠。
+\VDscreenshot{13_data_overview.png}{生命状态总览}{展示核心指标、行为状态和长期档案。}
+
+\section{任务执行模式}
+任务页统计完成、逾期、放弃、完成率、最后一小时完成比例、截止依赖、拖延倾向和执行稳定性。这些标签用于发现模式，不是对人格或能力的定性。
+\VDscreenshot{14_data_tasks.png}{任务执行模式}{展示执行指标、倾向标签和任务事件流。}
+
+\section{压力核心}
+压力近似由当前任务负载乘以个体压力映射系数，再扣除恢复释放。用户主观校准把“同一组任务给我的真实感受”映射到系统刻度。压力指数是效率辅助信息，不是医学诊断。
+\VDscreenshot{15_data_pressure.png}{压力核心}{展示压力公式、负载、映射系数、曲线和重新校准。}
+
+\section{人生结构}
+人生结构统计任务在学习、科研、健身、工作、生活和社交等领域的分布，并观察长期目标关联进度。分类质量取决于用户输入。
+\VDscreenshot{16_data_life.png}{人生结构}{展示当前生活重心与目标推进比例。}
+
+\section{健康准备}
+当前页面为身高、体重、睡眠、HRV、运动和恢复等未来数据预留位置。它说明了健康整合方向，但穿戴设备与健康平台尚未形成正式接入闭环。
+\VDscreenshot{17_data_health.png}{健康准备}{展示已记录基础数据与待接入指标；图注需明确预留状态。}
+
+\section{趋势与 AI 洞察}
+趋势页已有基础的高压天数和执行演化判断，月度、季节性和年度回顾仍在扩展。AI 洞察使用必要的任务、完成/放弃记录与压力历史生成第三人称观察；没有足够数据或 AI 未配置时不会生成结论。
+\VDscreenshot{18_data_trends.png}{长期趋势}{展示当前可用的趋势指标与扩展边界。}
+\VDscreenshot{19_data_ai.png}{AI 第三人称洞察}{展示生成条件、数据范围和结构化观察。}
+
+\chapter{生命信号、日志与消息}
+
+生命信号记录首次校准、首次完成、恢复、关系维护等具有信息增量的节点。它们不是游戏化奖杯，而是系统观察到的行为记忆。消息中心承载周报、风险提醒和系统建议，减少首页的信息污染。
+
+\VDscreenshot{20_notifications.png}{消息中心与生命信号}{展示消息类型、已读状态和重要状态记录。}
+
+\chapter{账号、同步、安全与会员}
+
+\section{本地与云端}
+
+本地模式把数据存入当前浏览器。邮箱登录后，VD 会尝试把任务、目标、压力历史和资料按用户 ID 隔离同步到 Supabase。云同步受网络、RLS 和数据库迁移状态影响，因此正式发布前需要做跨账号隔离测试。
+
+\section{Free 与 Plus}
+
+Free 保留基础的任务、目标与压力可视化；Plus 提供统一会员身份并承载后续高级能力。支付页面不能自行授予权限，会员状态必须由服务端验证的 webhook 和数据库记录确定。
+
+\section{隐私边界}
+
+用户不应在任务或 AI 输入中提交密码、银行卡号、证件号码等敏感信息。VD 的压力、行为与 AI 建议属于辅助信息，不对健康、学习、工作或人生结果作保证。
+
+\VDscreenshot{21_profile_membership.png}{个人资料、同步与会员}{展示账号状态、资料、数据同步和 Free/Plus 入口。}
+
+\chapter{移动端体验}
+
+移动端使用底部一级导航，并针对首页、任务、人生、社交和数据页面调整信息密度。真实发布前仍需在不同尺寸和系统浏览器上检查安全区、弹窗、软键盘、滚动和图谱操作。
+
+\VDscreenshot{22_mobile_home.png}{移动端首页}{展示移动端任务热区和底部导航。}
+\VDscreenshot{23_mobile_tasks.png}{移动端任务页}{展示移动端任务列表和矩阵适配。}
+\VDscreenshot{24_mobile_life_data.png}{移动端人生或数据页}{展示 Life OS 或数据中心的移动端信息层级。}
+
+\chapter{典型使用流程}
+
+\section{从注意事项到下一步行动}
+想到一件事后创建任务，补充重要性与截止时间，让它进入任务矩阵；首页随后根据当前状态生成下一步建议。用户推进或完成任务后，压力和数据统计随之更新。
+
+\section{从长期方向到今天}
+先建立方向和长期目标，再形成阶段、里程碑与任务。Planning 根据资源选择当前 Active Goals，NOW 只保留少量今日焦点，Timeline 用于理解它们所处的时间位置。
+
+\section{从任务负载到压力观察}
+初始问答或重新校准将主观感受与当时任务集合关联，系统计算个体映射系数；随着任务接近截止、完成、放弃或恢复，压力曲线产生新的节点。
+
+\section{从行为记录到第三人称观察}
+持续记录任务与状态，数据中心先形成可解释统计；数据充分且 AI 已配置时，再生成冷静的第三人称摘要，而不是用鼓励性文案替代分析。
+
+\chapter{当前限制与发布前检查}
+
+\begin{itemize}
+  \item 邮箱验证、回调、跨设备确认和重新发送需要完成生产端到端测试。
+  \item Paddle 支付需验证 Checkout、webhook 签名、幂等性和会员刷新。
+  \item 健康与穿戴设备仍是准备性界面。
+  \item 微信好友直接读取不受支持。
+  \item Life Map、Timeline 和部分规划数据含演示内容。
+  \item AI 能力依赖后端、额度和数据质量，不能保证每次可用。
+  \item 产品版本号目前在 `package.json` 与品牌常量中不一致，发布前应统一。
+\end{itemize}
+
+\chapter{功能状态总表}
+
+\begin{longtable}{p{3.0cm}p{3.1cm}p{2.0cm}p{6.1cm}}
+\toprule
+模块 & 功能 & 状态 & 说明 \\
+\midrule
+\endfirsthead
+\toprule
+模块 & 功能 & 状态 & 说明 \\
+\midrule
+\endhead
+访问 & 本地模式 & \statusdone & 无账号可用，数据留在当前浏览器 \\
+访问 & 邮箱注册/登录 & \statuspartial & 依赖 Supabase 和邮件验证配置 \\
+访问 & 云同步 & \statuspartial & 已有读写链路，需验证 RLS 与生产环境 \\
+引导 & 三步初始问答 & \statusdone & 事项、主观压力、重要性与截止时间 \\
+首页 & 热区与 Top 3 & \statusdone & 可解释评分建议 \\
+任务 & 矩阵与生命周期 & \statusdone & 创建、编辑、完成、放弃和恢复 \\
+任务 & AI/多模态录入 & \statuspartial & 依赖后端和浏览器能力 \\
+压力 & 指数、校准和曲线 & \statusdone & 辅助指标，不是医学诊断 \\
+人生 & NOW / Planning & \statusdone & 包含确定性回退和演示路径 \\
+人生 & Life Map / Timeline & \statusdone & 当前含种子数据 \\
+社交 & 图谱与联系人 & \statusdone & 支持 CSV/vCard 用户授权导入 \\
+社交 & 微信好友读取 & \statusplanned & Web/PWA 不支持直接读取 \\
+数据 & 总览、任务、压力、人生 & \statusdone & 数据少时保持观察期 \\
+数据 & 健康整合 & \statusplanned & 穿戴设备和健康平台待接入 \\
+数据 & 长期趋势与 AI 洞察 & \statuspartial & 依赖历史样本和 AI 配置 \\
+全局 & 消息、资料和安全页面 & \statusdone & 头像云存储依赖外部配置 \\
+会员 & Free/Plus 和支付 & \statuspartial & 权限层已建，生产支付仍需闭环验证 \\
+移动端 & 响应式体验 & \statusdone & 仍需真实设备视觉回归 \\
+\bottomrule
+\end{longtable}
+
+\chapter{常见问题}
+
+\section{不登录可以使用吗？}
+可以。本地模式使用浏览器存储，但更换设备、清理浏览器数据或使用隐私模式可能导致数据不可用，建议定期导出备份。
+
+\section{压力指数越低越好吗？}
+不一定。VD 的目标是让压力可见并可解释，而不是追求永久归零。适度紧迫可能帮助行动，持续高压与恢复不足才值得重点关注。
+
+\section{自动进度为什么与实际不同？}
+自动进度主要根据时间推移估算，用于提示截止风险。真实完成程度应由用户更新。
+
+\section{AI 会自动修改任务吗？}
+自然语言录入的设计原则是先生成草稿，用户确认后才写入。AI 洞察同样只提供观察与建议。
+
+\section{为什么健康页面很多指标显示待接入？}
+因为当前主要完成了健康数据结构和界面准备，尚未承诺对 Apple Health、运动平台或穿戴设备的正式集成。
+
+\chapter{版本与维护}
+
+本手册是基于代码审计的 v0.1 版本。截图文件按照固定索引维护，放入 `assets/screenshots/` 后重新运行 XeLaTeX 即可生成图文版。每次产品发版应重新核验功能状态、版本号、隐私边界、支付与认证链路，并在文档中记录对应 Git commit。
+
+\end{document}
