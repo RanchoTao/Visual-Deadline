@@ -4,3 +4,17 @@ dist/
 .env.*
 .DS_Store
 *.local
+
+# Visual Deadline guide: generated/binary artifacts are published separately.
+/docs/visual-deadline-guide/*.pdf
+/docs/visual-deadline-guide/latex/*.pdf
+/docs/visual-deadline-guide/latex/*.aux
+/docs/visual-deadline-guide/latex/*.fdb_latexmk
+/docs/visual-deadline-guide/latex/*.fls
+/docs/visual-deadline-guide/latex/*.log
+/docs/visual-deadline-guide/latex/*.out
+/docs/visual-deadline-guide/latex/*.toc
+/docs/visual-deadline-guide/latex/*.xdv
+/docs/visual-deadline-guide/assets/screenshots/*.png
+/docs/visual-deadline-guide/assets/screenshots/*.jpg
+/docs/visual-deadline-guide/assets/screenshots/*.jpeg
