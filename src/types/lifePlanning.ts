@@ -10,6 +10,9 @@ export interface LifeNode {
   status: GoalStatus; domain: ActivityType; importance: Importance; deadline?: string;
   startDate?: string; expectedEndDate?: string; focusLevel?: number; successCriteria?: string;
   resourceBudget?: { minutesPerWeek?: number; money?: number }; nextAction?: string; locked?: boolean;
+  /** Path semantics are optional so existing saved nodes remain valid. */
+  pathId?: string; pathName?: string; pathStatus?: 'active' | 'paused' | 'abandoned' | 'completed' | 'future';
+  predecessorId?: string; mergeTargetId?: string; displayOrder?: number; current?: boolean; sourceGoalId?: string;
 }
 export interface GoalDependency { id: string; sourceId: string; targetId: string; type: DependencyType; critical?: boolean }
 export interface Commitment { id: string; title: string; start: string; end: string; locked: boolean }
@@ -21,4 +24,3 @@ export interface PlanningResult { generatedAt: string; horizon: { start: string;
 export interface PlanVersion { id: string; version: number; scope: ReplanScope; status: 'proposed' | 'accepted' | 'rejected' | 'overridden'; result: PlanningResult; createdAt: string; changeReason: string }
 export interface PlannerContext { nodes: LifeNode[]; dependencies: GoalDependency[]; resource: ResourceSnapshot; recentEvents: ExecutionEvent[]; lockedTasks: PlannedTask[] }
 export interface PlannerProvider { generatePlan(context: PlannerContext): Promise<PlanningResult> }
-
