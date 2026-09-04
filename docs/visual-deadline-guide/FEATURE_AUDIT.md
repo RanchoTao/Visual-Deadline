@@ -25,8 +25,8 @@
 | 压力 | 压力曲线和重算 | 已实现 | `PressureTimeline.tsx`、`pressureHistory.ts` | 样本少时趋势解释有限 |
 | 人生 | Life OS NOW | 已实现 | `LifeOSPlanner.tsx` | 今日时间、注意力、精力属于规划估计 |
 | 人生 | Planning / 七日滚动计划 | 已实现（含演示路径） | `lifePlanner.ts`、`demoData.ts` | AI 规划依赖配置；存在确定性回退方案和演示节点 |
-| 人生 | Life Map 目标图谱 | 已实现（含演示数据） | `LifeMapPage.tsx`、`RoadmapCanvas.tsx` | 当前默认节点用于演示层级与依赖关系 |
-| 人生 | Timeline 人生时间轴 | 已实现（含演示数据） | `LifeTimelineSection.tsx`、`data.ts` | 部分人生阶段和年度目标是种子数据 |
+| 人生 | Life Map 路径演化图 | 已实现 | `LifeMapPage.tsx`、`RoadmapCanvas.tsx` | 主线、分支、当前位置、路线状态与合流使用真实目标和持久化节点 |
+| 人生 | Timeline 甘特排期 | 已实现 | `LifeTimelineSection.tsx`、`data.ts` | 统一真实日期轴；无日期任务进入未排期区域 |
 | 社交 | 社交图谱与联系人 | 已实现 | `SocialPage.tsx`、`storage/social.ts` | 好感度决定可视距离；不代表客观关系评价 |
 | 社交 | CSV/vCard 导入 | 已实现 | `SocialPage.tsx`、相关解析逻辑 | 需要用户主动授权文件 |
 | 社交 | 微信好友直接读取 | 预留/不支持 | `docs/wechat-contact-import.md` | Web/PWA 不应使用逆向协议或本地数据库抓取 |

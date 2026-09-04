@@ -12,6 +12,10 @@ export interface Task {
   description?: string;
   importance: Importance;
   deadline?: string;
+  /** Optional scheduling metadata shared by Timeline and Life Map projections. */
+  startDate?: string;
+  dependencyIds?: string[];
+  assignee?: string;
   progress: number;
   taskProgress?: number;
   timeProgress?: number;
@@ -157,6 +161,7 @@ export interface Goal {
   roadmapSuggestions?: string[];
   lifeLayer?: import('./lifePlanning').GoalLayer;
   planningStatus?: import('./lifePlanning').GoalStatus;
+  startDate?: string;
   createdAt: string;
   updatedAt: string;
 }
