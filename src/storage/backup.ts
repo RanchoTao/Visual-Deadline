@@ -1,4 +1,5 @@
 import { loadLifeMap, saveLifeMap } from './lifeMap';
+import { loadLifeEventStore, saveLifeEventStore } from './lifeController';
 import { loadLogs, saveLogs } from './logs';
 import { loadPressure, savePressure } from './pressure';
 import { loadSettings, saveSettings } from './settings';
@@ -23,6 +24,7 @@ export function collectCurrentData(): VisualizedDeadlineData {
     pressure: safeLoad(loadPressure, { baselinePressure: null, calibration: null, history: [] }),
     social: safeLoad(loadSocial, { nodes: [], layoutVersion: 0 }),
     lifeMap: safeLoad(loadLifeMap, { nodes: [], layoutVersion: 0 }),
+    lifeController: { eventsByOwner: safeLoad(loadLifeEventStore, {}) },
     logs: safeLoad(loadLogs, { achievements: [], aiArtifacts: [] }),
     settings: safeLoad(loadSettings, { profile: null, onboardingComplete: false }),
     metadata: { source: 'browser-local', futureSafe: true },
@@ -66,6 +68,7 @@ export function restoreData(data: VisualizedDeadlineData): void {
   savePressure(data.pressure);
   saveSocial(data.social);
   saveLifeMap(data.lifeMap);
+  saveLifeEventStore(data.lifeController.eventsByOwner);
   saveLogs(data.logs);
   saveSettings(data.settings);
   notifyStorageChange();

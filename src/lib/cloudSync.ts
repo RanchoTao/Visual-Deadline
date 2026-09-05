@@ -1,4 +1,6 @@
 import type { Goal, PressureCalibrationSnapshot, PressureHistoryRecord, Task, UserProfile } from '../types/task';
+import type { LifeEvent } from '../types/lifeController';
+import { normalizeLifeEvents } from '../domain/life-controller';
 import { SupabaseRestError, supabase, type SupabaseSession } from './supabaseClient';
 
 interface JsonRow<T> {
@@ -25,6 +27,16 @@ interface ProfileRow {
   avatar_storage_path: string | null;
   data: ProfileData | null;
   updated_at?: string;
+}
+
+interface LifeEventRow {
+  id: string;
+  user_id: string;
+  type: string;
+  occurred_at: string;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface CloudData {
@@ -134,6 +146,50 @@ export async function saveCloudGoals(goals: Goal[], session: SupabaseSession): P
 
 export async function saveCloudPressureHistory(records: PressureHistoryRecord[], session: SupabaseSession): Promise<void> {
   await withCloudSyncErrors(replaceJsonRows('pressure_logs', records, session));
+}
+
+export async function loadCloudLifeEvents(session: SupabaseSession): Promise<LifeEvent[]> {
+  try {
+    const rows = await supabase.rest<LifeEventRow[]>(`life_events?select=id,user_id,type,occurred_at,metadata,created_at,updated_at&user_id=eq.${encode(session.user.id)}&order=occurred_at.asc`, { method: 'GET' }, session);
+    return normalizeLifeEvents(rows.map((row) => ({
+      id: row.id,
+      type: row.type,
+      timestamp: row.occurred_at,
+      metadata: row.metadata ?? {},
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    })));
+  } catch (error) {
+    const details = error instanceof SupabaseRestError
+      ? [error.message, error.code, error.details, error.hint, String(error.status)].filter(Boolean).join(' ')
+      : error instanceof Error ? error.message : '';
+    if (TABLE_OR_COLUMN_MISSING_PATTERNS.some((pattern) => pattern.test(details))) {
+      console.error('[Visual Deadline Life Controller cloud sync error]', error);
+      throw new Error('Life Controller migration 尚未应用，请执行 supabase/migrations/20260905133915_life_controller_alpha_0_1.sql。');
+    }
+    throw formatCloudSyncError(error);
+  }
+}
+
+export async function upsertCloudLifeEvents(events: LifeEvent[], session: SupabaseSession): Promise<void> {
+  if (events.length === 0) return;
+  await withCloudSyncErrors(supabase.rest('life_events', {
+    method: 'POST',
+    headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify(events.map((event) => ({
+      id: event.id,
+      user_id: session.user.id,
+      type: event.type,
+      occurred_at: event.timestamp,
+      metadata: event.metadata,
+      created_at: event.createdAt,
+      updated_at: event.updatedAt,
+    }))),
+  }, session));
+}
+
+export async function deleteCloudLifeEvent(eventId: string, session: SupabaseSession): Promise<void> {
+  await withCloudSyncErrors(supabase.rest(`life_events?id=eq.${encode(eventId)}&user_id=eq.${encode(session.user.id)}`, { method: 'DELETE' }, session));
 }
 
 export async function saveCloudProfile(input: { profile: UserProfile; pressureCalibration: PressureCalibrationSnapshot; onboardingComplete: boolean; socialNodes: unknown[]; socialLayoutVersion: number }, session: SupabaseSession): Promise<void> {

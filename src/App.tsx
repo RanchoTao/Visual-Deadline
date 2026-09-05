@@ -17,6 +17,7 @@ import { useLocalStorage } from './hooks/useLocalStorage';
 import { useSupabaseAuth } from './hooks/useSupabaseAuth';
 import type { Roadmap } from './types/roadmap';
 import type { VDNotification } from './types/notification';
+import type { BuiltInLifeEventType, LifeEventStore } from './types/lifeController';
 import type { Achievement, AIArtifact, AIArtifactInput, ActivityType, DailyQuest, DailyReview, Goal, GoalInput, LifecycleStatus, LifeOSModule, MobileTab, PressureBreakdown, PressureCalibrationSnapshot, PressureHistoryEventType, PressureHistoryRecord, ReminderSettings, Task, TaskInput, UserProfile } from './types/task';
 import {
   achievementCatalog,
@@ -37,8 +38,9 @@ import {
 import { appendPressureHistoryRecord, createPressureHistoryRecord, normalizePressureHistory, replaceTaskDerivedPressureHistory } from './utils/pressureHistory';
 import { sortActiveTasksByProgress } from './utils/taskDerivedState';
 import { createDailyReviewFromQuest, generateDailyQuest } from './utils/dailyQuest';
-import { loadCloudData, saveCloudGoals, saveCloudPressureHistory, saveCloudProfile, saveCloudTasks } from './lib/cloudSync';
+import { deleteCloudLifeEvent, loadCloudData, loadCloudLifeEvents, saveCloudGoals, saveCloudPressureHistory, saveCloudProfile, saveCloudTasks, upsertCloudLifeEvents } from './lib/cloudSync';
 import { hasValue, loadValue, savePressure, saveTasks, saveValue, storageKeys } from './storage';
+import { createDefaultLifePreferences, createLifeEvent, deriveLifeState, getLifeEventsForOwner, mergeLifeEvents, planLifeController, setLifeEventsForOwner, undoLatestLifeEvent as removeLatestLifeEvent } from './domain/life-controller';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const WELCOME_BACK_GAP_MS = 2 * 60 * 60 * 1000;
@@ -380,8 +382,10 @@ function App() {
   const [cloudStatus, setCloudStatus] = useState<string | undefined>();
   const [cloudToast, setCloudToast] = useState<string | undefined>();
   const [cloudError, setCloudError] = useState<string | undefined>();
+  const [lifeEventCloudError, setLifeEventCloudError] = useState<string | undefined>();
   const [isCloudLoading, setIsCloudLoading] = useState(false);
   const [isCloudReady, setIsCloudReady] = useState(false);
+  const [isLifeEventCloudReady, setIsLifeEventCloudReady] = useState(false);
   const isApplyingCloudData = useRef(false);
   const [tasks, setTasks] = useLocalStorage<Task[]>(storageKeys.tasks, []);
   const [goals, setGoals] = useLocalStorage<Goal[]>(storageKeys.goals, []);
@@ -399,6 +403,7 @@ function App() {
   const [storedDailyQuest, setStoredDailyQuest] = useLocalStorage<DailyQuest | null>(storageKeys.dailyQuest, null);
   const [dailyReview, setDailyReview] = useLocalStorage<DailyReview | null>(storageKeys.dailyReview, null);
   const [reminderSettings, setReminderSettings] = useLocalStorage<ReminderSettings>(storageKeys.reminderSettings, defaultReminderSettings);
+  const [lifeEventsByOwner, setLifeEventsByOwner] = useLocalStorage<LifeEventStore>(storageKeys.lifeEventsByOwner, {});
   const [activeModule, setActiveModule] = useState<LifeOSModule>('home');
   const [activeMobileTab, setActiveMobileTab] = useState<MobileTab>('today');
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
@@ -411,6 +416,10 @@ function App() {
   const [pressureClock, setPressureClock] = useState(() => Date.now());
   const hasCheckedWelcomeBack = useRef(false);
   const hasLoggedHydration = useRef(false);
+
+  const lifeEventOwner = session?.user.id ?? 'guest';
+  const lifeEvents = useMemo(() => getLifeEventsForOwner(lifeEventsByOwner, lifeEventOwner), [lifeEventOwner, lifeEventsByOwner]);
+  const lifePreferences = useMemo(() => createDefaultLifePreferences(), []);
 
   const normalizedTasks = useMemo(() => {
     const storedTasks = Array.isArray(tasks) ? tasks : [];
@@ -430,8 +439,13 @@ function App() {
     const previewCalibration = createPressureCalibration(recalibrationPressure, normalizedTasks, 0, new Date().toISOString());
     return calculatePressureIndex(normalizedTasks, previewCalibration, legacyReferencePressure);
   }, [legacyReferencePressure, normalizedTasks, recalibrationPressure]);
+  const lifeState = useMemo(() => deriveLifeState(lifeEvents, new Date(pressureClock), lifePreferences.timezone), [lifeEvents, lifePreferences.timezone, pressureClock]);
+  const lifePlan = useMemo(() => planLifeController({ currentTime: new Date(pressureClock), lifeState, lifePreferences, availableTasks: [] }), [lifePreferences, lifeState, pressureClock]);
 
   const syncStateLabel = cloudError || cloudStatus || (session ? (isCloudReady ? '云端已连接，数据在后台同步。' : '正在建立云端连接…') : '本地模式运行，登录后可启用云同步。');
+  const lifeEventSyncStatus = session
+    ? (lifeEventCloudError || (isLifeEventCloudReady ? '生活记录已启用用户隔离云同步。' : '生活记录保存在本机，正在检查云端 migration。'))
+    : '访客记录仅保存在当前浏览器。';
   const isMobileViewport = viewportWidth < 768;
 
   const dailyQuest = useMemo(() => {
@@ -457,14 +471,17 @@ function App() {
   useEffect(() => {
     if (!session) {
       setIsCloudReady(false);
+      setIsLifeEventCloudReady(false);
       setCloudStatus(undefined);
       setCloudError(undefined);
+      setLifeEventCloudError(undefined);
       return;
     }
 
     let isMounted = true;
     setIsCloudLoading(true);
     setCloudError(undefined);
+    setLifeEventCloudError(undefined);
     setCloudStatus('正在从 Supabase 读取云端数据…');
     loadCloudData(session)
       .then(async (cloudData) => {
@@ -483,6 +500,17 @@ function App() {
         if (cloudData.profile) setProfile(cloudData.profile);
         if (cloudData.pressureCalibration) setPressureCalibration(cloudData.pressureCalibration);
         if (cloudData.onboardingComplete !== null) setOnboardingComplete(cloudData.onboardingComplete);
+        try {
+          const cloudLifeEvents = await loadCloudLifeEvents(session);
+          const mergedLifeEvents = mergeLifeEvents(getLifeEventsForOwner(lifeEventsByOwner, session.user.id), cloudLifeEvents);
+          setLifeEventsByOwner((current) => setLifeEventsForOwner(current, session.user.id, mergedLifeEvents));
+          await upsertCloudLifeEvents(mergedLifeEvents, session);
+          setIsLifeEventCloudReady(true);
+          setLifeEventCloudError(undefined);
+        } catch (error) {
+          setIsLifeEventCloudReady(false);
+          setLifeEventCloudError(`生活记录云同步未启用：${error instanceof Error ? error.message : '请先应用 Life Controller migration。'}`);
+        }
         setIsCloudReady(true);
         await Promise.all([
           saveCloudTasks(mergedTasks, session),
@@ -514,6 +542,47 @@ function App() {
       isMounted = false;
     };
   }, [session?.access_token, session?.user.id]);
+
+  async function recordLifeEvent(type: BuiltInLifeEventType): Promise<void> {
+    if (type === 'wake' && lifeState.currentSleepState === 'awake') throw new Error('当前已是清醒状态，未重复记录起床。');
+    if (type === 'sleep_start' && lifeState.currentSleepState === 'sleeping') throw new Error('当前已是睡眠状态，未重复记录睡觉。');
+    const event = createLifeEvent(type);
+    setLifeEventsByOwner((current) => {
+      return setLifeEventsForOwner(current, lifeEventOwner, mergeLifeEvents(getLifeEventsForOwner(current, lifeEventOwner), [event]));
+    });
+    setPressureClock(Date.now());
+
+    if (!session || !isLifeEventCloudReady) return;
+    try {
+      await upsertCloudLifeEvents([event], session);
+      setLifeEventCloudError(undefined);
+    } catch (error) {
+      setLifeEventCloudError(`生活记录云同步失败：${error instanceof Error ? error.message : '未知错误'}`);
+      throw new Error('记录已保存在本机，但云端同步失败。');
+    }
+  }
+
+  async function undoLatestLifeEvent(): Promise<void> {
+    const latest = removeLatestLifeEvent(lifeEvents).removed;
+    if (!latest) throw new Error('没有可撤销的生活记录。');
+
+    setLifeEventsByOwner((current) => {
+      return setLifeEventsForOwner(current, lifeEventOwner, removeLatestLifeEvent(getLifeEventsForOwner(current, lifeEventOwner)).events);
+    });
+    setPressureClock(Date.now());
+
+    if (!session || !isLifeEventCloudReady) return;
+    try {
+      await deleteCloudLifeEvent(latest.id, session);
+      setLifeEventCloudError(undefined);
+    } catch (error) {
+      setLifeEventsByOwner((current) => {
+        return setLifeEventsForOwner(current, lifeEventOwner, mergeLifeEvents(getLifeEventsForOwner(current, lifeEventOwner), [latest]));
+      });
+      setLifeEventCloudError(`撤销云同步失败：${error instanceof Error ? error.message : '未知错误'}`);
+      throw new Error('云端撤销失败，最近记录已恢复。');
+    }
+  }
 
   useEffect(() => {
     if (!session || !isCloudReady || isApplyingCloudData.current) return;
@@ -1046,7 +1115,7 @@ function App() {
   const profileModule = <ProfilePage profile={normalizedProfile} onProfileChange={setProfile} isEmailVerified={Boolean(session?.user.email_confirmed_at)} />;
 
   const moduleContent: Record<LifeOSModule, ReactElement> = {
-    home: <HomePage recommendedTasks={recommendedTasks} activeTasks={activeTasks} onOpenTasks={() => setActiveModule('task')} />,
+    home: <HomePage recommendedTasks={recommendedTasks} activeTasks={activeTasks} onOpenTasks={() => setActiveModule('task')} lifeState={lifeState} lifePlan={lifePlan} lifeEvents={lifeEvents} lifePreferences={lifePreferences} onRecordLifeEvent={recordLifeEvent} onUndoLifeEvent={undoLatestLifeEvent} lifeEventSyncStatus={lifeEventSyncStatus} />,
     task: taskModule,
     map: <LifeMapPage goals={normalizedGoals} tasks={normalizedTasks} roadmaps={roadmaps} onSaveRoadmap={(roadmap) => setRoadmaps((current) => [roadmap, ...current])} onSaveGoal={saveGoal} onDeleteGoal={deleteGoal} onAddTasks={addTaskDrafts} onCompleteTask={(task) => archiveTask(task, 'completed')} onRoadmapGenerated={(artifact) => { saveAIArtifact(artifact); unlockAchievement('roadmap-generated'); }} />,
     social: <SocialPage storedNodes={socialNodes} setStoredNodes={setSocialNodes} layoutVersion={socialLayoutVersion} setLayoutVersion={setSocialLayoutVersion} />,
@@ -1131,6 +1200,13 @@ function App() {
           onCompleteQuestItem={completeDailyQuestItem}
           onOpenReview={openDailyReview}
           onRequestReminder={requestReminderPermission}
+          lifeState={lifeState}
+          lifePlan={lifePlan}
+          lifeEvents={lifeEvents}
+          lifePreferences={lifePreferences}
+          onRecordLifeEvent={recordLifeEvent}
+          onUndoLifeEvent={undoLatestLifeEvent}
+          lifeEventSyncStatus={lifeEventSyncStatus}
         />
       ) : (
         <DesktopShell

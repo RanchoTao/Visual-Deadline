@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "typecheck": "tsc -b",
+    "test": "npm run test:life-controller",
+    "test:life-controller": "tsc -p tests/tsconfig.life-controller.json && node --test tests/lifeController.test.mjs"
   },
   "dependencies": {
     "react": "latest",

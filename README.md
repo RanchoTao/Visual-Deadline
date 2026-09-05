@@ -172,6 +172,10 @@ More demo ideas are documented in [`docs/DEMO_GIF_IDEAS.md`](./docs/DEMO_GIF_IDE
 
 VD is currently a Vite + React + TypeScript application with a local-first browser data model.
 
+### Life Controller Alpha 0.1
+
+The homepage now acts as a small control plane for sleep and meal observations. `wake`, `meal`, and `sleep_start` are stored as LifeEvent facts; timezone-aware domain services derive LifeState and a deterministic planner produces a single NOW action plus bounded NEXT/LATER queues. Existing task recommendations remain available below the controller. See [`docs/life-controller/`](docs/life-controller/) for the architecture, decisions, state and test plan.
+
 ```text
 Visual Deadline
 ├── src/                    # Product source code

@@ -1,5 +1,6 @@
 export * from './backup';
 export * from './lifeMap';
+export * from './lifeController';
 export * from './logs';
 export * from './pressure';
 export * from './schema';

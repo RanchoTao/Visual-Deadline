@@ -1,6 +1,8 @@
 import type { ReactElement } from 'react';
 import type { DailyQuest, LifeOSModule, MobileTab, ReminderSettings } from '../types/task';
+import type { BuiltInLifeEventType, LifeControllerPlan, LifeEvent, LifePreferences, LifeState } from '../types/lifeController';
 import { DailyQuestPage } from './DailyQuestPage';
+import { LifeControllerPanel } from './LifeControllerPanel';
 
 interface MobileShellProps {
   activeTab: MobileTab;
@@ -13,18 +15,25 @@ interface MobileShellProps {
   onCompleteQuestItem: (itemId: string) => void;
   onOpenReview: () => void;
   onRequestReminder: () => void;
+  lifeState: LifeState;
+  lifePlan: LifeControllerPlan;
+  lifeEvents: LifeEvent[];
+  lifePreferences: LifePreferences;
+  onRecordLifeEvent: (type: BuiltInLifeEventType) => Promise<void>;
+  onUndoLifeEvent: () => Promise<void>;
+  lifeEventSyncStatus?: string;
 }
 
 const tabs: { id: MobileTab; label: string; icon: string }[] = [
-  { id: 'today', label: '今日', icon: '◆' },
+  { id: 'today', label: '首页', icon: '◆' },
   { id: 'tasks', label: '任务', icon: '✓' },
   { id: 'profile', label: '档案', icon: '◎' },
   { id: 'settings', label: '设置', icon: '⚙' },
 ];
 
-export function MobileShell({ activeTab, quest, reminderSettings, taskModule, profileModule, onTabChange, onDesktopModuleChange, onCompleteQuestItem, onOpenReview, onRequestReminder }: MobileShellProps) {
+export function MobileShell({ activeTab, quest, reminderSettings, taskModule, profileModule, onTabChange, onDesktopModuleChange, onCompleteQuestItem, onOpenReview, onRequestReminder, lifeState, lifePlan, lifeEvents, lifePreferences, onRecordLifeEvent, onUndoLifeEvent, lifeEventSyncStatus }: MobileShellProps) {
   const content = activeTab === 'today'
-    ? <DailyQuestPage quest={quest} reminderSettings={reminderSettings} onCompleteItem={onCompleteQuestItem} onOpenReview={onOpenReview} onRequestReminder={onRequestReminder} />
+    ? <div className="space-y-4"><LifeControllerPanel state={lifeState} plan={lifePlan} events={lifeEvents} preferences={lifePreferences} onRecord={onRecordLifeEvent} onUndo={onUndoLifeEvent} theme="dark" syncStatus={lifeEventSyncStatus} /><details className="rounded-[2rem] border border-white/10 bg-slate-900/75 p-4"><summary className="min-h-12 cursor-pointer list-none rounded-2xl px-2 py-3 text-sm font-semibold text-slate-200 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-cyan-200/30">查看原有今日任务计划</summary><div className="mt-4"><DailyQuestPage quest={quest} reminderSettings={reminderSettings} onCompleteItem={onCompleteQuestItem} onOpenReview={onOpenReview} onRequestReminder={onRequestReminder} /></div></details></div>
     : activeTab === 'tasks'
       ? <div className="mobile-embedded-module">{taskModule}</div>
       : activeTab === 'profile'

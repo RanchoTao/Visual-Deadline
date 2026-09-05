@@ -15,6 +15,7 @@
 | 引导 | 三步初始问答 | 已实现 | `OnboardingFlow.tsx` | 收集注意事项、主观压力、重要性和截止时间 |
 | 首页 | 当前任务热区 | 已实现 | `HomePage.tsx`、`MiniTaskMatrix.tsx` | 根据任务时间和重要性展示 |
 | 首页 | Top 3 下一步建议 | 已实现 | `RecommendationCard.tsx`、`taskScoring.ts` | 属于规则和评分建议，不构成结果保证 |
+| 首页 | Life Controller Alpha 0.1 | 已实现（云端需 migration） | `LifeControllerPanel.tsx`、`domain/life-controller/*`、`life_events` | 支持 wake/meal/sleep_start、派生状态、NOW/NEXT/LATER、历史与撤销；不包含医疗或 LLM 判断 |
 | 任务 | 紧急—重要矩阵 | 已实现 | `PriorityMap.tsx` | 支持桌面端完整视图及移动端适配 |
 | 任务 | 任务/项目创建与编辑 | 已实现 | `TaskForm.tsx`、`TaskPage.tsx` | 支持状态、重要性、截止时间、进度等字段 |
 | 任务 | 派生进度与逾期分级 | 已实现 | `taskDerivedState.ts`、`progress.ts` | 自动进度是时间估计，不代表真实完成证据 |
@@ -34,7 +35,7 @@
 | 数据 | 任务执行分析 | 已实现 | `behaviorAnalytics.ts` | 拖延和稳定性是行为信号，不是人格判断 |
 | 数据 | 压力核心 | 已实现 | `pressureAnalytics.ts` | 高压样本不足时不计算恢复速度 |
 | 数据 | 人生结构 | 已实现 | `lifeStats.ts` | 统计取决于任务分类和长期目标关联质量 |
-| 数据 | 健康准备 | 预留 | `healthMetrics.ts`、`LogPage.tsx` | 睡眠、HRV、穿戴设备尚未形成正式接入闭环 |
+| 数据 | 生活事件准备 | 部分实现 | `domain/life-controller/*`、`life_events` | 首页已形成睡眠/进食最小闭环；数据页趋势、HRV 与穿戴设备仍未实现 |
 | 数据 | 长期趋势 | 部分实现 | `LogPage.tsx` | 当前有基础汇总，月度/年度演化仍在扩展 |
 | 数据 | AI 第三人称洞察 | 部分实现 | `reviewPrompt.ts`、`AIReviewPanel.tsx` | 依赖 AI 配置与足够的任务/压力历史 |
 | 档案 | 生命日志、成就和重要状态 | 已实现 | `ActivityLog.tsx`、`AchievementsPanel.tsx` | 低信息量重复记录会折叠 |

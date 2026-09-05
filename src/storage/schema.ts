@@ -1,8 +1,10 @@
 import type { Achievement, AIArtifact, Goal, PressureCalibrationSnapshot, PressureHistoryRecord, Task, UserProfile } from '../types/task';
+import type { LifeEventStore } from '../types/lifeController';
+import { normalizeLifeEventStore } from '../domain/life-controller';
 
 export const APP_NAME = 'Visual Deadline';
 const LEGACY_APP_NAMES = ['Visualized-Deadline'] as const;
-export const SCHEMA_VERSION = '0.8';
+export const SCHEMA_VERSION = '0.9';
 export const STORAGE_CHANGE_EVENT = 'vd-storage-change';
 export const STORAGE_RECOVERY_EVENT = 'vd-storage-recovery';
 
@@ -36,6 +38,7 @@ export const storageKeys = {
   roadmaps: 'visualized-deadline.roadmaps',
   lifeMapNodes: 'visualized-deadline.lifeMap.nodes',
   lifeMapLayoutVersion: 'visualized-deadline.lifeMap.layoutVersion',
+  lifeEventsByOwner: 'visualized-deadline.lifeController.eventsByOwner',
   socialNodes: 'visualized-deadline.social.nodes',
   socialLayoutVersion: 'visualized-deadline.social.layoutVersion',
   backupLatest: 'vd_backup_latest',
@@ -53,6 +56,10 @@ export interface PressureExportData {
 export interface LifeMapExportData {
   nodes: unknown[];
   layoutVersion: number;
+}
+
+export interface LifeControllerExportData {
+  eventsByOwner: LifeEventStore;
 }
 
 export interface SocialExportData {
@@ -76,6 +83,7 @@ export interface VisualizedDeadlineData {
   pressure: PressureExportData;
   social: SocialExportData;
   lifeMap: LifeMapExportData;
+  lifeController: LifeControllerExportData;
   logs: LogsExportData;
   settings: SettingsExportData;
   metadata: {
@@ -187,6 +195,7 @@ export function normalizeExportData(data: Partial<VisualizedDeadlineData> | unde
   const pressure = asRecord(data?.pressure);
   const social = asRecord(data?.social);
   const lifeMap = asRecord(data?.lifeMap);
+  const lifeController = asRecord(data?.lifeController);
   const logs = asRecord(data?.logs);
   const settings = asRecord(data?.settings);
 
@@ -205,6 +214,9 @@ export function normalizeExportData(data: Partial<VisualizedDeadlineData> | unde
     lifeMap: {
       nodes: asArray(lifeMap?.nodes),
       layoutVersion: asNumber(lifeMap?.layoutVersion),
+    },
+    lifeController: {
+      eventsByOwner: normalizeLifeEventStore(lifeController?.eventsByOwner),
     },
     logs: {
       achievements: asArray(logs?.achievements) as Achievement[],
