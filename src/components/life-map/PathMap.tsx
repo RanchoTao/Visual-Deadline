@@ -3,18 +3,262 @@ import { Background, Controls, ReactFlow, type Edge, type Node } from '@xyflow/r
 import { projectLifeData } from '../../lib/lifeViews';
 import type { GoalDependency, LifeNode } from '../../types/lifePlanning';
 import type { Goal, Task } from '../../types/task';
-interface Props { goals:Goal[];tasks:Task[];savedNodes:LifeNode[];dependencies:GoalDependency[];onNodesChange:(v:LifeNode[])=>void }
-const pathLabels={active:'推进中',paused:'已暂停',abandoned:'已放弃',completed:'已完成',future:'未来规划'} as const;
-const statusLabels={focus:'当前主攻',secondary:'并行推进',maintenance:'维持',waiting:'等待',blocked:'阻塞',opportunity:'探索',completed:'已完成',archived:'已归档'} as const;
-export function PathMap({goals,tasks,savedNodes,dependencies,onNodesChange}:Props){
- const [domain,setDomain]=useState('all'),[filter,setFilter]=useState('all'),[selectedId,setSelectedId]=useState<string>(),[editing,setEditing]=useState(false);
- const model=useMemo(()=>projectLifeData(goals,tasks,savedNodes,dependencies),[goals,tasks,savedNodes,dependencies]); const nodes=model.nodes; const selected=nodes.find(n=>n.id===selectedId);
- const paths=Array.from(new Set(nodes.map(n=>n.pathId||'main'))); const visible=nodes.filter(n=>(domain==='all'||n.domain===domain)&&(filter==='all'||(n.pathStatus||'active')===filter));
- const graphNodes:Node[]=visible.map((n)=>{const lane=Math.max(0,paths.indexOf(n.pathId||'main')), order=n.displayOrder??nodes.indexOf(n), state=n.pathStatus||'active';return{id:n.id,position:{x:80+order*230,y:70+lane*145},data:{label:<div><div className="flex justify-between gap-2 text-[9px] font-bold uppercase tracking-wider text-slate-400"><span>{n.pathName||(lane?'探索分支':'主线')}</span>{n.current?<b className="rounded-full bg-[#ef233c] px-2 py-0.5 text-white">当前位置</b>:null}</div><strong className="mt-2 block max-w-44 whitespace-normal break-words text-sm leading-5 text-slate-800">{n.title}</strong><span className="mt-2 block text-[9px] text-slate-500">{statusLabels[n.status]} · {pathLabels[state]}</span>{n.deadline?<time className="mt-1 block text-[9px] text-slate-400">{n.deadline.slice(0,10)}</time>:null}</div>},style:{width:205,padding:14,textAlign:'left',borderRadius:18,border:n.current?'2px solid #ef233c':state==='paused'||state==='abandoned'?'1px dashed #94a3b8':'1px solid #e2e8f0',background:state==='future'?'#f8fafc':'#fff',opacity:state==='abandoned'?.4:state==='paused'?.62:1,boxShadow:n.current?'0 10px 28px #fecdd3':'0 5px 18px #e2e8f080'}}});
- const ids=new Set(visible.map(n=>n.id));const graphEdges:Edge[]=[];visible.forEach(n=>{const source=n.predecessorId||n.parentId;if(source&&ids.has(source))graphEdges.push({id:`path-${source}-${n.id}`,source,target:n.id,animated:n.pathStatus==='active'});if(n.mergeTargetId&&ids.has(n.mergeTargetId))graphEdges.push({id:`merge-${n.id}`,source:n.id,target:n.mergeTargetId,animated:true})});model.dependencies.forEach(e=>{if(ids.has(e.sourceId)&&ids.has(e.targetId))graphEdges.push({id:e.id,source:e.sourceId,target:e.targetId})});
- const update=(id:string,change:Partial<LifeNode>)=>onNodesChange(nodes.map(n=>n.id===id?{...n,...change}:change.current?{...n,current:false}:n));
- const add=(parent?:LifeNode)=>{const id=crypto.randomUUID();const n:LifeNode={id,title:parent?'新的探索路线':'我的第一条主线',layer:parent?'phase':'direction',parentId:parent?.id,predecessorId:parent?.id,status:parent?'opportunity':'focus',domain:parent?.domain||'life',importance:parent?.importance||10,pathId:parent?id:'main',pathName:parent?'探索分支':'主线',pathStatus:parent?'future':'active',displayOrder:(parent?.displayOrder??-1)+1,current:!parent};onNodesChange([...nodes,n]);setSelectedId(id);setEditing(Boolean(parent))};
- return <section className="overflow-hidden rounded-[2rem] border border-slate-100 bg-white shadow-sm"><header className="flex flex-col gap-4 border-b p-5 lg:flex-row lg:items-end lg:justify-between"><div><p className="text-xs font-bold tracking-[.2em] text-[#ef233c]">LIFE OS · PATH MAP</p><h2 className="mt-2 text-2xl font-bold">路线如何演化、分叉与汇合</h2><p className="mt-2 text-sm text-slate-500">横向表示演化顺序而非精确时长；每一行是一条路线。</p></div><div className="flex gap-2"><select aria-label="领域筛选" value={domain} onChange={e=>setDomain(e.target.value)} className="rounded-xl border px-3 py-2 text-xs"><option value="all">全部领域</option>{Array.from(new Set(nodes.map(n=>n.domain))).map(d=><option key={d}>{d}</option>)}</select><select aria-label="路线状态筛选" value={filter} onChange={e=>setFilter(e.target.value)} className="rounded-xl border px-3 py-2 text-xs"><option value="all">全部状态</option>{Object.entries(pathLabels).map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></div></header>
- {!nodes.length?<div className="grid min-h-96 place-items-center p-8 text-center"><div><div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-rose-50 text-2xl text-[#ef233c]">⌁</div><h3 className="mt-5 font-bold">从第一条主线开始</h3><p className="mt-2 text-sm text-slate-500">创建当前真正推进的方向，再从节点分叉或合流。</p><button onClick={()=>add()} className="mt-5 rounded-full bg-[#ef233c] px-5 py-2.5 text-sm font-bold text-white">创建第一条主线</button></div></div>:<div className="h-[590px] min-w-[720px]"><ReactFlow nodes={graphNodes} edges={graphEdges} fitView selectedNodeId={selectedId} onNodeClick={(_,n)=>setSelectedId(n.id)}><Background/><Controls/></ReactFlow></div>}
- <footer className="flex flex-wrap gap-4 border-t bg-slate-50 px-5 py-3 text-[10px] text-slate-500"><span>🔴 当前位置 / 关键节点</span><span>虚线 + 淡化 = 暂停或放弃</span><span>浅灰 = 未来规划</span><span>动态连线 = 活跃路线 / 合流</span></footer>
- {selected?<aside className="fixed inset-y-0 right-0 z-50 w-full max-w-md overflow-y-auto border-l bg-white p-6 shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="path-title"><div className="flex justify-between gap-3"><div><span className="text-xs font-bold text-[#ef233c]">{selected.pathName||'主线'} · {pathLabels[selected.pathStatus||'active']}</span><h3 id="path-title" className="mt-2 break-words text-2xl font-bold">{selected.title}</h3></div><button aria-label="关闭详情" onClick={()=>setSelectedId(undefined)} className="h-9 w-9 rounded-full bg-slate-100">×</button></div>{editing?<div className="mt-6 space-y-4"><label className="block text-xs font-bold text-slate-500">标题<input value={selected.title} onChange={e=>update(selected.id,{title:e.target.value})} className="mt-2 w-full rounded-xl border px-3 py-2 text-sm"/></label><label className="block text-xs font-bold text-slate-500">路线名称<input value={selected.pathName||''} onChange={e=>update(selected.id,{pathName:e.target.value})} className="mt-2 w-full rounded-xl border px-3 py-2 text-sm"/></label><label className="block text-xs font-bold text-slate-500">路线状态<select value={selected.pathStatus||'active'} onChange={e=>update(selected.id,{pathStatus:e.target.value as LifeNode['pathStatus']})} className="mt-2 w-full rounded-xl border px-3 py-2 text-sm">{Object.entries(pathLabels).map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></label><label className="block text-xs font-bold text-slate-500">合流到<select value={selected.mergeTargetId||''} onChange={e=>update(selected.id,{mergeTargetId:e.target.value||undefined})} className="mt-2 w-full rounded-xl border px-3 py-2 text-sm"><option value="">不合流</option>{nodes.filter(n=>n.id!==selected.id).map(n=><option key={n.id} value={n.id}>{n.title}</option>)}</select></label></div>:<p className="mt-6 rounded-2xl bg-slate-50 p-4 text-sm leading-6 text-slate-600">{selected.description||selected.successCriteria||'此节点尚未添加说明。'}</p>}<div className="mt-6 flex flex-wrap gap-2"><button onClick={()=>setEditing(!editing)} className="rounded-full border px-4 py-2 text-xs font-bold">{editing?'完成编辑':'编辑详情'}</button><button onClick={()=>update(selected.id,{current:true,pathStatus:'active',status:'focus'})} className="rounded-full bg-[#ef233c] px-4 py-2 text-xs font-bold text-white">设为当前位置</button><button onClick={()=>add(selected)} className="rounded-full bg-slate-950 px-4 py-2 text-xs font-bold text-white">从这里创建分支</button></div></aside>:null}</section>}
+
+interface Props {
+  goals: Goal[];
+  tasks: Task[];
+  savedNodes: LifeNode[];
+  dependencies: GoalDependency[];
+  onNodesChange: (value: LifeNode[]) => void;
+}
+
+const pathLabels = {
+  active: '推进中',
+  paused: '已暂停',
+  abandoned: '已放弃',
+  completed: '已完成',
+  future: '未来规划',
+} as const;
+
+const statusLabels = {
+  focus: '当前主攻',
+  secondary: '并行推进',
+  maintenance: '维持',
+  waiting: '等待',
+  blocked: '阻塞',
+  opportunity: '探索',
+  completed: '已完成',
+  archived: '已归档',
+} as const;
+
+function nodeColor(node: LifeNode) {
+  if (node.current) return '#ef233c';
+  if (node.pathStatus === 'paused' || node.pathStatus === 'abandoned') return '#94a3b8';
+  if (node.pathStatus === 'future') return '#cbd5e1';
+  if (node.pathStatus === 'completed') return '#10b981';
+  return '#64748b';
+}
+
+export function PathMap({ goals, tasks, savedNodes, dependencies, onNodesChange }: Props) {
+  const [domain, setDomain] = useState('all');
+  const [filter, setFilter] = useState('all');
+  const [selectedId, setSelectedId] = useState<string>();
+  const [editing, setEditing] = useState(false);
+
+  const model = useMemo(
+    () => projectLifeData(goals, tasks, savedNodes, dependencies),
+    [goals, tasks, savedNodes, dependencies],
+  );
+  const nodes = model.nodes;
+  const selected = nodes.find((node) => node.id === selectedId);
+  const paths = Array.from(new Set(nodes.map((node) => node.pathId || 'main')));
+  const visible = nodes.filter(
+    (node) =>
+      (domain === 'all' || node.domain === domain) &&
+      (filter === 'all' || (node.pathStatus || 'active') === filter),
+  );
+
+  // VD ships a small local @xyflow/react compatibility layer rather than the
+  // upstream package. Its node renderer expects data.label/name/title to be text.
+  // Keep the rich state in textual metadata and the detail drawer instead of
+  // passing JSX through data.label (which previously caused `.slice` to crash).
+  const graphNodes: Node[] = visible.map((node) => {
+    const lane = Math.max(0, paths.indexOf(node.pathId || 'main'));
+    const order = node.displayOrder ?? nodes.indexOf(node);
+    const state = node.pathStatus || 'active';
+    const deadline = node.deadline ? ` · ${node.deadline.slice(0, 10)}` : '';
+    return {
+      id: node.id,
+      position: { x: 80 + order * 230, y: 70 + lane * 145 },
+      data: {
+        label: node.title,
+        description: `${node.pathName || (lane ? '探索分支' : '主线')} · ${statusLabels[node.status]} · ${pathLabels[state]}${deadline}`,
+        avatarInitial: node.current ? '●' : (node.pathName || (lane ? '支' : '主')).slice(0, 1),
+        color: nodeColor(node),
+      },
+      style: {
+        width: 205,
+        padding: 14,
+        textAlign: 'left',
+        borderRadius: 18,
+        border: node.current
+          ? '2px solid #ef233c'
+          : state === 'paused' || state === 'abandoned'
+            ? '1px dashed #94a3b8'
+            : '1px solid #e2e8f0',
+        background: state === 'future' ? '#f8fafc' : '#fff',
+        opacity: state === 'abandoned' ? 0.4 : state === 'paused' ? 0.62 : 1,
+        boxShadow: node.current ? '0 10px 28px #fecdd3' : '0 5px 18px #e2e8f080',
+      },
+    };
+  });
+
+  const ids = new Set(visible.map((node) => node.id));
+  const graphEdges: Edge[] = [];
+  visible.forEach((node) => {
+    const source = node.predecessorId || node.parentId;
+    if (source && ids.has(source)) {
+      graphEdges.push({
+        id: `path-${source}-${node.id}`,
+        source,
+        target: node.id,
+        animated: node.pathStatus === 'active',
+      });
+    }
+    if (node.mergeTargetId && ids.has(node.mergeTargetId)) {
+      graphEdges.push({
+        id: `merge-${node.id}`,
+        source: node.id,
+        target: node.mergeTargetId,
+        animated: true,
+      });
+    }
+  });
+  model.dependencies.forEach((edge) => {
+    if (ids.has(edge.sourceId) && ids.has(edge.targetId)) {
+      graphEdges.push({ id: edge.id, source: edge.sourceId, target: edge.targetId });
+    }
+  });
+
+  const update = (id: string, change: Partial<LifeNode>) =>
+    onNodesChange(
+      nodes.map((node) =>
+        node.id === id ? { ...node, ...change } : change.current ? { ...node, current: false } : node,
+      ),
+    );
+
+  const add = (parent?: LifeNode) => {
+    const id = crypto.randomUUID();
+    const node: LifeNode = {
+      id,
+      title: parent ? '新的探索路线' : '我的第一条主线',
+      layer: parent ? 'phase' : 'direction',
+      parentId: parent?.id,
+      predecessorId: parent?.id,
+      status: parent ? 'opportunity' : 'focus',
+      domain: parent?.domain || 'life',
+      importance: parent?.importance || 10,
+      pathId: parent ? id : 'main',
+      pathName: parent ? '探索分支' : '主线',
+      pathStatus: parent ? 'future' : 'active',
+      displayOrder: (parent?.displayOrder ?? -1) + 1,
+      current: !parent,
+    };
+    onNodesChange([...nodes, node]);
+    setSelectedId(id);
+    setEditing(Boolean(parent));
+  };
+
+  return (
+    <section className="overflow-hidden rounded-[2rem] border border-slate-100 bg-white shadow-sm">
+      <header className="flex flex-col gap-4 border-b p-5 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <p className="text-xs font-bold tracking-[.2em] text-[#ef233c]">LIFE OS · PATH MAP</p>
+          <h2 className="mt-2 text-2xl font-bold">路线如何演化、分叉与汇合</h2>
+          <p className="mt-2 text-sm text-slate-500">横向表示演化顺序而非精确时长；每一行是一条路线。</p>
+        </div>
+        <div className="flex gap-2">
+          <select
+            aria-label="领域筛选"
+            value={domain}
+            onChange={(event) => setDomain(event.target.value)}
+            className="rounded-xl border px-3 py-2 text-xs"
+          >
+            <option value="all">全部领域</option>
+            {Array.from(new Set(nodes.map((node) => node.domain))).map((value) => (
+              <option key={value}>{value}</option>
+            ))}
+          </select>
+          <select
+            aria-label="路线状态筛选"
+            value={filter}
+            onChange={(event) => setFilter(event.target.value)}
+            className="rounded-xl border px-3 py-2 text-xs"
+          >
+            <option value="all">全部状态</option>
+            {Object.entries(pathLabels).map(([id, label]) => (
+              <option key={id} value={id}>{label}</option>
+            ))}
+          </select>
+        </div>
+      </header>
+
+      {!nodes.length ? (
+        <div className="grid min-h-96 place-items-center p-8 text-center">
+          <div>
+            <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-rose-50 text-2xl text-[#ef233c]">⌁</div>
+            <h3 className="mt-5 font-bold">从第一条主线开始</h3>
+            <p className="mt-2 text-sm text-slate-500">创建当前真正推进的方向，再从节点分叉或合流。</p>
+            <button onClick={() => add()} className="mt-5 rounded-full bg-[#ef233c] px-5 py-2.5 text-sm font-bold text-white">创建第一条主线</button>
+          </div>
+        </div>
+      ) : (
+        <div className="h-[590px] min-w-[720px]">
+          <ReactFlow
+            nodes={graphNodes}
+            edges={graphEdges}
+            fitView
+            selectedNodeId={selectedId}
+            onNodeClick={(_, node) => setSelectedId(node.id)}
+          >
+            <Background />
+            <Controls />
+          </ReactFlow>
+        </div>
+      )}
+
+      <footer className="flex flex-wrap gap-4 border-t bg-slate-50 px-5 py-3 text-[10px] text-slate-500">
+        <span>🔴 当前位置 / 关键节点</span>
+        <span>虚线 + 淡化 = 暂停或放弃</span>
+        <span>浅灰 = 未来规划</span>
+        <span>动态连线 = 活跃路线 / 合流</span>
+      </footer>
+
+      {selected ? (
+        <aside className="fixed inset-y-0 right-0 z-50 w-full max-w-md overflow-y-auto border-l bg-white p-6 shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="path-title">
+          <div className="flex justify-between gap-3">
+            <div>
+              <span className="text-xs font-bold text-[#ef233c]">{selected.pathName || '主线'} · {pathLabels[selected.pathStatus || 'active']}</span>
+              <h3 id="path-title" className="mt-2 break-words text-2xl font-bold">{selected.title}</h3>
+            </div>
+            <button aria-label="关闭详情" onClick={() => setSelectedId(undefined)} className="h-9 w-9 rounded-full bg-slate-100">×</button>
+          </div>
+
+          {editing ? (
+            <div className="mt-6 space-y-4">
+              <label className="block text-xs font-bold text-slate-500">
+                标题
+                <input value={selected.title} onChange={(event) => update(selected.id, { title: event.target.value })} className="mt-2 w-full rounded-xl border px-3 py-2 text-sm" />
+              </label>
+              <label className="block text-xs font-bold text-slate-500">
+                路线名称
+                <input value={selected.pathName || ''} onChange={(event) => update(selected.id, { pathName: event.target.value })} className="mt-2 w-full rounded-xl border px-3 py-2 text-sm" />
+              </label>
+              <label className="block text-xs font-bold text-slate-500">
+                路线状态
+                <select value={selected.pathStatus || 'active'} onChange={(event) => update(selected.id, { pathStatus: event.target.value as LifeNode['pathStatus'] })} className="mt-2 w-full rounded-xl border px-3 py-2 text-sm">
+                  {Object.entries(pathLabels).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+                </select>
+              </label>
+              <label className="block text-xs font-bold text-slate-500">
+                合流到
+                <select value={selected.mergeTargetId || ''} onChange={(event) => update(selected.id, { mergeTargetId: event.target.value || undefined })} className="mt-2 w-full rounded-xl border px-3 py-2 text-sm">
+                  <option value="">不合流</option>
+                  {nodes.filter((node) => node.id !== selected.id).map((node) => <option key={node.id} value={node.id}>{node.title}</option>)}
+                </select>
+              </label>
+            </div>
+          ) : (
+            <p className="mt-6 rounded-2xl bg-slate-50 p-4 text-sm leading-6 text-slate-600">{selected.description || selected.successCriteria || '此节点尚未添加说明。'}</p>
+          )}
+
+          <div className="mt-6 flex flex-wrap gap-2">
+            <button onClick={() => setEditing(!editing)} className="rounded-full border px-4 py-2 text-xs font-bold">{editing ? '完成编辑' : '编辑详情'}</button>
+            <button onClick={() => update(selected.id, { current: true, pathStatus: 'active', status: 'focus' })} className="rounded-full bg-[#ef233c] px-4 py-2 text-xs font-bold text-white">设为当前位置</button>
+            <button onClick={() => add(selected)} className="rounded-full bg-slate-950 px-4 py-2 text-xs font-bold text-white">从这里创建分支</button>
+          </div>
+        </aside>
+      ) : null}
+    </section>
+  );
+}
