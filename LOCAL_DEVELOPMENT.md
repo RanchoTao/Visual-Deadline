@@ -4,10 +4,13 @@
 
 This Windows machine uses native PowerShell for these existing checkouts, rather than moving or duplicating them in WSL:
 
+- Workspace entry point: `C:\Users\RanchoTao\Desktop\vd-workspace`
 - Production: `C:\Users\RanchoTao\Desktop\Visual-Deadline`
 - Reference: `C:\Users\RanchoTao\Desktop\WAYLINE\Wayline`
 
 The outer `C:\Users\RanchoTao\Desktop\WAYLINE` tree is separate and has its own work; do not use it as the active Wayline checkout.
+
+`vd-workspace\\visualdeadline` and `vd-workspace\\wayline` are Windows junctions to those existing checkouts. They provide a stable logical workspace layout without duplicating repositories; Git still reports the original physical checkout paths.
 
 Native Windows was chosen because both verified repositories already live there. WSL2's `docker-desktop` distribution is stopped and no user Linux development distribution was found.
 
@@ -16,7 +19,7 @@ Native Windows was chosen because both verified repositories already live there.
 Open PowerShell and enter the production repository:
 
 ```powershell
-Set-Location C:\Users\RanchoTao\Desktop\Visual-Deadline
+Set-Location C:\Users\RanchoTao\Desktop\vd-workspace\visualdeadline
 .\scripts\new-feature.ps1 wayline-integration
 codex
 ```

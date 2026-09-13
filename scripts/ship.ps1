@@ -26,10 +26,19 @@ if ($ahead.Count -eq 0) {
 }
 
 git push --set-upstream origin $branch
-$existing = gh pr view --head $branch --json url --jq '.url' 2>$null
+$gh = (Get-Command gh -ErrorAction SilentlyContinue).Source
+if ([string]::IsNullOrWhiteSpace($gh)) {
+    $installedGh = 'C:\Program Files\GitHub CLI\gh.exe'
+    if (Test-Path -LiteralPath $installedGh) { $gh = $installedGh }
+}
+if ([string]::IsNullOrWhiteSpace($gh)) {
+    throw 'GitHub CLI is not available. Install GitHub CLI, restart the terminal, then run gh auth login.'
+}
+
+$existing = & $gh pr view --head $branch --json url --jq '.url' 2>$null
 if ($LASTEXITCODE -eq 0 -and $existing) {
     Write-Host "Pull request: $existing"
     exit 0
 }
 
-gh pr create --base $defaultBranch --head $branch --fill
+& $gh pr create --base $defaultBranch --head $branch --fill
