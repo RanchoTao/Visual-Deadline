@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "typecheck": "tsc -b",
     "test": "npm run test:life-controller",
-    "test:life-controller": "tsc -p tests/tsconfig.life-controller.json && node --test tests/lifeController.test.mjs"
+    "test:life-controller": "tsc -p tests/tsconfig.life-controller.json && node --test tests/lifeController.test.mjs && node --test tests/planningDomain.test.mjs"
   },
   "dependencies": {
     "react": "latest",
