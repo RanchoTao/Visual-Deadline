@@ -1,4 +1,4 @@
-import type { ActivityType, Importance } from './task';
+import type { ActivityType, Importance } from './task.js';
 
 export type GoalLayer = 'direction' | 'long_term' | 'stage' | 'phase' | 'milestone' | 'task';
 export type GoalStatus = 'focus' | 'secondary' | 'maintenance' | 'waiting' | 'blocked' | 'opportunity' | 'completed' | 'archived';

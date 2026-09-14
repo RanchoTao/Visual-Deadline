@@ -1,0 +1,12 @@
+import type { ExecutionCapture, ExecutionProject, ExecutionTask } from './types.js';
+
+export function materializeExecutionCapture(capture: ExecutionCapture, now: string, idFactory: (prefix: string) => string): { projects: ExecutionProject[]; tasks: ExecutionTask[] } {
+  const projectId = capture.result.actionable ? undefined : idFactory('project');
+  const parentTaskId = capture.result.actionable ? undefined : idFactory('parent');
+  const projects: ExecutionProject[] = projectId ? [{ id: projectId, title: capture.result.title, description: capture.result.description, createdAt: now, deadline: capture.result.deadline, importance: capture.result.importance ?? 7, status: 'active', sourceCaptureId: capture.id }] : [];
+  const parent: ExecutionTask[] = parentTaskId ? [{ id: parentTaskId, title: capture.result.title, description: capture.result.description, projectId, goalIds: projectId ? [projectId] : [], createdAt: now, deadline: capture.result.deadline, importance: capture.result.importance ?? 7, progress: 0, status: 'ready', actionable: false, dependencies: [], source: capture.inputType, sourceCaptureId: capture.id, createdByAI: true }] : [];
+  const ids = capture.result.suggestedTasks.map(() => idFactory('task'));
+  const children = capture.result.suggestedTasks.map((suggestion, index): ExecutionTask => ({ id: ids[index], title: suggestion.title, description: suggestion.description, projectId, goalIds: projectId ? [projectId] : [], parentTaskId, createdAt: now, deadline: capture.result.deadline, importance: suggestion.importance, estimatedMinutes: suggestion.estimatedMinutes, completedMinutes: 0, progress: 0, status: 'ready', actionable: suggestion.actionable, dependencies: (suggestion.dependsOnIndexes ?? []).map((dependencyIndex) => ids[dependencyIndex]).filter((id): id is string => Boolean(id)), source: capture.result.actionable ? capture.inputType : 'ai', sourceCaptureId: capture.id, createdByAI: !capture.result.actionable }));
+  const direct: ExecutionTask[] = capture.result.actionable && !capture.result.suggestedTasks.length ? [{ id: idFactory('task'), title: capture.result.title, description: capture.result.description, goalIds: [], createdAt: now, deadline: capture.result.deadline, importance: capture.result.importance ?? 7, estimatedMinutes: capture.result.estimatedDuration, completedMinutes: 0, progress: 0, status: 'ready', actionable: true, dependencies: [], source: capture.inputType, sourceCaptureId: capture.id, createdByAI: false }] : [];
+  return { projects, tasks: [...parent, ...children, ...direct] };
+}

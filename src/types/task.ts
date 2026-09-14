@@ -159,8 +159,8 @@ export interface Goal {
   priority: Importance;
   linkedTaskIds: string[];
   roadmapSuggestions?: string[];
-  lifeLayer?: import('./lifePlanning').GoalLayer;
-  planningStatus?: import('./lifePlanning').GoalStatus;
+  lifeLayer?: import('./lifePlanning.js').GoalLayer;
+  planningStatus?: import('./lifePlanning.js').GoalStatus;
   startDate?: string;
   createdAt: string;
   updatedAt: string;
