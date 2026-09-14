@@ -41,6 +41,7 @@ import { createDailyReviewFromQuest, generateDailyQuest } from './utils/dailyQue
 import { deleteCloudLifeEvent, loadCloudData, loadCloudLifeEvents, saveCloudGoals, saveCloudPressureHistory, saveCloudProfile, saveCloudTasks, upsertCloudLifeEvents } from './lib/cloudSync';
 import { hasValue, loadValue, savePressure, saveTasks, saveValue, storageKeys } from './storage';
 import { createDefaultLifePreferences, createLifeEvent, deriveLifeState, getLifeEventsForOwner, mergeLifeEvents, planLifeController, setLifeEventsForOwner, undoLatestLifeEvent as removeLatestLifeEvent } from './domain/life-controller';
+import { buildHomeRecommendationComparison } from './domain/execution/homeProjection';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const WELCOME_BACK_GAP_MS = 2 * 60 * 60 * 1000;
@@ -433,6 +434,10 @@ function App() {
   const normalizedPressureHistory = useMemo(() => normalizePressureHistory(pressureHistory), [pressureHistory]);
   const activeTasks = useMemo(() => sortActiveTasksByProgress(normalizedTasks.filter((task) => task.lifecycleStatus === 'active')), [normalizedTasks]);
   const recommendedTasks = useMemo(() => normalizedTasks.filter((task) => task.lifecycleStatus === 'active').sort((a, b) => getTaskScore(b) - getTaskScore(a)).slice(0, 3), [normalizedTasks]);
+  const homeRecommendationComparison = useMemo(
+    () => buildHomeRecommendationComparison(normalizedGoals, normalizedTasks, recommendedTasks),
+    [normalizedGoals, normalizedTasks, recommendedTasks],
+  );
   const deadlinePressureTasks = useMemo(() => activeTasks.filter(isDeadlinePressureTask).sort((a, b) => getTaskScore(b) - getTaskScore(a)), [activeTasks]);
   const pressure = useMemo<PressureBreakdown>(() => calculatePressureIndex(normalizedTasks, normalizedPressureCalibration, legacyReferencePressure, new Date(pressureClock)), [normalizedTasks, normalizedPressureCalibration, legacyReferencePressure, pressureClock]);
   const recalibrationPreview = useMemo<PressureBreakdown>(() => {
@@ -1115,7 +1120,7 @@ function App() {
   const profileModule = <ProfilePage profile={normalizedProfile} onProfileChange={setProfile} isEmailVerified={Boolean(session?.user.email_confirmed_at)} />;
 
   const moduleContent: Record<LifeOSModule, ReactElement> = {
-    home: <HomePage recommendedTasks={recommendedTasks} activeTasks={activeTasks} onOpenTasks={() => setActiveModule('task')} lifeState={lifeState} lifePlan={lifePlan} lifeEvents={lifeEvents} lifePreferences={lifePreferences} onRecordLifeEvent={recordLifeEvent} onUndoLifeEvent={undoLatestLifeEvent} lifeEventSyncStatus={lifeEventSyncStatus} />,
+    home: <HomePage recommendedTasks={recommendedTasks} recommendationComparison={homeRecommendationComparison} activeTasks={activeTasks} onOpenTasks={() => setActiveModule('task')} lifeState={lifeState} lifePlan={lifePlan} lifeEvents={lifeEvents} lifePreferences={lifePreferences} onRecordLifeEvent={recordLifeEvent} onUndoLifeEvent={undoLatestLifeEvent} lifeEventSyncStatus={lifeEventSyncStatus} />,
     task: taskModule,
     map: <LifeMapPage goals={normalizedGoals} tasks={normalizedTasks} roadmaps={roadmaps} onSaveRoadmap={(roadmap) => setRoadmaps((current) => [roadmap, ...current])} onSaveGoal={saveGoal} onDeleteGoal={deleteGoal} onAddTasks={addTaskDrafts} onCompleteTask={(task) => archiveTask(task, 'completed')} onRoadmapGenerated={(artifact) => { saveAIArtifact(artifact); unlockAchievement('roadmap-generated'); }} />,
     social: <SocialPage storedNodes={socialNodes} setStoredNodes={setSocialNodes} layoutVersion={socialLayoutVersion} setLayoutVersion={setSocialLayoutVersion} />,
