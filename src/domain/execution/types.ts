@@ -1,5 +1,5 @@
 export type ExecutionStatus = 'ready' | 'in_progress' | 'done' | 'cancelled' | 'deferred';
-export type ExecutionSource = 'manual' | 'text' | 'voice' | 'image' | 'document' | 'ai' | 'review' | 'legacy-vd';
+export type ExecutionSource = 'manual' | 'text' | 'voice' | 'image' | 'document' | 'ai' | 'review' | 'demo' | 'legacy' | 'legacy-vd';
 
 export interface ExecutionProject {
   id: string;

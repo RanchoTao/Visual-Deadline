@@ -67,6 +67,6 @@ assert.equal(applyReviewSuggestion(reviewTasks, suggestions[0]).find((item) => i
 assert.equal(applyReviewSuggestion(reviewTasks, suggestions[1]).find((item) => item.id === 'late').status, 'deferred');
 
 const legacy = migrateLegacyWorkspaceProject({ id: 'legacy', title: 'Legacy project', createdAt: iso(-86400000), deadline: iso(86400000), status: 'active', source: 'agent', tasks: [{ id: 'legacy-task', title: 'Legacy task', priority: 'critical', estimatedHours: 2, completedHours: .5, progress: .25, status: 'todo', dependencies: [] }] });
-assert.equal(legacy.tasks[0].id, 'legacy-task'); assert.equal(legacy.tasks[0].estimatedMinutes, 120); assert.equal(legacy.tasks[0].progress, 25); assert.equal(legacy.tasks[0].createdByAI, true);
+assert.equal(legacy.tasks[0].id, 'legacy-task'); assert.equal(legacy.tasks[0].estimatedMinutes, 120); assert.equal(legacy.tasks[0].progress, 25); assert.equal(legacy.tasks[0].source, 'legacy'); assert.equal(legacy.tasks[0].createdByAI, true);
 
 console.log('Wayline execution parity scenarios passed.');
