@@ -13,7 +13,9 @@
     "noEmit": false
   },
   "include": [
+    "../src/types/task.ts",
     "../src/types/lifeController.ts",
-    "../src/domain/life-controller/**/*.ts"
+    "../src/domain/life-controller/**/*.ts",
+    "../src/domain/execution/**/*.ts"
   ]
 }
