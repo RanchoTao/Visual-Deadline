@@ -10,7 +10,7 @@ Scale: likelihood and impact are `Low / Medium / High / Critical`. “Gate” is
 | R-04 | Core text IDs conflict with UUID relationships such as `roadmaps.goal_id` | High | High | Referential dry-run report | UUID canonical IDs plus legacy ref ledger; quarantine unresolved | Legacy read remains available | Zero unexplained relationship loss |
 | R-05 | Three ranking formulas yield different “next” work | High | High | Shadow comparison across real/synthetic fixtures | One canonical eligibility/ranking service; explainable components | Feature flag to legacy selector | Defined parity threshold and reviewed differences |
 | R-06 | Changing pressure formula erodes product behavior | Medium | Critical | Boundary characterization corpus | Preserve VD pressure engine; merge only proven execution filters | Switch selector flag back | Frozen pressure tests |
-| R-07 | Daily Quest persists copied Task execution state and diverges | High | High | Task mutation then reload/review fixture | Store Task references/window state only | Legacy Daily Quest read-only | Same canonical IDs/status across NOW/OPS |
+| R-07 | Daily Quest persists copied Task execution state and diverges | High | High | Task mutation then reload/review fixture | Store Task references/projection state only | Legacy Daily Quest read-only | Same canonical IDs/status across NOW/TASKS |
 | R-08 | Roadmap, LifeNode, Goal, Milestone-like layers and Tasks duplicate hierarchy | High | Critical | Entity/link inventory and graph audit | Type-specific candidate mapping; projections over canonical model | Keep legacy graph read-only | Mapping preview and unresolved quarantine |
 | R-09 | Plan acceptance partially writes Tasks | Medium | Critical | Interrupt after each command | Transactional command diff, idempotency, plan decision state | Resume/revert via recorded before/after commands | Accept/reject atomicity suite |
 | R-10 | `App.tsx` extraction changes initialization/sync order | High | High | StrictMode/reload/rapid auth tests | Strangler interfaces and one concern per PR | Revert extraction; no schema dependency | Behavior characterization |
@@ -41,12 +41,18 @@ Scale: likelihood and impact are `Low / Medium / High / Critical`. “Gate” is
 | R-35 | Missing webhook produces stale entitlement | Medium | Critical | Scheduled reconciliation diff | Provider reconciliation using same projector | Manual replay/reconcile | Missed-event recovery test |
 | R-36 | Notification rows exist but runtime remains local/seeded, causing duplicates | High | Medium | Cross-device/read-unread test | Durable dedupe keys and one repository | Disable server producers, retain local inbox | Delivery/read idempotency |
 | R-37 | Cleanup deletes legacy data in same release that disables reads | Medium | Critical | PR/deployment review | Separate releases and observation window | Re-enable legacy reads | Zero fallback telemetry + restore drill |
+| R-38 | OPS is treated as a renamed Task page and takes CRUD/matrix/list ownership from TASKS | High | High | Page contract and route/component audit | Enforce TASKS owner for generic Task state; OPS consumes Tasks for scheduling only | Disable OPS route/feature flag | No generic Task CRUD/matrix/list implementation owned by OPS |
+| R-39 | PLAN retains runtime Resource Budget/Allocation/Execution Window ownership | Medium | High | Domain import and page dependency audit | Split long-term planner from operations planner; move runtime resource types to OPS | Keep resource scheduling disabled | PLAN tests contain no runtime allocation ownership |
+| R-40 | Complete target schema becomes an accidental Beta prerequisite | High | High | Migration/launch checklist audit | Label Beta-required versus later/deferred; introduce tables only with consuming surface | Skip/deactivate deferred migrations | Beta succeeds without OPS/REVIEW future tables |
+| R-41 | Profile/Settings/Billing/Notifications reappear as a `ME` primary route | Medium | High | Exact navigation inventory on desktop/mobile | Global avatar, membership, and bell surfaces with no primary `ME` route | Restore corrected navigation contract | Primary routes equal NOW/TASKS/PLAN/OPS/REVIEW exactly |
 
 ## Highest-priority blockers
 
 The following block any automated data migration: R-01, R-02, R-03, R-04, R-08, R-21, and R-22.
 
 The following block public Auth/Billing launch: R-16 through R-20 and R-29 through R-35.
+
+R-38 through R-41 block page-shell and Beta-scope acceptance even when no data migration occurs.
 
 ## Risk review cadence
 

@@ -13,12 +13,19 @@ Runtime impact of this document set: **none**
 VisualDeadline v2 is one life-execution product with five primary pages:
 
 1. **NOW** — what to do now, current pressure/state, and fast capture.
-2. **PLAN** — Goal → Milestone → Task decomposition, dependency-aware planning, and resource allocation.
-3. **OPS** — operational task execution: matrix, filters, progress, dependencies, and bulk maintenance.
-4. **REVIEW** — execution history, pressure and behavior trends, reviews, AI reports, and archived outcomes.
-5. **ME** — identity, preferences, subscription, privacy, backup/restore, and integrations.
+2. **TASKS** — all Task CRUD, urgency × importance matrix, full list, filters, lifecycle, progress, deadlines, dependencies, grouping, and archive.
+3. **PLAN** — Goal → Milestone → Task decomposition, long-term AI decomposition, Roadmap, Timeline, logical dependencies, and versioned plan proposals.
+4. **OPS** — rolling planning for competing work under finite time, attention, energy, capacity, commitments, and optional money/resource constraints.
+5. **REVIEW** — execution history, completion/delay analysis, pressure and behavior trends, reviews, AI reports/recommendations, and archived outcomes.
 
 Social is removed from primary navigation and retained behind a hidden Labs/feature flag until it has a validated role in the core loop. It is not deleted during the v2 migration.
+
+Profile, Account, Settings, Billing, and Notifications are global account surfaces, not a sixth primary page:
+
+- Avatar → Profile / Account / Settings
+- Avatar-left membership control → Subscription / Billing
+- Notification bell → Notifications
+- Settings → profile, account/security, preferences, privacy/data/export, AI settings, and integrations
 
 The product loop is:
 
@@ -36,8 +43,9 @@ No primary page owns a separate task truth, priority formula, or planning model.
 | Project | Not a v2 canonical entity. Wayline `Project` is an import/compatibility container mapped to Goal or Milestone after explicit review. |
 | Priority | One canonical pressure/priority engine. All ranked lists consume its output and may apply only declared eligibility filters. |
 | NOW | A bounded projection, not another task store. It presents at most one current action and a small next queue. |
-| PLAN | Creates versioned plan proposals. Only explicit acceptance may materialize or change canonical Tasks. |
-| OPS | The authoritative editing surface for Tasks, dependencies, lifecycle, and progress. |
+| TASKS | The authoritative editing surface for Tasks, dependencies, grouping, lifecycle, progress, deadlines, filters, matrix/list views, and archive. |
+| PLAN | Owns long-term decomposition, Roadmap, Timeline, logical milestones/dependencies, and versioned proposals. Only explicit acceptance may materialize or change canonical Tasks. It does not primarily own runtime resource allocation. |
+| OPS | Owns parallel scheduling, rolling plans/replans, execution windows, capacity, resource budgets/allocations, fixed commitments, and conflict handling. |
 | REVIEW | Derived analytics and append-only observations. It must not duplicate mutable Task or Goal state. |
 | Capture | Text, voice, image, and document share one intake envelope and one confirmation gate. |
 | AI | AI output is advisory/draft material with provenance. It cannot silently mutate canonical entities or entitlements. |
@@ -45,6 +53,7 @@ No primary page owns a separate task truth, priority formula, or planning model.
 | Identity | One user may have multiple verified identities. Guest import is explicit, previewable, idempotent, and recoverable. |
 | Billing | Paddle events are evidence; VD-owned subscription and entitlement records are product truth. Browser events never grant access. |
 | Navigation | Desktop and mobile expose the same five information-architecture destinations. Responsive layout may differ; semantics may not. |
+| Global account UI | Profile/Settings, Billing, and Notifications open from avatar, membership control, and bell. None is primary navigation. |
 
 ## Invariants
 
@@ -63,6 +72,7 @@ No primary page owns a separate task truth, priority formula, or planning model.
 - No deletion of Social data, Roadmaps, Daily Quest data, Life Controller events, or legacy JSONB rows before verified migration.
 - No production Supabase schema execution or Paddle catalog change from this document set.
 - No claim that phone auth, OAuth linking, recurring subscriptions, or guest migration already work.
+- No requirement to persist every future domain table before Beta. Persistence is staged as Beta-required versus later/deferred in [05_DATABASE_TARGET_SCHEMA.md](./05_DATABASE_TARGET_SCHEMA.md).
 
 ## Implementation gate
 

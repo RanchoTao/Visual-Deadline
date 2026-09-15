@@ -24,6 +24,8 @@ The divergence is semantic, not merely responsive:
 
 `LifeOSNav` also contains notification, membership modal, account menu, and sync affordances. `ProfilePage` renders another `MembershipPanel`, so billing has two full UI entry points.
 
+The target correction is not a label swap. The final primary destinations are `NOW / TASKS / PLAN / OPS / REVIEW`. Current Task CRUD/matrix/list behavior maps to TASKS. PLAN maps long-term decomposition/Roadmap/Timeline. OPS is a new resource-constrained parallel-work operating surface. Profile/Settings, Billing, and Notifications remain global account surfaces opened from avatar, membership control, and notification bell; none becomes a primary page.
+
 ## Home and task execution
 
 `App.tsx` calculates legacy Home recommendations by filtering active Tasks, sorting by `getTaskScore`, and taking three. `HomePage` renders:
@@ -116,4 +118,6 @@ AI configuration permits a browser-stored provider key and direct browser provid
 
 The strongest foundations to retain are the pressure model, confirmation boundary, Life Controller event/state separation, Wayline-derived pure execution domain, additive migrations, and webhook-authoritative entitlement principle.
 
-The primary architecture problem is ownership: navigation, ranking, planning, roadmap, daily execution, review, storage, and settings evolved in parallel. v2 should unify ownership through adapters and measured migrations, not replace all behavior at once.
+The primary architecture problem is ownership: navigation, ranking, Task management, long-term planning, runtime operations, roadmap, daily execution, review, storage, and settings evolved in parallel. v2 should unify ownership through adapters and measured migrations, not replace all behavior at once. In particular, TASKS owns generic Task state and OPS owns constrained parallel scheduling; combining those responsibilities would reproduce the current ambiguity.
+
+The audit also does not justify creating the entire target schema before Beta. Current product persistence and safe migration are Beta scope; OPS resource/allocation/window persistence waits for a consuming OPS runtime, and REVIEW event/report persistence waits for the durable REVIEW migration.

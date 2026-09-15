@@ -12,6 +12,7 @@ VisualDeadline currently has email/password auth, email verification callback/re
 - One product user can link multiple verified identities.
 - Guest data moves to an account through a previewable, idempotent import, never an implicit merge-and-replace.
 - Account recovery, unlinking, deletion, and audit events are designed before public rollout.
+- Auth and identity settings open from Avatar → Profile / Account / Settings. They are a global account surface, not a primary page.
 
 Supabase phone sign-in requires a configured provider and separates OTP request from verification: [Phone Login](https://supabase.com/docs/guides/auth/phone-login). Supabase can automatically link identities with the same verified email and offers manual linking via `linkIdentity` (documented as beta), so the product must account for provider limitations and recovery paths: [Identity Linking](https://supabase.com/docs/guides/auth/auth-identity-linking).
 
@@ -104,7 +105,7 @@ Create a local immutable snapshot before import. The inventory includes schema v
 
 - Server creates an `import_job` bound to the authenticated user and client request ID.
 - Each source record maps through `legacy_entity_refs` with a unique constraint.
-- Writes are small transactional batches ordered by dependencies: profile/preferences, Goals, Milestones, Tasks, edges, captures/events/reviews/reports, layouts.
+- Writes are small transactional batches ordered by dependencies. Beta imports only domains supported by the active persistence stage: profile/preferences, Goals, Milestones, Tasks, dependencies, current Capture data, and any enabled notification/billing continuity records. Deferred OPS resources and REVIEW events/reports are imported only when those owning surfaces activate durable persistence.
 - Progress is resumable. Retry reads the ledger and continues; it does not replay successful materializations.
 - Local data remains unchanged until cloud reconciliation passes. The user may download the snapshot at any time.
 - Completion compares counts, checksums, unresolved references, and representative reads under the user's RLS session.
@@ -139,3 +140,11 @@ Never log access/refresh tokens. Apply a strict CSP, audit dangerous HTML sinks,
 ## Rollback
 
 Provider flags can be disabled independently. The email flow remains available during rollout. Guest import is append-only/idempotent; disabling new imports does not invalidate completed mappings. Legacy local data and export remain available until the recovery window and reconciliation gates close.
+
+## Global account UI contract
+
+- Avatar opens Profile / Account / Settings.
+- Account/Security contains verified identities, provider links, sessions, recovery, and account deletion.
+- Settings contains preferences, privacy/data/export, AI settings, and integrations.
+- Billing may be linked from Settings but is owned by the separate global Subscription / Billing surface.
+- None of these destinations is part of `NOW / TASKS / PLAN / OPS / REVIEW` primary navigation.

@@ -38,7 +38,21 @@ Statuses: `ready`, `in_progress`, `deferred`, `done`, `cancelled`, `archived`. L
 
 An edge between Tasks. Required concepts: predecessor, successor, type, timestamps. Initial type: `blocks`; later types require an ADR. A task is executable only when every blocking predecessor is done and `startAfter` has passed.
 
-## Planning entities
+## PLAN entities
+
+PLAN owns long-term direction and decomposition: Goal → Milestone → Task, logical dependencies, Roadmap/Timeline projections, and versioned long-term proposals. It does not primarily own runtime capacity or resource allocation.
+
+### Long-term plan version
+
+An immutable PLAN proposal envelope with horizon, scope, status, generator, model/version if AI-assisted, assumptions, warnings, confidence, and a content checksum.
+
+Statuses: `proposed`, `accepted`, `rejected`, `superseded`, `overridden`.
+
+Accepting a long-term proposal executes an explicit command diff. The plan is not itself a mutable Task store.
+
+## OPS entities
+
+OPS owns rolling parallel-work decisions under finite real-world resources. These entities remain in the complete target model, but their physical persistence is deferred until OPS consumes them at runtime.
 
 ### Resource budget
 
@@ -48,17 +62,17 @@ A dated capacity statement: available minutes, attention capacity, energy, discr
 
 An accepted allocation of a resource budget to a Goal, Milestone, or Task within an execution window. Allocations must not exceed their budget without a recorded override.
 
-### Plan version
+### Operations plan version
 
-An immutable proposal envelope with horizon, scope, status, generator, model/version if AI-assisted, assumptions, warnings, confidence, and a content checksum.
+An immutable rolling schedule/replan proposal with capacity inputs, conflicts, trade-offs, allocations, generator, assumptions, warnings, confidence, and a content checksum.
 
 Statuses: `proposed`, `accepted`, `rejected`, `superseded`, `overridden`.
 
-Accepting a plan executes an explicit command diff. The plan is not itself a mutable Task store.
+Accepting an operations plan creates or supersedes execution windows and resource allocations. It does not take ownership of generic Task CRUD.
 
 ### Execution window
 
-A bounded time window representing NOW/NEXT/LATER placement or a scheduled block. It references Tasks and an accepted Plan Version. It never clones Task title, progress, or lifecycle as mutable truth.
+A bounded scheduled block for parallel execution. It references Tasks and an accepted Operations Plan Version. NOW may project the current action from these windows once OPS exists, but does not require an execution-window table during early Beta. A window never clones Task title, progress, or lifecycle as mutable truth.
 
 ## Capture entities
 
@@ -162,6 +176,17 @@ User
 | Roadmap `MILESTONE` node | Milestone candidate | Resolve Goal and links before materialization. |
 | Roadmap `TASK_GROUP` | Projection/group metadata | Not a canonical entity unless later promoted by ADR. |
 | LifeNode | Goal/Milestone projection metadata | Migrate only user-authored fields; demo records are discarded. |
-| DailyQuestItem | Execution Window membership + Task reference | Item status derives from Task/event state. |
+| DailyQuestItem | NOW projection + Task reference; later optional Execution Window reference | Item status derives from Task/event state; early Beta does not require OPS persistence. |
 | LifeEvent | Execution Event with observation namespace | Preserve original type, timestamp, metadata, and owner. |
 | membership grant | Entitlement source | Maintain exact validity interval for historical purchasers. |
+
+## Page ownership summary
+
+| Page/surface | Canonical ownership |
+| --- | --- |
+| NOW | Read-only heat zone, Top 3/current action projections plus Capture entry |
+| TASKS | Task CRUD, lifecycle, progress, deadlines, matrix/list/filter projections, dependencies, Goal/Milestone grouping, archive |
+| PLAN | Long-term hierarchy/decomposition, logical dependencies, Roadmap/Timeline projections, long-term proposal versions |
+| OPS | Resource Budgets/Allocations, Fixed Commitments, Execution Windows, rolling operations plans, conflicts and replan |
+| REVIEW | Execution history, Reviews, analysis, AI Reports/recommendations, archive projections |
+| Global account UI | Profile/Settings, Subscription/Billing, Notifications; not primary navigation |

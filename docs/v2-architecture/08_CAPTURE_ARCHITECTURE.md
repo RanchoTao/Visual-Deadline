@@ -78,7 +78,7 @@ Retry returns the same result. A partially failed materialization is resumed or 
 
 ### 6. Plan/execute
 
-New Tasks appear in OPS. They enter NOW only if canonical eligibility/ranking chooses them. New Goals/Milestones appear in PLAN. Capture does not promise scheduling.
+New Tasks appear in TASKS. They enter NOW only if canonical eligibility/ranking chooses them. New Goals/Milestones appear in PLAN. They enter OPS scheduling only when resource-aware operations are active. Capture does not promise scheduling or allocation.
 
 ## Provider interface
 
@@ -110,10 +110,12 @@ Guest captures use the same IDs and schema in local storage/IndexedDB. Binary as
 ## UX ownership
 
 - Global quick capture opens from every primary page.
-- OPS may preselect “Task”; PLAN may preselect “Goal/plan”; both still use the same pipeline.
+- TASKS may preselect “Task”; PLAN may preselect “Goal/plan”; both still use the same pipeline.
 - NOW shows a compact capture entry but does not implement a private compiler.
 - REVIEW shows materialized provenance and rejected/failed capture history only when useful.
-- ME owns provider/privacy/retention preferences.
+- Avatar → Settings owns provider/privacy/retention preferences.
+
+OPS does not own Capture or generic Task creation. It consumes confirmed canonical Tasks when building rolling schedules and resource allocations.
 
 ## Failure handling
 
@@ -137,3 +139,7 @@ Guest captures use the same IDs and schema in local storage/IndexedDB. Binary as
 - Asset path, MIME, size, checksum, quota, and ownership negative tests pass.
 - Provider outage leaves an editable manual path.
 - Capture provenance remains visible from the resulting entity and Review.
+
+## Persistence stage
+
+Beta requires only the current Capture path's durable owner, attachment metadata, confirmation state, and idempotent Task materialization. Separate multi-version interpretation/candidate tables are deferred until advanced extraction or provenance requirements exceed what safely extending the current intake/draft tables can provide.

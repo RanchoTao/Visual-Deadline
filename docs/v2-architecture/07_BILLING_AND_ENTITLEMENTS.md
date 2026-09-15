@@ -30,7 +30,7 @@ VD billing adapter -> billing_events + subscriptions + payment_references
 VD entitlement projector -> entitlements
         |
         v
-product authorization / ME status
+product authorization / global Billing status
 ```
 
 Paddle is provider-of-record for provider subscription and transaction state. VD owns the normalized Subscription projection and provider-independent Entitlements used by product code.
@@ -93,9 +93,11 @@ hasEntitlement(userId, capability, at) -> decision + source + validity
 
 It does not query Paddle, inspect a price ID, trust client state, or infer access from an order row. Capability examples are product-defined (`vd.plus`, feature-specific limits) and versioned separately from Paddle plans.
 
-## Customer self-service
+## Global Billing surface and customer self-service
 
-ME shows normalized plan/status/current period and recent payment references. Manage-payment/cancel actions open a short-lived Paddle customer portal session generated server-side. Portal tokens are not cached in VD. Local membership modals outside ME become a status badge/deep link.
+The membership control immediately left of the avatar opens Subscription / Billing. This global surface shows normalized plan/status/current period and recent payment references. Manage-payment/cancel actions open a short-lived Paddle customer portal session generated server-side. Portal tokens are not cached in VD. Settings may also link to Billing, but Billing is not a primary page and is not owned by TASKS, PLAN, OPS, or REVIEW.
+
+The global notification bell remains separate and opens Notifications; billing events may produce notifications, but the notification inbox does not become the billing source of truth.
 
 ## Sandbox and production separation
 
@@ -126,3 +128,7 @@ A scheduled server job compares active VD subscriptions with Paddle state, repai
 ## Rollback
 
 Recurring catalog flags can be disabled while legacy purchases and existing subscriptions continue through the billing adapter. Entitlement projection is rebuildable. No rollback deletes provider or financial evidence. If webhook processing is paused, events remain retryable and reconciliation restores state before access policy changes resume.
+
+## Persistence stage
+
+Recurring Subscription, Payment Reference, expanded Billing Event, and provider-independent Entitlement tables belong to the complete target model. They are Beta-required only if recurring Paddle subscriptions are included in the Beta launch. Otherwise, existing Billing v1 orders/grants/membership continuity is the Beta requirement and recurring persistence remains deferred until its own rollout PR.
