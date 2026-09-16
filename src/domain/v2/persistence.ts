@@ -1,0 +1,50 @@
+export type PersistenceStage = 'BETA_REQUIRED' | 'CONDITIONAL' | 'DEFERRED';
+
+export interface PersistenceCapability {
+  readonly id: string;
+  readonly stage: PersistenceStage;
+  readonly rationale: string;
+  readonly becomesRequiredWhen?: string;
+}
+
+/**
+ * Planning metadata only. This does not create tables or require a persistence
+ * implementation. Deferred capabilities remain outside the Beta runtime.
+ */
+export const V2_PERSISTENCE_STAGING = [
+  {
+    id: 'canonical_execution_core',
+    stage: 'BETA_REQUIRED',
+    rationale: 'Goal, Milestone, Task and dependency state needed by the current product, via canonical storage or a compatibility layer.',
+  },
+  {
+    id: 'advanced_capture_artifacts',
+    stage: 'CONDITIONAL',
+    rationale: 'Only durable capture evidence beyond the current confirmed-task flow needs separate persistence.',
+    becomesRequiredWhen: 'The Capture migration retains provider artifacts or resumable drafts.',
+  },
+  {
+    id: 'notifications',
+    stage: 'CONDITIONAL',
+    rationale: 'Notification preferences and delivery records are global account concerns.',
+    becomesRequiredWhen: 'The notification surface requires durable delivery state.',
+  },
+  {
+    id: 'recurring_billing',
+    stage: 'CONDITIONAL',
+    rationale: 'Billing is a global account surface and is not required by the domain contract.',
+    becomesRequiredWhen: 'A recurring subscription product is implemented.',
+  },
+  {
+    id: 'ops_resource_model',
+    stage: 'DEFERRED',
+    rationale: 'Resource budgets, allocations and execution windows are not Beta storage requirements.',
+    becomesRequiredWhen: 'OPS consumes durable resource and execution-window data.',
+  },
+  {
+    id: 'review_history',
+    stage: 'DEFERRED',
+    rationale: 'Execution events, reviews and reports are not Beta storage requirements.',
+    becomesRequiredWhen: 'REVIEW migration requires durable history.',
+  },
+] as const satisfies readonly PersistenceCapability[];
