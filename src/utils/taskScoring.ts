@@ -1,5 +1,5 @@
-import { calculateRawPressure, calculateRealtimePressure, calculateTaskPressure, calculateUrgency, calibratePressure } from '../lib/pressureEngine';
-import type { ActivityType, AchievementCategory, AchievementDefinition, Importance, LifecycleStatus, PressureBreakdown, PressureCalibrationSnapshot, PressureState, Task } from '../types/task';
+import { calculateRawPressure, calculateRealtimePressure, calculateTaskPressure, calculateUrgency, calibratePressure } from '../lib/pressureEngine.js';
+import type { ActivityType, AchievementCategory, AchievementDefinition, Importance, LifecycleStatus, PressureBreakdown, PressureCalibrationSnapshot, PressureState, Task } from '../types/task.js';
 
 const MS_PER_HOUR = 60 * 60 * 1000;
 const MS_PER_DAY = 24 * MS_PER_HOUR;
@@ -114,6 +114,13 @@ export function getItemPressure(task: Task, now = new Date()): number {
 
 export function getTaskScore(task: Task, now = new Date()): number {
   return calculateTaskPressure(task, now) * 10 + task.importance;
+}
+
+/** Frozen PriorityMap mobile Top 5 behavior for shadow comparison and rollback. */
+export function getLegacyPriorityMapTopTasks(tasks: readonly Task[], now = new Date(), limit = 5): Task[] {
+  return [...tasks]
+    .sort((left, right) => getUrgencyScore(right.deadline, now) + right.importance * 10 - getUrgencyScore(left.deadline, now) - left.importance * 10)
+    .slice(0, limit);
 }
 
 export function isTaskComplete(task: Task): boolean {

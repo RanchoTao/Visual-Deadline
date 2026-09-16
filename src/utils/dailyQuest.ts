@@ -1,4 +1,4 @@
-import type { DailyQuest, DailyQuestItem, DailyQuestItemType, DailyReview, Importance, Task } from '../types/task';
+import type { DailyQuest, DailyQuestItem, DailyQuestItemType, DailyReview, Importance, Task } from '../types/task.js';
 
 const MAX_BY_TYPE: Record<DailyQuestItemType, number> = { main: 3, daily: 3, side: 2, recovery: 1 };
 const SAFE_RECOVERY_ITEM: DailyQuestItem = {
@@ -27,9 +27,9 @@ function deadlineTime(task: Task): number {
   return Number.isFinite(time) ? time : Number.POSITIVE_INFINITY;
 }
 
-function classifyTask(task: Task): DailyQuestItemType {
+function classifyTask(task: Task, now: Date): DailyQuestItemType {
   if (task.activityType === 'recovery') return 'recovery';
-  if (task.importance >= 8 || deadlineTime(task) - Date.now() < 3 * 24 * 60 * 60 * 1000) return 'main';
+  if (task.importance >= 8 || deadlineTime(task) - now.getTime() < 3 * 24 * 60 * 60 * 1000) return 'main';
   if (['study', 'fitness', 'exercise', 'work'].includes(task.activityType)) return 'daily';
   return 'side';
 }
@@ -39,12 +39,12 @@ function safeEstimatedMinutes(task: Task): number {
   return Math.min(90, Math.max(30, Math.round(raw)));
 }
 
-function toQuestItem(task: Task, carried = false): DailyQuestItem {
+function toQuestItem(task: Task, now: Date, carried = false): DailyQuestItem {
   const estimatedMinutes = safeEstimatedMinutes(task);
   return {
     id: `${carried ? 'carried' : 'quest'}-${task.id}-${estimatedMinutes}`,
     title: `${carried ? '延续：' : ''}${task.title}`,
-    type: classifyTask(task),
+    type: classifyTask(task, now),
     currentValue: 0,
     targetValue: estimatedMinutes,
     unit: 'min',
@@ -80,8 +80,8 @@ function buildCorrection(items: DailyQuestItem[], previousReview?: DailyReview) 
   };
 }
 
-export function generateDailyQuest(tasks: Task[], previousReview?: DailyReview): DailyQuest {
-  const today = getDateKey();
+export function generateDailyQuest(tasks: Task[], previousReview?: DailyReview, now = new Date()): DailyQuest {
+  const today = getDateKey(now);
   const limits = completionHint(previousReview);
   const selected: DailyQuestItem[] = [];
   const counts: Record<DailyQuestItemType, number> = { main: 0, daily: 0, side: 0, recovery: 0 };
@@ -97,7 +97,7 @@ export function generateDailyQuest(tasks: Task[], previousReview?: DailyReview):
     .filter((task) => task.lifecycleStatus === 'active' && task.progress < 100)
     .sort((left, right) => deadlineTime(left) - deadlineTime(right) || right.importance - left.importance || left.progress - right.progress)
     .forEach((task) => {
-      const item = toQuestItem(task);
+      const item = toQuestItem(task, now);
       if (selected.some((candidate) => candidate.sourceTaskId === item.sourceTaskId)) return;
       if (counts[item.type] >= limits[item.type]) return;
       selected.push(item);

@@ -1,7 +1,7 @@
 import { type CSSProperties, useEffect, useMemo, useState } from 'react';
 import type { Task } from '../types/task';
 import { formatCountdown, formatDeadline } from '../utils/date';
-import { getActivityTypeLabel, getDisplayProgress, getTaskProgress, getImportancePosition, getPulseDuration, getRecommendationReason, getUrgencyPosition, getUrgencyScore, getTimeProgress, isProgressAuto, isTaskActive, isTaskComplete } from '../utils/taskScoring';
+import { getActivityTypeLabel, getDisplayProgress, getTaskProgress, getImportancePosition, getLegacyPriorityMapTopTasks, getPulseDuration, getRecommendationReason, getUrgencyPosition, getUrgencyScore, getTimeProgress, isProgressAuto, isTaskActive, isTaskComplete } from '../utils/taskScoring';
 import { ProgressBar } from './ProgressBar';
 
 interface PriorityMapProps {
@@ -144,7 +144,7 @@ export function PriorityMap({ tasks, onEditTask, onCompleteTask, onDeleteTask }:
   const [now, setNow] = useState(() => new Date());
   const positionedTasks = useMemo(() => tasks.map(getPositionedTask), [tasks]);
   const mobileClusters = useMemo(() => clusterPositionedTasks(positionedTasks), [positionedTasks]);
-  const topTasks = useMemo(() => [...tasks].sort((left, right) => getUrgencyScore(right.deadline) + right.importance * 10 - getUrgencyScore(left.deadline) - left.importance * 10).slice(0, 5), [tasks]);
+  const topTasks = useMemo(() => getLegacyPriorityMapTopTasks(tasks), [tasks]);
   const [hoverTaskId, setHoverTaskId] = useState<string | undefined>(undefined);
   const [selectedTaskId, setSelectedTaskId] = useState<string | undefined>(undefined);
   const [selectedClusterId, setSelectedClusterId] = useState<string | undefined>(undefined);

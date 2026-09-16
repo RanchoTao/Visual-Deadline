@@ -1,4 +1,4 @@
-import type { PressureCalibrationSnapshot, Task } from '../types/task';
+import type { PressureCalibrationSnapshot, Task } from '../types/task.js';
 
 const MS_PER_HOUR = 60 * 60 * 1000;
 const MS_PER_DAY = 24 * MS_PER_HOUR;
@@ -21,6 +21,12 @@ export type PressureModelWeights = {
   interactionWeight: number;
 };
 
+export interface PressureRankableTask {
+  readonly importance: number;
+  readonly progress: number;
+  readonly deadline?: string;
+}
+
 export const defaultPressureModelWeights: PressureModelWeights = {
   importanceWeight: 0,
   urgencyWeight: 0,
@@ -40,7 +46,7 @@ function roundToFourDecimals(value: number): number {
 }
 
 function normalizeDateTime(value?: string | number | Date): number | undefined {
-  if (!value) return undefined;
+  if (value === undefined || value === '') return undefined;
   const timestamp = value instanceof Date ? value.getTime() : new Date(value).getTime();
   return Number.isFinite(timestamp) ? timestamp : undefined;
 }
@@ -71,7 +77,7 @@ function normalizeProgressPressure(progress?: number): number {
   return Math.min(100, Math.max(0, progress));
 }
 
-export function calculateTaskPressure(task: Task, now: string | number | Date = new Date(), weights: PressureModelWeights = defaultPressureModelWeights): number {
+export function calculateTaskPressure(task: PressureRankableTask, now: string | number | Date = new Date(), weights: PressureModelWeights = defaultPressureModelWeights): number {
   const urgency = calculateUrgency(task.deadline, now);
   const progressNormalized = normalizeProgressPressure(task.progress) / 100;
   const remainingWorkMultiplier = 1 - progressNormalized;
