@@ -13,6 +13,54 @@ export interface V2ReadCompatibilityRepository<T> {
   read(): Promise<ShadowReadResult<T>>;
 }
 
+/**
+ * A deliberately small, persistence-free contract for comparing the legacy
+ * VisualDeadline projection with a mapped canonical projection.  Callers must
+ * provide the legacy IDs (rather than relying on array order or database IDs).
+ */
+export interface VisualDeadlineShadowSnapshot {
+  readonly goals: readonly {
+    legacyId: string; status: string; importance: number; parentGoalLegacyId?: string;
+  }[];
+  readonly tasks: readonly {
+    legacyId: string; status: string; importance: number; progress: number;
+    deadline?: string; startAfter?: string; goalLegacyId?: string; parentTaskLegacyId?: string;
+  }[];
+  readonly dependencies: readonly {
+    predecessorLegacyId: string; successorLegacyId: string; type: string;
+  }[];
+}
+
+const diagnostic = (code: string, legacyId: string, field?: string) =>
+  field ? `${code}:${legacyId}:${field}` : `${code}:${legacyId}`;
+
+/**
+ * Pure comparison only. It does not select data for callers and does not make
+ * v2 authoritative; it is suitable for shadow diagnostics and local tests.
+ */
+export function compareVisualDeadlineShadow(
+  legacy: VisualDeadlineShadowSnapshot,
+  canonical: VisualDeadlineShadowSnapshot,
+): readonly string[] {
+  const diagnostics: string[] = [];
+  const canonicalGoals = new Map(canonical.goals.map((item) => [item.legacyId, item]));
+  const canonicalTasks = new Map(canonical.tasks.map((item) => [item.legacyId, item]));
+  for (const item of legacy.goals) {
+    const candidate = canonicalGoals.get(item.legacyId);
+    if (!candidate) { diagnostics.push(diagnostic('GOAL_MAPPING_MISSING', item.legacyId)); continue; }
+    for (const field of ['status', 'importance', 'parentGoalLegacyId'] as const) if (item[field] !== candidate[field]) diagnostics.push(diagnostic('GOAL_MISMATCH', item.legacyId, field));
+  }
+  for (const item of legacy.tasks) {
+    const candidate = canonicalTasks.get(item.legacyId);
+    if (!candidate) { diagnostics.push(diagnostic('TASK_MAPPING_MISSING', item.legacyId)); continue; }
+    for (const field of ['status', 'importance', 'progress', 'deadline', 'startAfter', 'goalLegacyId', 'parentTaskLegacyId'] as const) if (item[field] !== candidate[field]) diagnostics.push(diagnostic('TASK_MISMATCH', item.legacyId, field));
+  }
+  const keys = (items: readonly { predecessorLegacyId: string; successorLegacyId: string; type: string }[]) => new Set(items.map((item) => `${item.predecessorLegacyId}->${item.successorLegacyId}:${item.type}`));
+  const canonicalDependencies = keys(canonical.dependencies);
+  for (const key of keys(legacy.dependencies)) if (!canonicalDependencies.has(key)) diagnostics.push(`DEPENDENCY_MISSING:${key}`);
+  return diagnostics.sort((left, right) => left.localeCompare(right));
+}
+
 export function resolveV2ReadMode(value: unknown): V2ReadMode {
   return value === 'shadow' || value === 'v2' ? value : 'legacy';
 }
