@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
-import { collectCurrentData, createExportEnvelope, formatBackupFilename, getAvailableBackupCount, getRecoveryNotice, parseImportJson, restoreData, saveAutoBackup, STORAGE_RECOVERY_EVENT } from '../storage';
+import { browserStorageAdapter, createCompleteBackup, formatBackupFilename, getAvailableBackupCount, getRecoveryNotice, notifyStorageChange, parseBackupText, restoreBackup, saveAutoBackup, STORAGE_RECOVERY_EVENT } from '../storage';
 
 function downloadJson(filename: string, content: string): void {
   const blob = new Blob([content], { type: 'application/json;charset=utf-8' });
@@ -32,8 +32,8 @@ export function DataSafetyPanel() {
   }, []);
 
   function handleExport() {
-    const envelope = createExportEnvelope(collectCurrentData());
-    downloadJson(formatBackupFilename(new Date(envelope.exportedAt)), JSON.stringify(envelope, null, 2));
+    const envelope = createCompleteBackup(browserStorageAdapter);
+    downloadJson(formatBackupFilename(new Date(envelope.metadata.exportedAt)), JSON.stringify(envelope, null, 2));
     saveAutoBackup();
     setBackupCount(getAvailableBackupCount());
     setStatus('已导出完整 JSON 备份，并刷新本地安全快照。');
@@ -51,17 +51,22 @@ export function DataSafetyPanel() {
 
     try {
       const text = await file.text();
-      const result = parseImportJson(text);
-      if (!result.ok || !result.data) {
-        setStatus(result.error || '导入失败：无法识别备份结构。');
+      const parsed = parseBackupText(text);
+      if (!parsed.ok) {
+        setStatus(parsed.error);
         setStatusType('error');
         return;
       }
-
-      restoreData(result.data);
+      const result = restoreBackup(browserStorageAdapter, parsed.value);
+      if (!result.ok) {
+        setStatus(result.error || '导入失败：无法安全恢复备份。');
+        setStatusType('error');
+        return;
+      }
+      notifyStorageChange();
       saveAutoBackup();
       setBackupCount(getAvailableBackupCount());
-      setStatus(`导入成功：已迁移到 v1.0.1 架构并立即刷新界面。`);
+      setStatus(`导入成功：已事务式恢复 ${result.restoredDomainCount} 个数据域，并保留导入前回滚快照。`);
       setStatusType('success');
     } catch {
       setStatus('读取文件失败，请确认浏览器允许访问该 JSON 备份。');
@@ -75,7 +80,7 @@ export function DataSafetyPanel() {
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">数据安全 · v1.0.1</p>
           <h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">备份与恢复中心</h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">统一导出任务、压力、人生地图、社交图谱、日志与设置；本地会自动保留滚动安全快照。</p>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">统一导出全部本地用户数据域；恢复前会校验版本与校验和，并保留可回滚快照。</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={handleExport} className="rounded-full bg-white/85 px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">导出数据</button>

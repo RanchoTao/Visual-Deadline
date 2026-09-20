@@ -1,4 +1,6 @@
 export * from './backup';
+export * from './dataSafety';
+export * from './inventory';
 export * from './lifeMap';
 export * from './lifeController';
 export * from './logs';
