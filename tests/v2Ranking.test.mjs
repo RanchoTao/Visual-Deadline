@@ -94,7 +94,9 @@ test('deadline bucket boundaries are table-driven and use explicit now', () => {
     assert.equal(candidate(rank([task]), task.id).score.urgency, expected, `offset ${offset}`);
   }
   assert.equal(calculateUrgency(undefined, NOW), 0.5);
-  assert.equal(calculateUrgency('1970-01-01T00:00:00.000Z', 0), 6);
+  assert.equal(calculateUrgency('1970-01-01T00:00:00.000Z', 0), 7);
+  assert.equal(calculateUrgency('1970-01-01T00:00:00.000Z', new Date(0)), 6);
+  assert.equal(candidate(rank([canonicalTask('epoch-zero', { deadline: '1970-01-01T00:00:00.000Z' })], [], 0), 'epoch-zero').score.urgency, 6);
 });
 
 test('progress, importance and missing optional fields have explicit boundaries', () => {
@@ -152,6 +154,38 @@ test('dependency complete/incomplete/missing states are explicit', () => {
   assert.equal(candidate(result, 'after-done').dependencyState.state, 'CLEAR');
   assert.equal(candidate(result, 'after-open').blockReasons[0].reason, 'PREDECESSOR_INCOMPLETE');
   assert.equal(candidate(result, 'after-missing').blockReasons[0].reason, 'MISSING_PREDECESSOR');
+});
+
+test('legacy compatibility dependency metadata never controls canonical ranking', () => {
+  const compatibility = {
+    sourceLifecycleStatus: 'active',
+    sourceLinkedGoalIds: [],
+    reconciledGoalIds: [],
+    sourceDependencyIds: ['open'],
+    executionSource: 'legacy-vd',
+    sourceCreatedByAI: false,
+    sourceSchemaVersion: 3,
+  };
+  const open = canonicalTask('open');
+  const withCompatibility = canonicalTask('dependent', { compatibility });
+  const withoutCompatibility = canonicalTask('dependent');
+  assert.deepEqual(rank([open, withCompatibility]), rank([open, withoutCompatibility]));
+  assert.deepEqual(
+    rank([open, withCompatibility], [dependency('open', 'dependent')]),
+    rank([open, withoutCompatibility], [dependency('open', 'dependent')]),
+  );
+  assert.equal(candidate(rank([open, withCompatibility]), 'dependent').dependencyState.state, 'CLEAR');
+  assert.equal(candidate(rank([open, withCompatibility], [dependency('open', 'dependent')]), 'dependent').dependencyState.state, 'BLOCKED');
+});
+
+test('legacy shadow translates unresolved missing and self dependencies explicitly', () => {
+  const missing = legacyTask('legacy-missing', { dependencyIds: ['missing-predecessor'] });
+  const self = legacyTask('legacy-self', { dependencyIds: ['legacy-self'] });
+  const { canonicalRanking } = v2.buildCanonicalRankingFromLegacy({ userId: 'user-1', goals: [], tasks: [missing, self], now: NOW });
+  assert.equal(candidate(canonicalRanking, 'legacy-missing').blockReasons[0].reason, 'MISSING_PREDECESSOR');
+  assert.equal(candidate(canonicalRanking, 'legacy-self').blockReasons[0].reason, 'SELF_DEPENDENCY');
+  assert.deepEqual(candidate(canonicalRanking, 'legacy-missing').exclusionReasons, ['DEPENDENCY_BLOCKED']);
+  assert.deepEqual(candidate(canonicalRanking, 'legacy-self').exclusionReasons, ['DEPENDENCY_BLOCKED']);
 });
 
 test('same scores use deadline, createdAt, then stable ID instead of input order', () => {

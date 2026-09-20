@@ -46,7 +46,7 @@ function roundToFourDecimals(value: number): number {
 }
 
 function normalizeDateTime(value?: string | number | Date): number | undefined {
-  if (value === undefined || value === '') return undefined;
+  if (!value) return undefined;
   const timestamp = value instanceof Date ? value.getTime() : new Date(value).getTime();
   return Number.isFinite(timestamp) ? timestamp : undefined;
 }

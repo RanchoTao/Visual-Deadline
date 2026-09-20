@@ -67,10 +67,19 @@ export interface CanonicalRankingResult {
   readonly candidates: readonly CanonicalRankingCandidate[];
 }
 
+/** Transient unresolved dependency evidence used only by legacy shadow callers. */
+export interface ShadowDependencyEvidence {
+  readonly source: 'LEGACY_SHADOW';
+  readonly successorTaskId: EntityId;
+  readonly predecessorTaskId: EntityId;
+  readonly reason: Extract<DependencyBlockReason, 'MISSING_PREDECESSOR' | 'SELF_DEPENDENCY'>;
+}
+
 export interface CanonicalRankingRequest {
   readonly userId: UserId;
   readonly tasks: readonly Task[];
   readonly taskDependencies: readonly TaskDependency[];
+  readonly shadowDependencyEvidence?: readonly ShadowDependencyEvidence[];
   readonly now: string | number | Date;
 }
 
@@ -119,21 +128,31 @@ function deadlineInterpretation(deadline?: string): DeadlineInterpretation {
   return /^\d{4}-\d{2}-\d{2}$/.test(deadline) ? 'DATE_ONLY_UTC' : 'TIMESTAMP';
 }
 
-function collectDependencyIds(task: Task, dependencies: readonly TaskDependency[]): EntityId[] {
-  const ids = dependencies.filter((edge) => edge.successorTaskId === task.id).map((edge) => edge.predecessorTaskId);
-  for (const sourceId of task.compatibility?.sourceDependencyIds ?? []) ids.push(sourceId);
-  return [...new Set(ids)].sort(compareText);
+function collectDependencyIds(
+  task: Task,
+  dependencies: readonly TaskDependency[],
+  shadowEvidence: readonly ShadowDependencyEvidence[],
+): EntityId[] {
+  const canonicalIds = dependencies.filter((edge) => edge.successorTaskId === task.id).map((edge) => edge.predecessorTaskId);
+  const shadowIds = shadowEvidence.filter((evidence) => evidence.successorTaskId === task.id).map((evidence) => evidence.predecessorTaskId);
+  return [...new Set([...canonicalIds, ...shadowIds])].sort(compareText);
 }
 
 function evaluateDependencies(
   task: Task,
   dependencies: readonly TaskDependency[],
+  shadowEvidence: readonly ShadowDependencyEvidence[],
   taskById: ReadonlyMap<EntityId, Task>,
 ): DependencyEvaluation {
-  const predecessorTaskIds = collectDependencyIds(task, dependencies);
+  const predecessorTaskIds = collectDependencyIds(task, dependencies, shadowEvidence);
   const blocks: DependencyBlock[] = [];
 
   for (const predecessorTaskId of predecessorTaskIds) {
+    const unresolved = shadowEvidence.find((evidence) => evidence.successorTaskId === task.id && evidence.predecessorTaskId === predecessorTaskId);
+    if (unresolved) {
+      blocks.push({ predecessorTaskId, reason: unresolved.reason, predecessorStatus: unresolved.reason === 'SELF_DEPENDENCY' ? task.status : undefined });
+      continue;
+    }
     if (predecessorTaskId === task.id) {
       blocks.push({ predecessorTaskId, reason: 'SELF_DEPENDENCY', predecessorStatus: task.status });
       continue;
@@ -182,7 +201,7 @@ function explainCandidate(
     } else startAfterState = startsAt > now ? 'STARTS_IN_FUTURE' : 'READY';
   }
 
-  const dependencyState = evaluateDependencies(task, request.taskDependencies, taskById);
+  const dependencyState = evaluateDependencies(task, request.taskDependencies, request.shadowDependencyEvidence ?? [], taskById);
   const exclusionReasons: RankingExclusionReason[] = [];
   if (lifecycle === 'DONE') exclusionReasons.push('COMPLETED');
   if (lifecycle === 'DEFERRED') exclusionReasons.push('DEFERRED');
@@ -195,8 +214,9 @@ function explainCandidate(
   if (lifecycle === 'INVALID' || progress === 'INVALID' || startAfterState === 'INVALID' || invalidFields.length > 0) exclusionReasons.push('INVALID_DATA');
 
   const scoreInputsValid = !invalidFields.includes('importance') && !invalidFields.includes('progress');
-  const urgency = calculateUrgency(task.deadline, now);
-  const pressureContribution = scoreInputsValid ? calculateTaskPressure(task, now) : null;
+  const scoringNow = new Date(now);
+  const urgency = calculateUrgency(task.deadline, scoringNow);
+  const pressureContribution = scoreInputsValid ? calculateTaskPressure(task, scoringNow) : null;
   const totalScore = pressureContribution === null ? null : pressureContribution * 10 + task.importance;
   return {
     taskId: task.id,

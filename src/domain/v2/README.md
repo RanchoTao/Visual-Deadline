@@ -6,7 +6,7 @@ It does not wire production runtime behavior, create database tables, replace st
 
 ## Ranking contract
 
-`rankCanonicalTasks` is a pure, read-only selector. It composes the established VisualDeadline `importance-urgency-v1` pressure calculation with explicit lifecycle, progress, actionable, `startAfter`, and dependency eligibility. It does not schedule resources or repair compatibility relationships. Every candidate remains in the result with structured score components, state checks, blockers, and exclusion reasons.
+`rankCanonicalTasks` is a pure, read-only selector. It composes the established VisualDeadline `importance-urgency-v1` pressure calculation with explicit lifecycle, progress, actionable, `startAfter`, and dependency eligibility. Canonical dependency truth comes only from the request's `TaskDependency` edges; the selector never reads legacy compatibility metadata from a Task. Legacy shadow callers may additionally pass transient unresolved dependency evidence produced from PR B diagnostics. It does not schedule resources or repair compatibility relationships. Every candidate remains in the result with structured score components, state checks, blockers, and exclusion reasons.
 
 Ranking order is deterministic:
 

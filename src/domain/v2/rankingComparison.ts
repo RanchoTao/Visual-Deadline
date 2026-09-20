@@ -2,7 +2,7 @@ import type { DailyReview, Goal as LegacyGoal, Task as LegacyTask } from '../../
 import { generateDailyQuest } from '../../utils/dailyQuest.js';
 import { getLegacyPriorityMapTopTasks } from '../../utils/taskScoring.js';
 import { adaptLegacyVisualDeadlineToV2, type CompatibilityDiagnostic, type V2CompatibilityOptions } from './compatibility.js';
-import { rankCanonicalTasks, type CanonicalRankingResult, type RankingExclusionReason } from './ranking.js';
+import { rankCanonicalTasks, type CanonicalRankingResult, type RankingExclusionReason, type ShadowDependencyEvidence } from './ranking.js';
 import type { UserId } from './shared.js';
 
 export type RankingComparisonClassification =
@@ -125,7 +125,21 @@ export function compareRankingSelection(
 
 export function buildCanonicalRankingFromLegacy(request: Omit<LegacyRankingShadowRequest, 'legacyHomeTaskIds' | 'previousDailyReview'>) {
   const compatibility = adaptLegacyVisualDeadlineToV2(request.userId, request.goals, request.tasks, request.compatibility);
-  const canonicalRanking = rankCanonicalTasks({ userId: request.userId, tasks: compatibility.tasks, taskDependencies: compatibility.taskDependencies, now: request.now });
+  const shadowDependencyEvidence: ShadowDependencyEvidence[] = compatibility.unresolvedRelationships
+    .filter((relationship) => relationship.kind === 'task_dependency' && (relationship.reason === 'MISSING_TARGET' || relationship.reason === 'SELF_REFERENCE'))
+    .map((relationship) => ({
+      source: 'LEGACY_SHADOW',
+      successorTaskId: relationship.sourceId,
+      predecessorTaskId: relationship.targetId,
+      reason: relationship.reason === 'SELF_REFERENCE' ? 'SELF_DEPENDENCY' : 'MISSING_PREDECESSOR',
+    }));
+  const canonicalRanking = rankCanonicalTasks({
+    userId: request.userId,
+    tasks: compatibility.tasks,
+    taskDependencies: compatibility.taskDependencies,
+    shadowDependencyEvidence,
+    now: request.now,
+  });
   return { compatibility, canonicalRanking };
 }
 
