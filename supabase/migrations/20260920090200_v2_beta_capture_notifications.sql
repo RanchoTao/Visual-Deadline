@@ -6,10 +6,33 @@ begin;
 
 alter table public.intake_messages
   add column if not exists client_request_id uuid,
-  add column if not exists confirmation_status text not null default 'unconfirmed'
-    check (confirmation_status in ('unconfirmed', 'needs_confirmation', 'confirmed', 'materialized', 'rejected')),
+  add column if not exists confirmation_status text,
   add column if not exists confirmed_at timestamptz,
   add column if not exists materialized_at timestamptz;
+
+-- Existing rows have no reliable historical confirmation evidence. Add the
+-- column without a default first so they remain NULL, then default only future
+-- inserts to an explicit unconfirmed state.
+alter table public.intake_messages
+  alter column confirmation_status drop not null,
+  alter column confirmation_status set default 'unconfirmed';
+
+do $confirmation_status_constraint$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conrelid = 'public.intake_messages'::regclass
+      and conname = 'intake_messages_confirmation_status_check'
+  ) then
+    alter table public.intake_messages
+      add constraint intake_messages_confirmation_status_check check (
+        confirmation_status is null
+        or confirmation_status in ('unconfirmed', 'needs_confirmation', 'confirmed', 'materialized', 'rejected')
+      );
+  end if;
+end
+$confirmation_status_constraint$;
 
 alter table public.intake_assets
   add column if not exists content_checksum text;

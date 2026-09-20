@@ -19,10 +19,34 @@ const forbidden = [
   [/\btruncate\b/, 'TRUNCATE'],
   [/\bdelete\s+from\b/, 'DELETE FROM'],
   [/\bupdate\s+public\.(?:profiles|tasks|goals|pressure_logs)\b/, 'legacy row UPDATE'],
+  [/\bupdate\s+public\.intake_messages\b/, 'intake history UPDATE/backfill'],
   [/\balter\s+table\s+public\.(?:tasks|goals|pressure_logs)\s+(?:alter|drop|rename)\b/, 'incompatible legacy ALTER'],
 ];
 
 for (const [pattern, label] of forbidden) if (pattern.test(combined)) throw new Error(`PR E migration lint rejected ${label}`);
+
+const baseline = stripComments(readFileSync(join(migrationPath, '20260726000000_legacy_core_additive_baseline.sql'), 'utf8')).toLowerCase();
+for (const requiredValidation of [
+  'legacy core schema mismatch', 'pg_attribute', "constraint_record.contype = 'p'",
+  "constraint_record.contype = 'u'", "constraint_record.contype = 'f'", 'checkid=user_id',
+]) {
+  if (!baseline.includes(requiredValidation)) throw new Error(`Legacy baseline is missing shape validation: ${requiredValidation}`);
+}
+if (baseline.includes('create or replace function public.set_visual_deadline_updated_at')) {
+  throw new Error('Legacy baseline must not replace an existing production trigger function');
+}
+
+const capture = stripComments(readFileSync(join(migrationPath, '20260920090200_v2_beta_capture_notifications.sql'), 'utf8')).toLowerCase();
+if (/add\s+column(?:\s+if\s+not\s+exists)?\s+confirmation_status\s+text\s+not\s+null/.test(capture)) {
+  throw new Error('confirmation_status must remain nullable for unreconciled legacy rows');
+}
+for (const requiredCaptureContract of [
+  'add column if not exists confirmation_status text',
+  "alter column confirmation_status set default 'unconfirmed'",
+  'confirmation_status is null',
+]) {
+  if (!capture.includes(requiredCaptureContract)) throw new Error(`Capture migration is missing historical-state protection: ${requiredCaptureContract}`);
+}
 
 for (const table of ['v2_goals', 'v2_milestones', 'v2_tasks', 'v2_task_dependencies', 'v2_import_jobs', 'v2_legacy_entity_refs']) {
   if (!combined.includes(`create table public.${table}`)) throw new Error(`Missing required table ${table}`);

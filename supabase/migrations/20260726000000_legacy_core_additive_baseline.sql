@@ -5,16 +5,24 @@
 
 begin;
 
-create or replace function public.set_visual_deadline_updated_at()
-returns trigger
-language plpgsql
-set search_path = ''
-as $$
+do $create_updated_at_function$
 begin
-  new.updated_at = now();
-  return new;
-end;
-$$;
+  if to_regprocedure('public.set_visual_deadline_updated_at()') is null then
+    execute $function$
+      create function public.set_visual_deadline_updated_at()
+      returns trigger
+      language plpgsql
+      set search_path = ''
+      as $body$
+      begin
+        new.updated_at = now();
+        return new;
+      end;
+      $body$
+    $function$;
+  end if;
+end
+$create_updated_at_function$;
 
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
@@ -52,6 +60,189 @@ create table if not exists public.pressure_logs (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- CREATE TABLE IF NOT EXISTS is not schema validation. A fresh database has the
+-- exact shape above; an existing database must match it before this migration may
+-- add indexes, triggers, grants, or policies. Any mismatch aborts the transaction
+-- and requires manual investigation rather than an in-place conversion.
+do $legacy_core_shape_validation$
+declare
+  expected record;
+  actual_type oid;
+  actual_not_null boolean;
+  default_expression text;
+  target_table text;
+begin
+  for expected in
+    select * from (values
+      ('profiles', 'id', 'uuid', true),
+      ('profiles', 'user_id', 'uuid', true),
+      ('profiles', 'data', 'jsonb', true),
+      ('profiles', 'created_at', 'timestamptz', true),
+      ('profiles', 'updated_at', 'timestamptz', true),
+      ('tasks', 'id', 'text', true),
+      ('tasks', 'user_id', 'uuid', true),
+      ('tasks', 'data', 'jsonb', true),
+      ('tasks', 'created_at', 'timestamptz', true),
+      ('tasks', 'updated_at', 'timestamptz', true),
+      ('goals', 'id', 'text', true),
+      ('goals', 'user_id', 'uuid', true),
+      ('goals', 'data', 'jsonb', true),
+      ('goals', 'created_at', 'timestamptz', true),
+      ('goals', 'updated_at', 'timestamptz', true),
+      ('pressure_logs', 'id', 'text', true),
+      ('pressure_logs', 'user_id', 'uuid', true),
+      ('pressure_logs', 'data', 'jsonb', true),
+      ('pressure_logs', 'created_at', 'timestamptz', true),
+      ('pressure_logs', 'updated_at', 'timestamptz', true)
+    ) as required(table_name, column_name, type_name, must_be_not_null)
+  loop
+    select attribute.atttypid, attribute.attnotnull
+      into actual_type, actual_not_null
+    from pg_attribute attribute
+    where attribute.attrelid = to_regclass(format('public.%I', expected.table_name))
+      and attribute.attname = expected.column_name
+      and attribute.attnum > 0
+      and not attribute.attisdropped;
+
+    if not found then
+      raise exception using
+        errcode = 'P0001',
+        message = format(
+          'Legacy core schema mismatch: public.%I is missing required column %I. Stop and investigate manually; no legacy conversion is permitted.',
+          expected.table_name,
+          expected.column_name
+        );
+    end if;
+
+    if actual_type <> to_regtype(expected.type_name) or actual_not_null is distinct from expected.must_be_not_null then
+      raise exception using
+        errcode = 'P0001',
+        message = format(
+          'Legacy core schema mismatch: public.%I.%I must be %s%s but is %s%s. Stop and investigate manually; no legacy conversion is permitted.',
+          expected.table_name,
+          expected.column_name,
+          expected.type_name,
+          case when expected.must_be_not_null then ' NOT NULL' else '' end,
+          format_type(actual_type, null),
+          case when actual_not_null then ' NOT NULL' else ' NULLABLE' end
+        );
+    end if;
+  end loop;
+
+  foreach target_table in array array['profiles', 'tasks', 'goals', 'pressure_logs'] loop
+    if not exists (
+      select 1
+      from pg_constraint constraint_record
+      where constraint_record.conrelid = to_regclass(format('public.%I', target_table))
+        and constraint_record.contype = 'p'
+        and (
+          select array_agg(attribute.attname::text order by key_column.ordinality)
+          from unnest(constraint_record.conkey) with ordinality as key_column(attnum, ordinality)
+          join pg_attribute attribute
+            on attribute.attrelid = constraint_record.conrelid
+           and attribute.attnum = key_column.attnum
+        ) = array['id']::text[]
+    ) then
+      raise exception using
+        errcode = 'P0001',
+        message = format(
+          'Legacy core schema mismatch: public.%I must have a primary key on id only. Stop and investigate manually.',
+          target_table
+        );
+    end if;
+
+    select pg_get_expr(default_record.adbin, default_record.adrelid)
+      into default_expression
+    from pg_attrdef default_record
+    join pg_attribute attribute
+      on attribute.attrelid = default_record.adrelid
+     and attribute.attnum = default_record.adnum
+    where default_record.adrelid = to_regclass(format('public.%I', target_table))
+      and attribute.attname = 'data';
+
+    if not found or replace(default_expression, ' ', '') <> '''{}''::jsonb' then
+      raise exception using
+        errcode = 'P0001',
+        message = format(
+          'Legacy core schema mismatch: public.%I.data must default to an empty JSONB object. Stop and investigate manually.',
+          target_table
+        );
+    end if;
+  end loop;
+
+  if not exists (
+    select 1
+    from pg_constraint constraint_record
+    where constraint_record.conrelid = 'public.profiles'::regclass
+      and constraint_record.contype = 'u'
+      and (
+        select array_agg(attribute.attname::text order by key_column.ordinality)
+        from unnest(constraint_record.conkey) with ordinality as key_column(attnum, ordinality)
+        join pg_attribute attribute
+          on attribute.attrelid = constraint_record.conrelid
+         and attribute.attnum = key_column.attnum
+      ) = array['user_id']::text[]
+  ) then
+    raise exception using
+      errcode = 'P0001',
+      message = 'Legacy core schema mismatch: public.profiles.user_id must have its established UNIQUE constraint. Stop and investigate manually.';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint constraint_record
+    where constraint_record.conrelid = 'public.profiles'::regclass
+      and constraint_record.contype = 'c'
+      and regexp_replace(lower(pg_get_constraintdef(constraint_record.oid)), '[[:space:]()]', '', 'g') = 'checkid=user_id'
+  ) then
+    raise exception using
+      errcode = 'P0001',
+      message = 'Legacy core schema mismatch: public.profiles must enforce id = user_id. Stop and investigate manually.';
+  end if;
+
+  for expected in
+    select * from (values
+      ('profiles', 'id'),
+      ('profiles', 'user_id'),
+      ('tasks', 'user_id'),
+      ('goals', 'user_id'),
+      ('pressure_logs', 'user_id')
+    ) as required(table_name, column_name)
+  loop
+    if not exists (
+      select 1
+      from pg_constraint constraint_record
+      where constraint_record.conrelid = to_regclass(format('public.%I', expected.table_name))
+        and constraint_record.contype = 'f'
+        and constraint_record.confrelid = 'auth.users'::regclass
+        and constraint_record.confdeltype = 'c'
+        and (
+          select array_agg(attribute.attname::text order by key_column.ordinality)
+          from unnest(constraint_record.conkey) with ordinality as key_column(attnum, ordinality)
+          join pg_attribute attribute
+            on attribute.attrelid = constraint_record.conrelid
+           and attribute.attnum = key_column.attnum
+        ) = array[expected.column_name]::text[]
+        and (
+          select array_agg(attribute.attname::text order by key_column.ordinality)
+          from unnest(constraint_record.confkey) with ordinality as key_column(attnum, ordinality)
+          join pg_attribute attribute
+            on attribute.attrelid = constraint_record.confrelid
+           and attribute.attnum = key_column.attnum
+        ) = array['id']::text[]
+    ) then
+      raise exception using
+        errcode = 'P0001',
+        message = format(
+          'Legacy core schema mismatch: public.%I.%I must reference auth.users(id) ON DELETE CASCADE. Stop and investigate manually.',
+          expected.table_name,
+          expected.column_name
+        );
+    end if;
+  end loop;
+end
+$legacy_core_shape_validation$;
 
 create index if not exists tasks_user_id_idx on public.tasks(user_id);
 create index if not exists goals_user_id_idx on public.goals(user_id);
