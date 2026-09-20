@@ -1,11 +1,12 @@
-import { loadLifeMap, saveLifeMap } from './lifeMap';
-import { loadLifeEventStore, saveLifeEventStore } from './lifeController';
-import { loadLogs, saveLogs } from './logs';
-import { loadPressure, savePressure } from './pressure';
-import { loadSettings, saveSettings } from './settings';
-import { loadSocial, saveSocial } from './social';
-import { loadTasks, saveTasks } from './tasks';
-import { createExportEnvelope, loadValue, notifyStorageChange, saveValue, storageKeys, type VisualizedDeadlineData, type VisualizedDeadlineExport } from './schema';
+import { loadLifeMap } from './lifeMap';
+import { loadLifeEventStore } from './lifeController';
+import { loadLogs } from './logs';
+import { loadPressure } from './pressure';
+import { loadSettings } from './settings';
+import { loadSocial } from './social';
+import { loadTasks } from './tasks';
+import { APP_NAME, loadValue, notifyStorageChange, saveValue, storageKeys, type VisualizedDeadlineData, type VisualizedDeadlineExport } from './schema';
+import { browserStorageAdapter, createCompleteBackup, restoreBackup, type CompleteBackupEnvelope } from './dataSafety';
 
 const rollingBackupKeys = [storageKeys.backup1, storageKeys.backup2, storageKeys.backup3] as const;
 
@@ -27,17 +28,17 @@ export function collectCurrentData(): VisualizedDeadlineData {
     lifeController: { eventsByOwner: safeLoad(loadLifeEventStore, {}) },
     logs: safeLoad(loadLogs, { achievements: [], aiArtifacts: [] }),
     settings: safeLoad(loadSettings, { profile: null, onboardingComplete: false }),
-    metadata: { source: 'browser-local', futureSafe: true },
+    metadata: { source: 'browser-local', futureSafe: false },
   };
 }
 
-export function createBackupSnapshot(): VisualizedDeadlineExport {
-  return createExportEnvelope(collectCurrentData());
+export function createBackupSnapshot(): CompleteBackupEnvelope {
+  return createCompleteBackup(browserStorageAdapter);
 }
 
 export function saveAutoBackup(): void {
   const latest = createBackupSnapshot();
-  const safeLoad = (key: string) => {
+  const safeLoad = (key: string): unknown => {
     try {
       return loadValue<VisualizedDeadlineExport | null>(key, null);
     } catch {
@@ -54,7 +55,7 @@ export function saveAutoBackup(): void {
   saveValue(storageKeys.backupLatest, latest);
 }
 
-export function loadLatestBackup(): VisualizedDeadlineExport | null {
+export function loadLatestBackup(): unknown | null {
   try {
     return loadValue<VisualizedDeadlineExport | null>(storageKeys.backupLatest, null);
   } catch {
@@ -63,22 +64,17 @@ export function loadLatestBackup(): VisualizedDeadlineExport | null {
 }
 
 export function restoreData(data: VisualizedDeadlineData): void {
-  saveTasks(data.tasks);
-  saveValue(storageKeys.goals, data.goals);
-  savePressure(data.pressure);
-  saveSocial(data.social);
-  saveLifeMap(data.lifeMap);
-  saveLifeEventStore(data.lifeController.eventsByOwner);
-  saveLogs(data.logs);
-  saveSettings(data.settings);
+  const result = restoreBackup(browserStorageAdapter, { app: APP_NAME, schemaVersion: '0.9', data });
+  if (!result.ok) throw new Error(result.error || 'Legacy restore failed.');
   notifyStorageChange();
 }
 
 export function restoreLatestBackup(): boolean {
   const latest = loadLatestBackup();
-  if (!latest?.data) return false;
-  restoreData(latest.data);
-  return true;
+  if (!latest) return false;
+  const result = restoreBackup(browserStorageAdapter, latest);
+  if (result.ok) notifyStorageChange();
+  return result.ok;
 }
 
 export function getAvailableBackupCount(): number {

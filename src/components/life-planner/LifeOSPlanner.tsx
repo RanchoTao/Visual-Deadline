@@ -6,10 +6,11 @@ import { defaultResource, planSevenDays } from '../../services/planner/lifePlann
 import { LifeTimelineSection } from '../life-timeline/LifeTimelineSection';
 import { PathMap } from '../life-map/PathMap';
 import { projectLifeData } from '../../lib/lifeViews';
+import { storageKeys } from '../../storage';
 
 interface Props { goals: Goal[]; tasks: Task[]; onAddTasks: (tasks: TaskInput[]) => void; onCompleteTask: (task: Task) => void }
 type View = 'now' | 'planning' | 'map' | 'timeline';
-const keys = { nodes: 'vd.vnext.lifeNodes', dependencies: 'vd.vnext.dependencies', resource: 'vd.vnext.resource', events: 'vd.vnext.executionEvents', plans: 'vd.vnext.planVersions' } as const;
+const keys = { nodes: storageKeys.planningLifeNodes, dependencies: storageKeys.planningDependencies, resource: storageKeys.planningResource, events: storageKeys.planningExecutionEvents, plans: storageKeys.planningPlanVersions } as const;
 const statusLabel: Record<GoalStatus, string> = { focus: '主攻', secondary: '次要推进', maintenance: '维持', waiting: '主动等待', blocked: '被阻塞', opportunity: '机会', completed: '已完成', archived: '已归档' };
 const statusTone: Record<GoalStatus, string> = { focus: 'border-rose-300 bg-rose-50 text-rose-800', secondary: 'border-sky-200 bg-sky-50 text-sky-800', maintenance: 'border-emerald-200 bg-emerald-50 text-emerald-800', waiting: 'border-slate-200 bg-slate-50 text-slate-500', blocked: 'border-amber-300 bg-amber-50 text-amber-800', opportunity: 'border-violet-200 bg-violet-50 text-violet-800', completed: 'border-emerald-200 bg-emerald-50 text-emerald-700', archived: 'border-slate-200 bg-slate-100 text-slate-400' };
 

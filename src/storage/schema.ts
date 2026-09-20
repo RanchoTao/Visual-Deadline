@@ -1,6 +1,6 @@
-import type { Achievement, AIArtifact, Goal, PressureCalibrationSnapshot, PressureHistoryRecord, Task, UserProfile } from '../types/task';
-import type { LifeEventStore } from '../types/lifeController';
-import { normalizeLifeEventStore } from '../domain/life-controller';
+import type { Achievement, AIArtifact, Goal, PressureCalibrationSnapshot, PressureHistoryRecord, Task, UserProfile } from '../types/task.js';
+import type { LifeEventStore } from '../types/lifeController.js';
+import { normalizeLifeEventStore } from '../domain/life-controller/index.js';
 
 export const APP_NAME = 'Visual Deadline';
 const LEGACY_APP_NAMES = ['Visualized-Deadline'] as const;
@@ -41,10 +41,16 @@ export const storageKeys = {
   lifeEventsByOwner: 'visualized-deadline.lifeController.eventsByOwner',
   socialNodes: 'visualized-deadline.social.nodes',
   socialLayoutVersion: 'visualized-deadline.social.layoutVersion',
+  planningLifeNodes: 'vd.vnext.lifeNodes',
+  planningDependencies: 'vd.vnext.dependencies',
+  planningResource: 'vd.vnext.resource',
+  planningExecutionEvents: 'vd.vnext.executionEvents',
+  planningPlanVersions: 'vd.vnext.planVersions',
   backupLatest: 'vd_backup_latest',
   backup1: 'vd_backup_1',
   backup2: 'vd_backup_2',
   backup3: 'vd_backup_3',
+  restoreRollback: 'vd_backup_restore_rollback',
 } as const;
 
 export interface PressureExportData {
@@ -88,7 +94,7 @@ export interface VisualizedDeadlineData {
   settings: SettingsExportData;
   metadata: {
     source: 'browser-local';
-    futureSafe: true;
+    futureSafe: false;
   };
 }
 
@@ -226,7 +232,7 @@ export function normalizeExportData(data: Partial<VisualizedDeadlineData> | unde
       profile: (settings?.profile as UserProfile | null) ?? null,
       onboardingComplete: asBoolean(settings?.onboardingComplete),
     },
-    metadata: { source: 'browser-local', futureSafe: true },
+    metadata: { source: 'browser-local', futureSafe: false },
   };
 }
 
