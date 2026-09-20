@@ -18,7 +18,10 @@ export interface BackupDomainEntry {
   recordCount: number;
   checksum: string;
   payload?: unknown;
-  raw?: string;
+  rawByteLength?: number;
+  rawChecksum?: string;
+  redacted?: true;
+  rawIncluded?: false;
 }
 
 export interface AttachmentManifestEntry {
@@ -80,8 +83,9 @@ export interface RestoreResult {
   error?: string;
 }
 
-const sensitiveKeyPattern = /^(?:api[_-]?key|access[_-]?token|refresh[_-]?token|authorization|password|secret|code[_-]?verifier|service[_-]?role[_-]?key)$/i;
-const signedUrlParameterPattern = /^(?:token|signature|sig|expires|x-amz-|x-goog-|key-pair-id)/i;
+const signedUrlParameterPattern = /^(?:token|access[_-]?token|refresh[_-]?token|api[_-]?key|credential|authorization|signature|sig|expires|x-amz-|x-goog-|key-pair-id)/i;
+const aiProviders = new Set(['openai-compatible', 'deepseek-compatible']);
+const profileStringFields = ['nickname', 'username', 'height', 'weight', 'identity', 'skills', 'longTermGoals', 'currentStage'] as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -123,24 +127,29 @@ function stripSignedUrlParts(value: string): string {
   }
 }
 
-function sanitizeValue(value: unknown, key = ''): unknown {
-  if (sensitiveKeyPattern.test(key)) return key.toLowerCase().includes('api') ? '' : undefined;
-  if (typeof value === 'string') return /url$/i.test(key) ? stripSignedUrlParts(value) : value;
-  if (Array.isArray(value)) return value.map((item) => sanitizeValue(item)).filter((item) => item !== undefined);
-  if (!isRecord(value)) return value;
+function sanitizeAISettings(value: unknown): Record<string, unknown> {
+  if (!isRecord(value)) return {};
   const result: Record<string, unknown> = {};
-  for (const [childKey, childValue] of Object.entries(value)) {
-    const sanitized = sanitizeValue(childValue, childKey);
-    if (sanitized !== undefined) result[childKey] = sanitized;
-  }
+  if (typeof value.provider === 'string' && aiProviders.has(value.provider)) result.provider = value.provider;
+  if (typeof value.baseUrl === 'string') result.baseUrl = value.baseUrl;
+  if (typeof value.model === 'string') result.model = value.model;
   return result;
 }
 
-function containsSecret(value: unknown, key = ''): boolean {
-  if (sensitiveKeyPattern.test(key)) return typeof value === 'string' ? value.length > 0 : value != null;
-  if (Array.isArray(value)) return value.some((item) => containsSecret(item));
-  if (!isRecord(value)) return false;
-  return Object.entries(value).some(([childKey, childValue]) => containsSecret(childValue, childKey));
+function sanitizeProfile(value: unknown): Record<string, unknown> | null {
+  if (value === null) return null;
+  if (!isRecord(value)) return {};
+  const result: Record<string, unknown> = {};
+  for (const field of profileStringFields) if (typeof value[field] === 'string') result[field] = value[field];
+  if (typeof value.avatarUrl === 'string') result.avatarUrl = stripSignedUrlParts(value.avatarUrl);
+  return result;
+}
+
+function applyExportPolicy(item: StorageDomainInventoryItem, value: unknown): unknown {
+  if (item.exportPolicy === 'include') return value;
+  if (item.id === 'ai.settings') return sanitizeAISettings(value);
+  if (item.id === 'profile') return sanitizeProfile(value);
+  throw new Error(`Missing sanitizer for ${item.id}.`);
 }
 
 function recordCount(value: unknown): number {
@@ -219,20 +228,21 @@ export function createCompleteBackup(storage: StorageAdapter, exportedAt = new D
   for (const item of EXPORTABLE_STORAGE_DOMAINS) {
     const raw = storage.getItem(item.storageKey);
     if (raw === null) {
-      const payload = sanitizeValue(item.defaultValue);
-      domains[item.id] = { version: item.domainVersion, present: false, status: 'ok', recordCount: 0, checksum: checksumValue(null), payload };
+      domains[item.id] = { version: item.domainVersion, present: false, status: 'ok', recordCount: 0, checksum: checksumValue(null) };
       continue;
     }
+    let parsed: unknown;
     try {
-      const parsed = JSON.parse(raw) as unknown;
-      const payload = sanitizeValue(parsed);
-      if (stableStringify(parsed) !== stableStringify(payload)) warnings.push({ code: 'SENSITIVE_FIELDS_EXCLUDED', domainId: item.id, message: `Sensitive or signed credential material was removed from ${item.id}.` });
-      domains[item.id] = { version: item.domainVersion, present: true, status: 'ok', recordCount: recordCount(payload), checksum: checksumValue(payload), payload };
-      collectAttachmentReferences(item.id, payload, attachments);
+      parsed = JSON.parse(raw) as unknown;
     } catch {
-      domains[item.id] = { version: item.domainVersion, present: true, status: 'corrupt', recordCount: 0, checksum: checksumValue(raw), raw };
-      warnings.push({ code: 'CORRUPT_LOCAL_DOMAIN', domainId: item.id, message: `${item.id} is not valid JSON. Raw bytes were retained for recovery evidence; this backup cannot be restored until resolved.` });
+      domains[item.id] = { version: item.domainVersion, present: true, status: 'corrupt', recordCount: 0, checksum: checksumValue(null), rawByteLength: new TextEncoder().encode(raw).byteLength, rawChecksum: checksumValue(raw), redacted: true, rawIncluded: false };
+      warnings.push({ code: 'CORRUPT_LOCAL_DOMAIN', domainId: item.id, message: `${item.id} is not valid JSON. Only a redacted length/checksum descriptor was exported; raw bytes were not included.` });
+      continue;
     }
+    const payload = applyExportPolicy(item, parsed);
+    if (stableStringify(parsed) !== stableStringify(payload)) warnings.push({ code: 'SENSITIVE_FIELDS_EXCLUDED', domainId: item.id, message: `Sensitive or signed credential material was removed from ${item.id}.` });
+    domains[item.id] = { version: item.domainVersion, present: true, status: 'ok', recordCount: recordCount(payload), checksum: checksumValue(payload), payload };
+    collectAttachmentReferences(item.id, payload, attachments);
   }
 
   for (const attachment of attachments) {
@@ -279,7 +289,13 @@ function legacyDomains(raw: Record<string, unknown>): { domains: Record<string, 
   if (isRecord(data.logs)) { assign('achievements', data.logs.achievements); assign('ai.artifacts', data.logs.aiArtifacts); }
   if (isRecord(data.settings)) { assign('profile', data.settings.profile); assign('preferences.onboarding', data.settings.onboardingComplete); }
   const domains: Record<string, BackupDomainEntry> = {};
-  for (const [id, value] of Object.entries(values)) domains[id] = { version: 1, present: true, status: 'ok', recordCount: recordCount(value), checksum: checksumValue(sanitizeValue(value)), payload: sanitizeValue(value) };
+  const inventoryById = new Map(EXPORTABLE_STORAGE_DOMAINS.map((item) => [item.id, item]));
+  for (const [id, value] of Object.entries(values)) {
+    const inventory = inventoryById.get(id);
+    if (!inventory) continue;
+    const payload = applyExportPolicy(inventory, value);
+    domains[id] = { version: 1, present: true, status: 'ok', recordCount: recordCount(payload), checksum: checksumValue(payload), payload };
+  }
   return { domains, warnings: [{ code: 'LEGACY_PARTIAL_BACKUP', message: 'Legacy backup restored only the domains it contained; newer local domains were left unchanged.' }] };
 }
 
@@ -321,9 +337,10 @@ export function buildRestorePlan(raw: unknown): { ok: true; plan: RestorePlan } 
       if (entry.checksum !== checksumValue(entry.payload)) return { ok: false, error: `Domain ${domainId} checksum does not match.`, warnings };
       if (entry.recordCount !== recordCount(entry.payload)) return { ok: false, error: `Domain ${domainId} record count does not match.`, warnings };
       if (!payloadMatchesDomain(inventory, entry.payload)) return { ok: false, error: `Domain ${domainId} payload has an invalid shape.`, warnings };
-      if (containsSecret(entry.payload)) return { ok: false, error: `Domain ${domainId} contains secret material and was refused.`, warnings };
+      if (inventory.exportPolicy === 'sanitized' && stableStringify(applyExportPolicy(inventory, entry.payload)) !== stableStringify(entry.payload)) return { ok: false, error: `Domain ${domainId} violates its sanitized field policy.`, warnings };
       writes.push({ domainId, storageKey: inventory.storageKey, value: JSON.stringify(entry.payload) });
     } else {
+      if ('payload' in entry || entry.recordCount !== 0 || entry.checksum !== checksumValue(null)) return { ok: false, error: `Absent domain ${domainId} has inconsistent payload metadata.`, warnings };
       writes.push({ domainId, storageKey: inventory.storageKey, value: null });
     }
   }

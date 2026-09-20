@@ -86,7 +86,9 @@ test('complete export includes accepted planning versions', () => {
 test('absent domain remains explicitly absent', () => {
   const envelope = createCompleteBackup(new MemoryStorage());
   assert.equal(envelope.domains.tasks.present, false);
-  assert.deepEqual(envelope.domains.tasks.payload, []);
+  assert.equal('payload' in envelope.domains.tasks, false);
+  assert.equal(envelope.domains.tasks.recordCount, 0);
+  assert.equal(envelope.domains.tasks.checksum, checksumValue(null));
 });
 
 test('stable stringify ignores object key insertion order', () => {
@@ -99,15 +101,20 @@ test('checksums are deterministic', () => {
 
 test('AI API key is excluded while non-secret settings survive', () => {
   const payload = createCompleteBackup(seededStorage()).domains['ai.settings'].payload;
-  assert.equal(payload.apiKey, '');
+  assert.equal('apiKey' in payload, false);
+  assert.equal(payload.provider, 'openai-compatible');
+  assert.equal(payload.baseUrl, 'https://example.test/v1');
   assert.equal(payload.model, 'safe-model');
 });
 
-test('nested credential fields are excluded', () => {
+test('include-policy user data named secret is preserved unchanged', () => {
   const storage = seededStorage();
   storage.setItem(storageKeys.aiArtifacts, JSON.stringify([{ metadata: { secret: 'no', title: 'yes' } }]));
-  const text = JSON.stringify(createCompleteBackup(storage));
-  assert.doesNotMatch(text, /"secret":"no"/);
+  const envelope = createCompleteBackup(storage);
+  assert.equal(envelope.domains['ai.artifacts'].payload[0].metadata.secret, 'no');
+  const target = new MemoryStorage();
+  assert.equal(restoreBackup(target, envelope).ok, true);
+  assert.equal(JSON.parse(target.getItem(storageKeys.aiArtifacts))[0].metadata.secret, 'no');
 });
 
 test('Supabase session and tokens are excluded', () => {
@@ -121,7 +128,11 @@ test('rolling backups are not recursively exported', () => {
 });
 
 test('signed URL credentials are stripped', () => {
-  const profile = createCompleteBackup(seededStorage()).domains.profile.payload;
+  const storage = seededStorage();
+  storage.setItem(storageKeys.profile, JSON.stringify({ nickname: 'R', identity: 'builder', avatarUrl: 'https://cdn.test/a.png?token=secret&access_token=also-secret&v=2' }));
+  const profile = createCompleteBackup(storage).domains.profile.payload;
+  assert.equal(profile.nickname, 'R');
+  assert.equal(profile.identity, 'builder');
   assert.equal(profile.avatarUrl, 'https://cdn.test/a.png?v=2');
 });
 
@@ -148,12 +159,26 @@ test('attachment manifest warns that binaries are not embedded', () => {
   assert.ok(envelope.warnings.some((warning) => warning.code === 'ATTACHMENT_CONTENT_NOT_EMBEDDED'));
 });
 
-test('corrupt local JSON is preserved as evidence and marks export incomplete', () => {
+test('corrupt local JSON exports only a redacted recovery descriptor', () => {
   const storage = seededStorage(); storage.setItem(storageKeys.tasks, '{broken');
   const envelope = createCompleteBackup(storage);
   assert.equal(envelope.metadata.complete, false);
   assert.equal(envelope.domains.tasks.status, 'corrupt');
-  assert.equal(envelope.domains.tasks.raw, '{broken');
+  assert.equal(envelope.domains.tasks.rawIncluded, false);
+  assert.equal(envelope.domains.tasks.redacted, true);
+  assert.equal(envelope.domains.tasks.rawByteLength, 7);
+  assert.equal(envelope.domains.tasks.rawChecksum, checksumValue('{broken'));
+  assert.doesNotMatch(JSON.stringify(envelope), /\{broken/);
+});
+
+test('corrupt AI settings never expose recognizable API key bytes', () => {
+  const storage = seededStorage();
+  storage.setItem(storageKeys.aiSettings, '{"apiKey":"sk-recognizable-secret"');
+  const envelope = createCompleteBackup(storage);
+  const text = JSON.stringify(envelope);
+  assert.equal(envelope.domains['ai.settings'].status, 'corrupt');
+  assert.equal(envelope.domains['ai.settings'].rawIncluded, false);
+  assert.doesNotMatch(text, /sk-recognizable-secret/);
 });
 
 test('invalid JSON input fails before restore planning', () => {
@@ -261,6 +286,12 @@ test('explicitly absent domain removes that key', () => {
   assert.equal(target.getItem(storageKeys.tasks), null);
 });
 
+test('inconsistent absent-domain metadata is rejected', () => {
+  const envelope = createCompleteBackup(new MemoryStorage());
+  envelope.domains = { tasks: { ...envelope.domains.tasks, payload: [] } }; envelope.attachments = []; refreshed(envelope);
+  assert.match(buildRestorePlan(envelope).error, /inconsistent payload metadata/);
+});
+
 test('restore creates a rollback snapshot before mutation', () => {
   const target = new MemoryStorage({ [storageKeys.tasks]: '[{"id":"before"}]' });
   const envelope = createCompleteBackup(seededStorage());
@@ -308,8 +339,17 @@ test('wrong application backup is rejected', () => {
 test('secret-bearing restore payload is rejected', () => {
   const envelope = createCompleteBackup(seededStorage());
   envelope.domains['ai.settings'].payload.apiKey = 'restored-secret';
+  envelope.domains['ai.settings'].recordCount += 1;
   envelope.domains['ai.settings'].checksum = checksumValue(envelope.domains['ai.settings'].payload); refreshed(envelope);
-  assert.match(buildRestorePlan(envelope).error, /secret material/);
+  assert.match(buildRestorePlan(envelope).error, /sanitized field policy/);
+});
+
+test('unknown credential-like AI settings fields cannot be restored', () => {
+  const envelope = createCompleteBackup(seededStorage());
+  envelope.domains['ai.settings'].payload.providerCredential = 'opaque-secret';
+  envelope.domains['ai.settings'].recordCount += 1;
+  envelope.domains['ai.settings'].checksum = checksumValue(envelope.domains['ai.settings'].payload); refreshed(envelope);
+  assert.match(buildRestorePlan(envelope).error, /sanitized field policy/);
 });
 
 test('corrupt-marked domain is rejected', () => {
