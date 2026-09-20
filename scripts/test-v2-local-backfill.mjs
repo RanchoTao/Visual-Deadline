@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /* Reproducible PR F local integration suite. It resets only the local Supabase stack. */
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -40,17 +41,21 @@ const apply = (name, value, requestId, failAt) => {
   return { result, report: result.status === 0 ? JSON.parse(result.stdout) : undefined };
 };
 const count = (sql, name) => Number(rows(sql, name)[0].count);
+const semanticChecksum = (id, name) => createHash('sha256').update(JSON.stringify(rows(`select source_entity_type,source_legacy_id,source_checksum,status,canonical_target_type from public.v2_legacy_entity_refs where user_id=${quote(id)}::uuid order by source_entity_type,source_legacy_id`, name))).digest('hex');
+const canonicalCounts = (id, name) => rows(`select (select count(*)::int from public.v2_goals where user_id=${quote(id)}::uuid) goals,(select count(*)::int from public.v2_tasks where user_id=${quote(id)}::uuid) tasks,(select count(*)::int from public.v2_task_dependencies where user_id=${quote(id)}::uuid) dependencies,(select count(*)::int from public.v2_legacy_entity_refs where user_id=${quote(id)}::uuid) refs`, name)[0];
 const expectCompleted = (id, requestId, expectedCreated) => {
   const job = rows(`select status,record_counts from public.v2_import_jobs where user_id=${quote(id)}::uuid and client_request_id=${quote(requestId)}`, `job-${requestId}`)[0];
   assert.equal(job.status, 'completed'); if (expectedCreated !== undefined) assert.equal(Number(job.record_counts.created), expectedCreated);
 };
 
 const reset = supabase('db reset --local'); assert.equal(reset.status, 0, reset.stderr || reset.stdout);
-const legacyBefore = count("select count(*)::int count from public.goals union all select count(*)::int from public.tasks", 'legacy-before');
-assert.equal(legacyBefore, 0, 'local reset must start without legacy records');
+const legacySnapshot = (name) => rows("select (select count(*)::int from public.goals) goals,(select coalesce(md5(string_agg(id || ':' || data::text, ',' order by id)),'') from public.goals) goals_checksum,(select count(*)::int from public.tasks) tasks,(select coalesce(md5(string_agg(id || ':' || data::text, ',' order by id)),'') from public.tasks) tasks_checksum", name)[0];
+const legacyBefore = legacySnapshot('legacy-before'); assert.deepEqual(legacyBefore, { goals: 0, goals_checksum: '', tasks: 0, tasks_checksum: '' }, 'local reset must start without legacy records');
 
 // Normal run, actual checksums/reconciliation, fresh same-run parent links, then idempotent resume.
 const normalUser = userId(1); createUser(normalUser); const normal = fixture(normalUser); const normalRequest = 'local-normal';
+const reportOnlyBefore = canonicalCounts(normalUser, 'report-only-before'); const reportJobsBefore = count(`select count(*)::int count from public.v2_import_jobs where user_id=${quote(normalUser)}::uuid`, 'report-only-jobs-before');
+const reportOnly = run(process.execPath, ['scripts/v2-local-backfill.mjs', '--input', writeFixture('report-only', normal)]); assert.equal(reportOnly.status, 0, reportOnly.stderr); assert.deepEqual(canonicalCounts(normalUser, 'report-only-after'), reportOnlyBefore); assert.equal(count(`select count(*)::int count from public.v2_import_jobs where user_id=${quote(normalUser)}::uuid`, 'report-only-jobs-after'), reportJobsBefore);
 let outcome = apply('normal', normal, normalRequest); assert.equal(outcome.result.status, 0, outcome.result.stderr); assert.equal(outcome.report.summary.created, 6);
 expectCompleted(normalUser, normalRequest, 6);
 assert.equal(count(`select count(*)::int count from public.v2_legacy_entity_refs where user_id=${quote(normalUser)}::uuid and status='migrated' and target_checksum is not null`, 'normal-checksums'), 6);
@@ -60,17 +65,30 @@ outcome = apply('normal-repeat', normal, normalRequest); assert.equal(outcome.re
 
 // A changed source gets durable evidence and is never silently copied over the original canonical target.
 outcome = apply('normal-changed', fixture(normalUser, { changed: true }), normalRequest); assert.equal(outcome.result.status, 0, outcome.result.stderr); assert.equal(outcome.report.sourceChanged, 1);
+outcome = apply('normal-changed-repeat', fixture(normalUser, { changed: true }), normalRequest); assert.equal(outcome.result.status, 0, outcome.result.stderr); assert.equal(outcome.report.sourceChanged, 1);
 assert.equal(rows(`select title from public.v2_tasks where user_id=${quote(normalUser)}::uuid and provenance #>> '{legacy,entityId}'='task-a'`, 'changed-title')[0].title, 'Task A');
-assert.equal(count(`select count(*)::int count from public.v2_legacy_entity_refs where user_id=${quote(normalUser)}::uuid and warnings::text like '%SOURCE_CHANGED_AFTER_IMPORT%'`, 'changed-warning'), 1);
+assert.equal(count(`select count(*)::int count from public.v2_legacy_entity_refs refs cross join lateral jsonb_array_elements(refs.warnings) warning where refs.user_id=${quote(normalUser)}::uuid and warning->>'code'='SOURCE_CHANGED_AFTER_IMPORT'`, 'changed-warning'), 1);
 
+const baselineChecksum = semanticChecksum(normalUser, 'baseline-checksum');
 // Every named interruption point must leave a resumable local ledger and later converge without duplicate rows.
 const failures = ['before-write', 'after-first-goal-batch', 'after-goal-mappings', 'after-first-task-batch', 'after-task-mappings', 'during-dependency-creation', 'before-final-reconciliation'];
 for (const [index, point] of failures.entries()) {
   const id = userId(index + 10); const requestId = `failure-${index}`; createUser(id); const input = fixture(id);
   const interrupted = apply(`failure-${index}`, input, requestId, point); assert.notEqual(interrupted.result.status, 0, `${point} must inject a failure`);
   const resumed = apply(`failure-${index}-resume`, input, requestId); assert.equal(resumed.result.status, 0, resumed.result.stderr); expectCompleted(id, requestId);
-  assert.equal(count(`select count(*)::int count from public.v2_legacy_entity_refs where user_id=${quote(id)}::uuid`, `failure-refs-${index}`), 6);
+  assert.deepEqual(canonicalCounts(id, `failure-counts-${index}`), { goals: 2, tasks: 3, dependencies: 1, refs: 6 });
+  assert.equal(count(`select count(*)::int count from public.v2_legacy_entity_refs where user_id=${quote(id)}::uuid and status='migrated' and target_checksum is not null`, `failure-checksums-${index}`), 6);
+  assert.equal(count(`select count(*)::int count from (select sources from (select provenance #> '{legacy}' sources from public.v2_goals where user_id=${quote(id)}::uuid union all select provenance #> '{legacy}' from public.v2_tasks where user_id=${quote(id)}::uuid union all select provenance #> '{legacy}' from public.v2_task_dependencies where user_id=${quote(id)}::uuid) all_sources group by sources having count(*) > 1) duplicate_sources`, `failure-provenance-${index}`), 0);
+  assert.equal(count(`select count(*)::int count from (select canonical_target_type,canonical_target_id from public.v2_legacy_entity_refs where user_id=${quote(id)}::uuid group by canonical_target_type,canonical_target_id having count(*) > 1) mappings`, `failure-mappings-${index}`), 0);
+  assert.equal(semanticChecksum(id, `failure-semantic-${index}`), baselineChecksum);
 }
+
+// A same-owner but unmapped FK is never normalized to null during reconciliation.
+const unexpectedUser = userId(29); createUser(unexpectedUser); const unexpected = fixture(unexpectedUser); unexpected.goals = []; unexpected.tasks = [unexpected.tasks[0]]; unexpected.tasks[0].linkedGoalIds = []; unexpected.relationshipEvidence = {};
+outcome = apply('unexpected-initial', unexpected, 'unexpected'); assert.equal(outcome.result.status, 0, outcome.result.stderr);
+rows(`insert into public.v2_goals (user_id,title,status,importance,provenance,version) values (${quote(unexpectedUser)}::uuid,'unexpected same-owner goal','active',1,'{}'::jsonb,1)`, 'unexpected-goal');
+rows(`update public.v2_tasks set goal_id=(select id from public.v2_goals where user_id=${quote(unexpectedUser)}::uuid and title='unexpected same-owner goal') where user_id=${quote(unexpectedUser)}::uuid and provenance #>> '{legacy,entityId}'='task-a'`, 'unexpected-link');
+const unexpectedRetry = apply('unexpected-retry', unexpected, 'unexpected'); assert.notEqual(unexpectedRetry.result.status, 0); assert.match(unexpectedRetry.result.stderr, /UNMAPPED_CANONICAL_RELATION:task:task-a:goal_id/);
 
 // Cycles are ledger evidence, not persisted dependency edges.
 const cycleUser = userId(30); createUser(cycleUser); const cycle = fixture(cycleUser); cycle.goals[0].linkedTaskIds = ['task-a', 'task-b']; cycle.goals[1].linkedTaskIds = [];
@@ -94,5 +112,5 @@ outcome = apply('scale', scale, 'scale'); assert.equal(outcome.result.status, 0,
 assert.equal(count(`select count(*)::int count from public.v2_tasks where user_id=${quote(scaleUser)}::uuid`, 'scale-tasks'), 191);
 assert.equal(count(`select count(*)::int count from public.v2_legacy_entity_refs where user_id=${quote(scaleUser)}::uuid and status='migrated' and target_checksum is not null`, 'scale-checksums'), 204);
 
-const legacyAfter = count("select count(*)::int count from public.goals union all select count(*)::int from public.tasks", 'legacy-after'); assert.equal(legacyAfter, legacyBefore, 'the local runner must not mutate legacy source tables');
+const legacyAfter = legacySnapshot('legacy-after'); assert.deepEqual(legacyAfter, legacyBefore, 'the local runner must not mutate either legacy source table');
 console.log('v2 local backfill integration passed: normal/resume/source-change/failures/cycles/duplicate-provenance/isolation/scale/legacy-unchanged');

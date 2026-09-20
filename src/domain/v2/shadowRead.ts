@@ -45,6 +45,9 @@ export function compareVisualDeadlineShadow(
   const diagnostics: string[] = [];
   const canonicalGoals = new Map(canonical.goals.map((item) => [item.legacyId, item]));
   const canonicalTasks = new Map(canonical.tasks.map((item) => [item.legacyId, item]));
+  if (legacy.goals.length !== canonical.goals.length) diagnostics.push('GOAL_COUNT_MISMATCH');
+  if (legacy.tasks.length !== canonical.tasks.length) diagnostics.push('TASK_COUNT_MISMATCH');
+  if (legacy.dependencies.length !== canonical.dependencies.length) diagnostics.push('DEPENDENCY_COUNT_MISMATCH');
   for (const item of legacy.goals) {
     const candidate = canonicalGoals.get(item.legacyId);
     if (!candidate) { diagnostics.push(diagnostic('GOAL_MAPPING_MISSING', item.legacyId)); continue; }
@@ -55,9 +58,15 @@ export function compareVisualDeadlineShadow(
     if (!candidate) { diagnostics.push(diagnostic('TASK_MAPPING_MISSING', item.legacyId)); continue; }
     for (const field of ['status', 'importance', 'progress', 'deadline', 'startAfter', 'goalLegacyId', 'parentTaskLegacyId'] as const) if (item[field] !== candidate[field]) diagnostics.push(diagnostic('TASK_MISMATCH', item.legacyId, field));
   }
+  const legacyGoalIds = new Set(legacy.goals.map((item) => item.legacyId));
+  const legacyTaskIds = new Set(legacy.tasks.map((item) => item.legacyId));
+  for (const item of canonical.goals) if (!legacyGoalIds.has(item.legacyId)) diagnostics.push(diagnostic('GOAL_MAPPING_EXTRA', item.legacyId));
+  for (const item of canonical.tasks) if (!legacyTaskIds.has(item.legacyId)) diagnostics.push(diagnostic('TASK_MAPPING_EXTRA', item.legacyId));
   const keys = (items: readonly { predecessorLegacyId: string; successorLegacyId: string; type: string }[]) => new Set(items.map((item) => `${item.predecessorLegacyId}->${item.successorLegacyId}:${item.type}`));
+  const legacyDependencies = keys(legacy.dependencies);
   const canonicalDependencies = keys(canonical.dependencies);
-  for (const key of keys(legacy.dependencies)) if (!canonicalDependencies.has(key)) diagnostics.push(`DEPENDENCY_MISSING:${key}`);
+  for (const key of legacyDependencies) if (!canonicalDependencies.has(key)) diagnostics.push(`DEPENDENCY_MISSING:${key}`);
+  for (const key of canonicalDependencies) if (!legacyDependencies.has(key)) diagnostics.push(`DEPENDENCY_EXTRA:${key}`);
   return diagnostics.sort((left, right) => left.localeCompare(right));
 }
 

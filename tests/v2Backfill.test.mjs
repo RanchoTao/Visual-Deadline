@@ -104,7 +104,13 @@ test('read shadow is default-off and never changes caller authority', async () =
 test('VisualDeadline shadow comparator is pure, deterministic and detects mapping and relationship drift', () => {
   const legacy = { goals: [{ legacyId: 'g', status: 'active', importance: 8 }], tasks: [{ legacyId: 't', status: 'ready', importance: 9, progress: 20, goalLegacyId: 'g' }], dependencies: [{ predecessorLegacyId: 'p', successorLegacyId: 't', type: 'blocks' }] };
   const canonical = { goals: [{ legacyId: 'g', status: 'paused', importance: 8 }], tasks: [{ legacyId: 't', status: 'ready', importance: 9, progress: 30 }], dependencies: [] };
-  const expected = ['DEPENDENCY_MISSING:p->t:blocks', 'GOAL_MISMATCH:g:status', 'TASK_MISMATCH:t:goalLegacyId', 'TASK_MISMATCH:t:progress'];
+  const expected = ['DEPENDENCY_COUNT_MISMATCH', 'DEPENDENCY_MISSING:p->t:blocks', 'GOAL_MISMATCH:g:status', 'TASK_MISMATCH:t:goalLegacyId', 'TASK_MISMATCH:t:progress'];
   assert.deepEqual(compareVisualDeadlineShadow(legacy, canonical), expected);
   assert.deepEqual(compareVisualDeadlineShadow(legacy, canonical), expected);
+});
+
+test('VisualDeadline shadow comparator reports deterministic count and extra-canonical diagnostics', () => {
+  const legacy = { goals: [{ legacyId: 'g', status: 'active', importance: 1 }], tasks: [], dependencies: [] };
+  const canonical = { goals: [{ legacyId: 'g', status: 'active', importance: 1 }, { legacyId: 'extra-g', status: 'active', importance: 1 }], tasks: [{ legacyId: 'extra-t', status: 'ready', importance: 1, progress: 0 }], dependencies: [{ predecessorLegacyId: 'extra-t', successorLegacyId: 'extra-t', type: 'blocks' }] };
+  assert.deepEqual(compareVisualDeadlineShadow(legacy, canonical), ['DEPENDENCY_COUNT_MISMATCH', 'DEPENDENCY_EXTRA:extra-t->extra-t:blocks', 'GOAL_COUNT_MISMATCH', 'GOAL_MAPPING_EXTRA:extra-g', 'TASK_COUNT_MISMATCH', 'TASK_MAPPING_EXTRA:extra-t']);
 });
