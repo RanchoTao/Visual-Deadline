@@ -25,7 +25,7 @@ function RecommendationDiagnostics({ comparison }: { comparison: HomeRecommendat
       <summary className="cursor-pointer font-semibold text-slate-700">Execution recommendation diagnostics</summary>
       <dl className="mt-3 grid gap-2 sm:grid-cols-2">
         <div><dt className="font-semibold">Legacy Top 3</dt><dd>{comparison.legacy.taskIds.join(' → ') || 'empty'}</dd></div>
-        <div><dt className="font-semibold">Execution Top 3</dt><dd>{comparison.execution.taskIds.join(' → ') || 'empty'}</dd></div>
+        <div><dt className="font-semibold">Canonical Top 3</dt><dd>{comparison.canonical.taskIds.join(' → ') || 'empty'}</dd></div>
         <div><dt className="font-semibold">Relation</dt><dd>{comparison.rankingRelation}</dd></div>
         <div><dt className="font-semibold">Classifications</dt><dd>{comparison.classifications.join(', ')}</dd></div>
       </dl>
@@ -39,9 +39,9 @@ function RecommendationDiagnostics({ comparison }: { comparison: HomeRecommendat
           {comparison.differences.map((difference, index) => (
             <li key={`${difference.kind}-${difference.taskId ?? 'summary'}-${index}`}>
               {difference.kind}{difference.taskId ? `: ${difference.taskId}` : ''}
-              {difference.reason ? ` (${difference.reason})` : ''}
+              {difference.canonicalExclusionReasons?.length ? ` (${difference.canonicalExclusionReasons.join(', ')})` : ''}
               {difference.legacyRank ? ` legacy #${difference.legacyRank}` : ''}
-              {difference.executionRank ? ` execution #${difference.executionRank}` : ''}
+              {difference.canonicalRank ? ` canonical #${difference.canonicalRank}` : ''}
             </li>
           ))}
         </ul>

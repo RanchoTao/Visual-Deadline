@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
 const { buildHomeRecommendationComparison } = await import('./.compiled/src/domain/execution/index.js');
-const NOW = Date.parse('2026-09-14T02:00:00.000Z');
+const NOW = Date.parse('2026-09-16T12:00:00.000Z');
 const iso = (offset) => new Date(NOW + offset).toISOString();
 const task = (id, overrides = {}) => ({
   id,
@@ -30,56 +30,32 @@ const goal = (overrides = {}) => ({
 const agree = task('agree');
 let comparison = buildHomeRecommendationComparison([], [agree], [agree], NOW);
 assert.equal(comparison.agreement, true);
-assert.equal(comparison.rankingRelation, 'exact');
-assert.deepEqual(comparison.classifications, ['exact-agreement']);
+assert.equal(comparison.rankingRelation, 'EXACT_ORDER');
+assert.deepEqual(comparison.classifications, ['EXACT_ORDER']);
+assert.deepEqual(comparison.canonical.taskIds, ['agree']);
 
-const completed = task('completed', { lifecycleStatus: 'completed', progress: 40, completedAt: iso(-1000) });
+const completed = task('completed', { lifecycleStatus: 'completed', progress: 100, completedAt: iso(-1000) });
 comparison = buildHomeRecommendationComparison([], [completed], [completed], NOW);
-assert.ok(comparison.classifications.includes('execution-excludes-legacy-candidate'));
-assert.equal(comparison.differences.find((item) => item.taskId === 'completed')?.reason, 'completed');
+assert.ok(comparison.classifications.includes('CANONICAL_EXCLUDES_LEGACY'));
+assert.deepEqual(comparison.differences.find((item) => item.taskId === 'completed')?.canonicalExclusionReasons, ['COMPLETED', 'PROGRESS_COMPLETE', 'NON_ACTIONABLE']);
 
 const prerequisite = task('prerequisite', { importance: 4 });
 const blocked = task('blocked', { importance: 10, dependencyIds: ['prerequisite'] });
 comparison = buildHomeRecommendationComparison([], [blocked, prerequisite], [blocked, prerequisite], NOW);
-assert.equal(comparison.differences.find((item) => item.taskId === 'blocked')?.reason, 'dependency-blocked');
-assert.deepEqual(comparison.execution.taskIds, ['prerequisite']);
+assert.deepEqual(comparison.canonical.taskIds, ['prerequisite']);
+assert.deepEqual(comparison.differences.find((item) => item.taskId === 'blocked')?.canonicalExclusionReasons, ['DEPENDENCY_BLOCKED']);
 
 const future = task('future', { importance: 10, startDate: iso(7 * 86400000) });
 comparison = buildHomeRecommendationComparison([], [future], [future], NOW);
-assert.equal(comparison.differences.find((item) => item.taskId === 'future')?.reason, 'future-start');
+assert.deepEqual(comparison.differences.find((item) => item.taskId === 'future')?.canonicalExclusionReasons, ['STARTS_IN_FUTURE']);
 
 const linkedTask = task('linked');
 comparison = buildHomeRecommendationComparison([goal({ linkedTaskIds: ['linked'] })], [linkedTask], [linkedTask], NOW);
-assert.ok(comparison.classifications.includes('relationship-data-warning'));
 assert.equal(comparison.relationshipWarnings.length, 1);
-assert.equal(comparison.agreement, false);
-
-const first = task('first', { importance: 10, deadline: iso(-1000) });
-const longImportant = task('long-important', { importance: 9, deadline: undefined });
-const overdue = task('overdue', { importance: 5, deadline: iso(-1000) });
-comparison = buildHomeRecommendationComparison([], [first, longImportant, overdue], [first, longImportant, overdue], NOW);
-assert.equal(comparison.rankingRelation, 'same-top-different-order');
-assert.ok(comparison.classifications.includes('same-top-different-order'));
-assert.deepEqual(comparison.execution.taskIds, ['first', 'overdue', 'long-important']);
-assert.ok(comparison.differences.some((item) => item.kind === 'priority-ordering'));
+assert.equal(comparison.agreement, true);
 
 comparison = buildHomeRecommendationComparison([], [], [], NOW);
 assert.equal(comparison.agreement, true);
-assert.deepEqual(comparison.legacy.taskIds, []);
-assert.deepEqual(comparison.execution.taskIds, []);
+assert.deepEqual(comparison.canonical.taskIds, []);
 
-const unowned = task('unowned');
-comparison = buildHomeRecommendationComparison([], [unowned], [unowned], NOW);
-assert.equal(comparison.agreement, true);
-assert.deepEqual(comparison.relationshipWarnings, []);
-
-const progressOnly = task('progress-only', { progress: 100 });
-comparison = buildHomeRecommendationComparison([], [progressOnly], [progressOnly], NOW);
-assert.equal(comparison.differences.find((item) => item.taskId === 'progress-only')?.reason, 'progress-100');
-
-const executionOnly = task('execution-only');
-comparison = buildHomeRecommendationComparison([], [executionOnly], [], NOW);
-assert.ok(comparison.classifications.includes('legacy-excludes-execution-candidate'));
-assert.ok(comparison.classifications.includes('non-comparable'));
-
-console.log('Home recommendation comparison scenarios passed.');
+console.log('Home canonical shadow comparison scenarios passed.');

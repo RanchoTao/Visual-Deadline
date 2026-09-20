@@ -1,27 +1,14 @@
 import type { ExecutionTask } from './types.js';
+import { calculateTaskPressure, calculateUrgency } from '../../lib/pressureEngine.js';
 
-const HOUR_MS = 3_600_000;
-const DAY_MS = 24 * HOUR_MS;
+const DAY_MS = 24 * 3_600_000;
 const HEAT_WINDOW_MS = 30 * DAY_MS;
 export type MatrixQuadrant = 'I' | 'II' | 'III' | 'IV';
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
-const round2 = (value: number) => Math.round(value * 100) / 100;
-
 /** Exact importance-urgency-v1 buckets, retained from VD and proven in Wayline. */
 export function urgencyWeight(deadline: string | undefined, now = Date.now()): number {
-  if (!deadline) return 0.5;
-  const due = new Date(deadline).getTime();
-  if (!Number.isFinite(due)) return 0.5;
-  const remaining = due - now;
-  if (remaining < 0) return 7;
-  if (remaining <= HOUR_MS) return 6;
-  if (remaining <= 6 * HOUR_MS) return 5;
-  if (remaining <= DAY_MS) return 4;
-  if (remaining <= 3 * DAY_MS) return 3;
-  if (remaining <= 7 * DAY_MS) return 2;
-  if (remaining <= 30 * DAY_MS) return 1;
-  return 0.75;
+  return calculateUrgency(deadline, now);
 }
 
 export function isActiveExecutable(task: ExecutionTask): boolean {
@@ -38,7 +25,7 @@ export function isBlocked(task: ExecutionTask, tasks: ExecutionTask[]): boolean 
 }
 
 export function taskPressure(task: ExecutionTask, now = Date.now()): number {
-  return round2(task.importance * urgencyWeight(task.deadline, now) * (1 - clamp(task.progress, 0, 100) / 100));
+  return calculateTaskPressure(task, now);
 }
 
 export function priorityScore(task: ExecutionTask, now = Date.now()): number {
