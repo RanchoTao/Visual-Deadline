@@ -2,13 +2,13 @@
 
 ## Current state
 
-VisualDeadline currently has email/password auth, email verification callback/resend, refresh-token rotation, sign-out, and guest mode through a custom Supabase REST client. Session tokens are stored in browser localStorage. There is no phone OTP, OAuth, identity-link UI, or explicit guest import workflow.
+Before PR G, VisualDeadline used a custom Supabase REST Auth client. PR G replaces its Auth path with the supported client, preserving email/password and session persistence. Phone, OAuth, identity linking, and production guest import remain independently gated; only a local zero-write guest preview is available by default.
 
 ## Target outcomes
 
 - Email/password remains supported.
 - Phone OTP is supported only after an SMS provider, abuse controls, rate limits, and recovery policy are configured.
-- Google and Apple OAuth use Authorization Code + PKCE through the supported Supabase client.
+- Google, GitHub, and X/Twitter OAuth use Authorization Code + PKCE through the supported Supabase client when independently enabled.
 - One product user can link multiple verified identities.
 - Guest data moves to an account through a previewable, idempotent import, never an implicit merge-and-replace.
 - Account recovery, unlinking, deletion, and audit events are designed before public rollout.
@@ -45,7 +45,7 @@ Editable profile fields and raw user metadata are never authorization inputs.
 4. Offer identity linking only while the current account is strongly authenticated.
 5. Never use phone number as a product primary key.
 
-### Google / Apple OAuth
+### Google / GitHub / X OAuth
 
 1. Start PKCE OAuth with an allow-listed redirect URL and CSRF state.
 2. Complete callback through Supabase Auth.

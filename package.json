@@ -16,17 +16,18 @@
     "test:v2:backfill:local": "node scripts/test-v2-local-backfill.mjs"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.116.0",
+    "@xyflow/react": "file:src/vendor/xyflow-react",
     "react": "latest",
-    "react-dom": "latest",
-    "@xyflow/react": "file:src/vendor/xyflow-react"
+    "react-dom": "latest"
   },
   "devDependencies": {
     "@tailwindcss/vite": "latest",
-    "@vitejs/plugin-react": "latest",
-    "typescript": "latest",
-    "vite": "latest",
-    "tailwindcss": "latest",
     "@types/react": "latest",
-    "@types/react-dom": "latest"
+    "@types/react-dom": "latest",
+    "@vitejs/plugin-react": "latest",
+    "tailwindcss": "latest",
+    "typescript": "latest",
+    "vite": "latest"
   }
 }

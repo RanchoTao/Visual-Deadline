@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-const { planV2Backfill, readWithV2Shadow, resolveV2ReadMode, compareVisualDeadlineShadow } = await import('./.compiled/src/domain/v2/index.js');
+const { assertGuestCloudImportRuntimeEnabled, createGuestImportPreview, planV2Backfill, readWithV2Shadow, resolveV2ReadMode, validateGuestImportConfirmation, compareVisualDeadlineShadow } = await import('./.compiled/src/domain/v2/index.js');
 
 const goal = (overrides = {}) => ({
   id: 'goal-1', title: 'Beta goal', category: 'work', priority: 8, linkedTaskIds: ['task-1'],
@@ -59,6 +59,24 @@ test('planner retains unresolved dependency evidence and excludes cycles without
   assert.equal(twoCycle.records.filter((entry) => entry.entityType === 'task_dependency' && entry.disposition === 'UNRESOLVED').length, 2);
   const threeCycle = plan([goal({ linkedTaskIds: ['a', 'b', 'c'] })], [task({ id: 'a', linkedGoalIds: ['goal-1'], dependencyIds: ['c'] }), task({ id: 'b', linkedGoalIds: ['goal-1'], dependencyIds: ['a'] }), task({ id: 'c', linkedGoalIds: ['goal-1'], dependencyIds: ['b'] })]);
   assert.equal(threeCycle.plannedCounts.dependencies, 0);
+});
+
+test('guest import preview is snapshot-bound, zero-write, and owner-bound', () => {
+  const values = new Map([
+    ['visualized-deadline.tasks', JSON.stringify([task()])],
+    ['visualized-deadline.goals', JSON.stringify([goal()])],
+    ['visualized-deadline.social.nodes', JSON.stringify([{ id: 'local-social' }])],
+  ]);
+  const storage = { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: (key) => values.delete(key) };
+  const before = JSON.stringify([...values]);
+  const preview = createGuestImportPreview(storage, 'owner-1');
+  assert.equal(preview.state, 'preview_ready');
+  assert.equal(preview.plan.writesPerformed, 0);
+  assert.ok(preview.unsupportedDomains.includes('social.nodes'));
+  assert.equal(JSON.stringify([...values]), before, 'preview must not mutate local source');
+  validateGuestImportConfirmation(preview, { snapshotId: preview.snapshotId, snapshotChecksum: preview.snapshotChecksum, destinationUserId: 'owner-1', clientRequestId: 'request-1' }, 'owner-1');
+  assert.throws(() => validateGuestImportConfirmation(preview, { snapshotId: preview.snapshotId, snapshotChecksum: preview.snapshotChecksum, destinationUserId: 'owner-2', clientRequestId: 'request-1' }, 'owner-1'), /GUEST_IMPORT_OWNER_MISMATCH/);
+  assert.throws(() => assertGuestCloudImportRuntimeEnabled(), /GUEST_IMPORT_RUNTIME_DISABLED_UNTIL_V2_SCHEMA_DEPLOYMENT/);
 });
 
 test('planner accepts only explicit valid parent evidence for goals and tasks', () => {

@@ -105,7 +105,6 @@ async function loadJsonRows<T>(table: 'tasks' | 'goals' | 'pressure_logs', sessi
 }
 
 async function replaceJsonRows<T extends { id: string }>(table: 'tasks' | 'goals' | 'pressure_logs', values: T[], session: SupabaseSession): Promise<void> {
-  await supabase.rest(`${table}?user_id=eq.${encode(session.user.id)}`, { method: 'DELETE' }, session);
   if (values.length === 0) return;
   await supabase.rest(table, {
     method: 'POST',

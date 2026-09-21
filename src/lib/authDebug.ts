@@ -48,8 +48,9 @@ export function recordAuthDebugError(path: string, error: unknown): AuthDebugEnt
     error: readErrorRecord(error),
     url: {
       pathname: typeof window === 'undefined' ? '' : window.location.pathname,
-      search: typeof window === 'undefined' ? '' : window.location.search,
-      hash: typeof window === 'undefined' ? '' : window.location.hash,
+      // Callback values can contain credentials. Presence is recorded below, never raw URL values.
+      search: typeof window === 'undefined' || !window.location.search ? '' : '[redacted]',
+      hash: typeof window === 'undefined' || !window.location.hash ? '' : '[redacted]',
     },
     userAgent: typeof navigator === 'undefined' ? '' : navigator.userAgent,
     callbackParams: {

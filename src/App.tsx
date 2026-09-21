@@ -1,6 +1,7 @@
 import { type ReactElement, useEffect, useMemo, useRef, useState } from 'react';
 import { AchievementToast } from './components/AchievementToast';
 import { AuthPanel } from './components/AuthPanel';
+import { GuestImportPanel } from './components/GuestImportPanel';
 import { DesktopShell } from './components/DesktopShell';
 import { HomePage } from './components/HomePage';
 import { LifeMapPage } from './components/LifeMapPage';
@@ -39,9 +40,10 @@ import { appendPressureHistoryRecord, createPressureHistoryRecord, normalizePres
 import { sortActiveTasksByProgress } from './utils/taskDerivedState';
 import { createDailyReviewFromQuest, generateDailyQuest } from './utils/dailyQuest';
 import { deleteCloudLifeEvent, loadCloudData, loadCloudLifeEvents, saveCloudGoals, saveCloudPressureHistory, saveCloudProfile, saveCloudTasks, upsertCloudLifeEvents } from './lib/cloudSync';
-import { hasValue, loadValue, savePressure, saveTasks, saveValue, storageKeys } from './storage';
+import { browserStorageAdapter, hasValue, loadValue, savePressure, saveTasks, saveValue, storageKeys } from './storage';
 import { createDefaultLifePreferences, createLifeEvent, deriveLifeState, getLifeEventsForOwner, mergeLifeEvents, planLifeController, setLifeEventsForOwner, undoLatestLifeEvent as removeLatestLifeEvent } from './domain/life-controller';
 import { buildHomeRecommendationComparison } from './domain/execution/homeProjection';
+import { assertGuestCloudImportRuntimeEnabled, createGuestImportPreview, validateGuestImportConfirmation, type GuestImportPreview } from './domain/v2/guestImport';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const WELCOME_BACK_GAP_MS = 2 * 60 * 60 * 1000;
@@ -378,7 +380,7 @@ function createAchievement(id: string): Achievement | undefined {
 
 function App() {
   const [publicPath, setPublicPath] = useState(() => window.location.pathname);
-  const { session, isLoading: isAuthLoading, error: authError, status: authStatus, authDebugInfo, isConfigured: isSupabaseConfigured, signIn, signUp, resendVerificationEmail, signOut } = useSupabaseAuth();
+  const { session, isLoading: isAuthLoading, error: authError, status: authStatus, authDebugInfo, isConfigured: isSupabaseConfigured, featureFlags: authFeatureFlags, signIn, signUp, resendVerificationEmail, signOut, signInWithOAuth, requestPhoneOtp, verifyPhoneOtp } = useSupabaseAuth();
   const [hasChosenGuestMode, setHasChosenGuestMode] = useState(false);
   const [cloudStatus, setCloudStatus] = useState<string | undefined>();
   const [cloudToast, setCloudToast] = useState<string | undefined>();
@@ -388,6 +390,8 @@ function App() {
   const [isCloudReady, setIsCloudReady] = useState(false);
   const [isLifeEventCloudReady, setIsLifeEventCloudReady] = useState(false);
   const isApplyingCloudData = useRef(false);
+  const guestImportPreviewRef = useRef<GuestImportPreview | undefined>(undefined);
+  const [guestImportPreview, setGuestImportPreview] = useState<GuestImportPreview | undefined>();
   const [tasks, setTasks] = useLocalStorage<Task[]>(storageKeys.tasks, []);
   const [goals, setGoals] = useLocalStorage<Goal[]>(storageKeys.goals, []);
   const [achievements, setAchievements] = useLocalStorage<Achievement[]>(storageKeys.achievements, []);
@@ -475,11 +479,30 @@ function App() {
 
   useEffect(() => {
     if (!session) {
+      guestImportPreviewRef.current = undefined;
+      setGuestImportPreview(undefined);
+      return;
+    }
+    if (normalizedTasks.length === 0 && normalizedGoals.length === 0) return;
+    const preview = createGuestImportPreview(browserStorageAdapter, session.user.id);
+    guestImportPreviewRef.current = preview;
+    setGuestImportPreview(preview);
+  }, [session?.user.id]);
+
+  useEffect(() => {
+    if (!session) {
       setIsCloudReady(false);
       setIsLifeEventCloudReady(false);
       setCloudStatus(undefined);
       setCloudError(undefined);
       setLifeEventCloudError(undefined);
+      return;
+    }
+
+    if (guestImportPreviewRef.current?.destinationUserId === session.user.id) {
+      setIsCloudReady(false);
+      setIsLifeEventCloudReady(false);
+      setCloudStatus('已检测到访客数据。请先查看并确认导入预览；登录本身不会同步或重写云端数据。');
       return;
     }
 
@@ -547,6 +570,23 @@ function App() {
       isMounted = false;
     };
   }, [session?.access_token, session?.user.id]);
+
+  function confirmGuestImport(): void {
+    if (!session || !guestImportPreview) return;
+    try {
+      validateGuestImportConfirmation(guestImportPreview, {
+        snapshotId: guestImportPreview.snapshotId,
+        snapshotChecksum: guestImportPreview.snapshotChecksum,
+        destinationUserId: session.user.id,
+        clientRequestId: crypto.randomUUID(),
+      }, session.user.id);
+      assertGuestCloudImportRuntimeEnabled();
+    } catch (error) {
+      setCloudStatus(error instanceof Error && error.message === 'GUEST_IMPORT_RUNTIME_DISABLED_UNTIL_V2_SCHEMA_DEPLOYMENT'
+        ? '导入确认已校验；生产 v2 表与服务端执行闸门尚未获准，未写入任何云端记录。'
+        : '导入确认失败：本机快照或登录身份已变化。请重新生成预览。');
+    }
+  }
 
   async function recordLifeEvent(type: BuiltInLifeEventType): Promise<void> {
     if (type === 'wake' && lifeState.currentSleepState === 'awake') throw new Error('当前已是清醒状态，未重复记录起床。');
@@ -1138,7 +1178,7 @@ function App() {
   }
 
   if (!session && !hasChosenGuestMode) {
-    return <AuthPanel isConfigured={isSupabaseConfigured} isLoading={isAuthLoading} error={authError} status={authStatus} authDebugInfo={authDebugInfo} onSignIn={signIn} onSignUp={signUp} onResendVerification={resendVerificationEmail} onContinueAsGuest={() => setHasChosenGuestMode(true)} />;
+    return <AuthPanel isConfigured={isSupabaseConfigured} isLoading={isAuthLoading} error={authError} status={authStatus} authDebugInfo={authDebugInfo} featureFlags={authFeatureFlags} onSignIn={signIn} onSignUp={signUp} onResendVerification={resendVerificationEmail} onOAuth={signInWithOAuth} onRequestPhoneOtp={requestPhoneOtp} onVerifyPhoneOtp={verifyPhoneOtp} onContinueAsGuest={() => setHasChosenGuestMode(true)} />;
   }
 
   return (
@@ -1171,6 +1211,7 @@ function App() {
           {cloudToast}
         </div>
       ) : null}
+      {guestImportPreview ? <GuestImportPanel preview={guestImportPreview} onConfirm={confirmGuestImport} /> : null}
       <AchievementToast achievement={toastAchievement} />
       {welcomeBackMessage ? (
         <aside className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-100/45 px-4 py-6 backdrop-blur-md" role="status">

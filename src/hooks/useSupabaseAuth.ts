@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { EMAIL_LINK_EXPIRED_MESSAGE, EMAIL_VERIFICATION_RESENT_MESSAGE, EMAIL_VERIFIED_LOGIN_MESSAGE, getAuthErrorMessage } from '../constants/authMessages';
 import { getLastAuthDebugEntry, recordAuthDebugError, type AuthDebugEntry } from '../lib/authDebug';
-import { supabase, type SupabaseSession } from '../lib/supabaseClient';
+import { authFeatureFlags, getAuthCallbackUrl, normalizePhoneE164 } from '../lib/authFeatures';
+import { supabase, type IdentityProvider, type SupabaseSession } from '../lib/supabaseClient';
 
-const EMAIL_CONFIRMATION_REDIRECT_URL = 'https://www.visualdeadline.com';
+const EMAIL_CONFIRMATION_REDIRECT_URL = 'https://www.visualdeadline.com/auth/callback';
 
-function getEmailRedirectTo(): string {
-  return typeof window === 'undefined' ? EMAIL_CONFIRMATION_REDIRECT_URL : window.location.origin;
-}
+function getEmailRedirectTo(): string { return typeof window === 'undefined' ? EMAIL_CONFIRMATION_REDIRECT_URL : getAuthCallbackUrl(); }
 const AUTH_CALLBACK_PARAMS = [
   'access_token',
   'refresh_token',
@@ -21,9 +20,7 @@ const AUTH_CALLBACK_PARAMS = [
   'error_description',
 ];
 
-interface AuthCallbackPayload {
-  accessToken: string | null;
-  refreshToken: string | null;
+export interface AuthCallbackPayload {
   expiresIn?: number;
   code: string | null;
   type: string | null;
@@ -31,7 +28,7 @@ interface AuthCallbackPayload {
   errorCode: string | null;
 }
 
-interface AuthCallbackResult {
+export interface AuthCallbackResult {
   session: SupabaseSession | null;
   status?: string;
 }
@@ -50,8 +47,6 @@ function readAuthCallbackParams(): AuthCallbackPayload | null {
   const error = getParam('error_description') ?? getParam('error');
 
   return {
-    accessToken: getParam('access_token'),
-    refreshToken: getParam('refresh_token'),
     expiresIn: Number.isFinite(expiresIn) ? expiresIn : undefined,
     code: getParam('code'),
     type: getParam('type'),
@@ -87,17 +82,15 @@ async function handleAuthCallback(): Promise<AuthCallbackResult | null> {
     }
     if (callbackParams.error) throw new Error(callbackParams.error);
 
-    if (callbackParams.accessToken && callbackParams.refreshToken) {
-      const session = await supabase.auth.setSession({
-        access_token: callbackParams.accessToken,
-        refresh_token: callbackParams.refreshToken,
-        expires_in: callbackParams.expiresIn,
-      });
-      return { session };
+    if (callbackParams.code) {
+      const duplicateKey = `vd.auth.callback.code:${callbackParams.code}`;
+      if (window.sessionStorage.getItem(duplicateKey)) return { session: await supabase.auth.getSession() };
+      window.sessionStorage.setItem(duplicateKey, 'consumed');
+      const session = await supabase.auth.exchangeCodeForSession(callbackParams.code);
+      return { session, status: session ? undefined : EMAIL_VERIFIED_LOGIN_MESSAGE };
     }
 
-    if (callbackParams.code || callbackParams.type === 'signup') {
-      await supabase.auth.acknowledgeEmailVerificationCallback();
+    if (callbackParams.type === 'signup' || callbackParams.type === 'recovery') {
       return { session: null, status: EMAIL_VERIFIED_LOGIN_MESSAGE };
     }
 
@@ -195,5 +188,22 @@ export function useSupabaseAuth() {
     setSession(null);
   }, []);
 
-  return { session, isLoading, error: error ?? supabase.configError, status, authDebugInfo, isConfigured: supabase.isConfigured, signUp, signIn, resendVerificationEmail, signOut };
+  const signInWithOAuth = useCallback(async (provider: IdentityProvider['provider']) => {
+    setError(undefined); setStatus(undefined);
+    await supabase.auth.signInWithOAuth(provider, getAuthCallbackUrl());
+  }, []);
+
+  const requestPhoneOtp = useCallback(async (phone: string) => {
+    setError(undefined); setStatus(undefined);
+    await supabase.auth.requestPhoneOtp({ phone: normalizePhoneE164(phone) });
+  }, []);
+
+  const verifyPhoneOtp = useCallback(async (phone: string, token: string) => {
+    setError(undefined); setStatus(undefined);
+    const nextSession = await supabase.auth.verifyPhoneOtp({ phone: normalizePhoneE164(phone), token });
+    setSession(nextSession);
+    return nextSession;
+  }, []);
+
+  return { session, isLoading, error: error ?? supabase.configError, status, authDebugInfo, isConfigured: supabase.isConfigured, featureFlags: authFeatureFlags, signUp, signIn, resendVerificationEmail, signOut, signInWithOAuth, requestPhoneOtp, verifyPhoneOtp };
 }
