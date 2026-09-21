@@ -6,6 +6,10 @@ tests/.compiled/
 .DS_Store
 *.local
 
+# Supabase CLI local runtime metadata; Docker volumes retain local database state.
+/supabase/.branches/
+/supabase/.temp/
+
 # Visual Deadline guide: generated/binary artifacts are published separately.
 /docs/visual-deadline-guide/*.pdf
 /docs/visual-deadline-guide/latex/*.pdf

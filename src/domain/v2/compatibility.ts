@@ -38,7 +38,7 @@ export interface UnresolvedRelationship {
   readonly kind: 'goal_task' | 'task_dependency';
   readonly sourceId: string;
   readonly targetId: string;
-  readonly reason: 'MISSING_TARGET' | 'ONE_SIDED' | 'MULTIPLE_TARGETS' | 'SELF_REFERENCE';
+  readonly reason: 'MISSING_TARGET' | 'ONE_SIDED' | 'MULTIPLE_TARGETS' | 'SELF_REFERENCE' | 'CYCLE';
 }
 
 export interface V2CompatibilityResult {
