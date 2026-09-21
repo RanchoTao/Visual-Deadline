@@ -29,13 +29,15 @@ export class GuestImportCoordinator {
   async confirm(snapshot: PendingGuestImportSnapshot, preview: GuestImportPreview, confirmation: GuestImportConfirmation, authenticatedUserId: UserId, plan: V2BackfillPlan): Promise<GuestImportExecutionResult> {
     validatePendingGuestImportConfirmation(this.storage, snapshot, preview, confirmation, authenticatedUserId);
     const confirmed = advanceGuestImportState(this.storage, snapshot, 'user_confirmed', confirmation.clientRequestId);
-    advanceGuestImportState(this.storage, confirmed, 'import_running', confirmation.clientRequestId);
+    const running = advanceGuestImportState(this.storage, confirmed, 'import_running', confirmation.clientRequestId);
     try {
-      const result = await this.executor.execute({ authenticatedUserId, snapshot: confirmed, plan, clientRequestId: confirmation.clientRequestId });
-      advanceGuestImportState(this.storage, confirmed, result.state, confirmation.clientRequestId);
+      const result = await this.executor.execute({ authenticatedUserId, snapshot: running, plan, clientRequestId: confirmation.clientRequestId });
+      const verifying = advanceGuestImportState(this.storage, running, 'verifying', confirmation.clientRequestId);
+      if (result.state === 'completed' && result.reconciliationRequired) throw new Error('GUEST_IMPORT_RECONCILIATION_REQUIRED');
+      advanceGuestImportState(this.storage, verifying, result.state, confirmation.clientRequestId);
       return result;
     } catch (error) {
-      advanceGuestImportState(this.storage, confirmed, 'failed_recoverable', confirmation.clientRequestId);
+      advanceGuestImportState(this.storage, running, 'failed_recoverable', confirmation.clientRequestId);
       throw error;
     }
   }

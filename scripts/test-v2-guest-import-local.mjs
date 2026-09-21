@@ -19,8 +19,9 @@ const apply = (name, value, requestId, failAt) => run(process.execPath, ['script
 const count = (id, table, name) => Number(query(`select count(*)::int count from public.${table} where user_id=${quote(id)}::uuid`, name)[0].count);
 
 const reset = supabase('db reset --local'); assert.equal(reset.status, 0, reset.stderr || reset.stdout);
-run(process.env.ComSpec ?? 'cmd.exe', ['/d', '/s', '/c', 'npx tsc -p tests/tsconfig.life-controller.json']);
+const compile = run(process.env.ComSpec ?? 'cmd.exe', ['/d', '/s', '/c', 'npx tsc -p tests/tsconfig.life-controller.json']); assert.equal(compile.status, 0, compile.stderr || compile.stdout);
 const guest = await import(`${pathToFileURL(resolve('tests/.compiled/src/domain/v2/guestImport.js')).href}?${Date.now()}`);
+const executors = await import(`${pathToFileURL(resolve('tests/.compiled/src/domain/v2/guestImportExecutor.js')).href}?${Date.now()}`);
 
 // A/B/C/D: authentication, existing-account, local-only, and cloud-only paths do no canonical writes without confirmation.
 const first = userId(1); user(first); const source = fixture(first); assert.equal(count(first, 'v2_tasks', 'signin-alone'), 0);
@@ -28,8 +29,18 @@ const memory = new Map([['visualized-deadline.tasks', JSON.stringify(source.task
 const snapshot = guest.captureGuestImportSource(storage, '2026-09-21T00:00:00.000Z'); assert.ok(snapshot); const preview = guest.createGuestImportPreviewFromPending(snapshot, first); assert.equal(preview.plan.writesPerformed, 0); assert.equal(count(first, 'v2_tasks', 'preview-only'), 0);
 const existing = userId(2); user(existing); assert.equal(count(existing, 'v2_tasks', 'existing-no-guest'), 0); // cloud-only is intentionally not a guest import path.
 
-// E/F/G/H: confirmation, idempotency, content conflict, multiple-goal ambiguity, and missing dependency stay in PR F's ledger semantics.
-let result = apply('confirmed', source, 'guest-confirmed'); assert.equal(result.status, 0, result.stderr); assert.equal(count(first, 'v2_tasks', 'confirmed'), 2);
+// E/F: the confirmed route is genuinely Coordinator -> LocalGuestImportExecutor -> PR F adapter.
+const stateHistory = []; const observedStorage = { getItem: storage.getItem, removeItem: storage.removeItem, setItem: (key, value) => { if (key === 'vd.guest-import.pending.v1') stateHistory.push(JSON.parse(value).state); storage.setItem(key, value); } };
+let applyCalls = 0;
+const localExecutor = new executors.LocalGuestImportExecutor(async (input) => { applyCalls += 1; assert.equal(input.authenticatedUserId, first); const applied = apply('confirmed', source, input.clientRequestId); assert.equal(applied.status, 0, applied.stderr); return { state: 'completed', reconciliationRequired: false }; });
+const coordinator = new executors.GuestImportCoordinator(observedStorage, localExecutor);
+await assert.rejects(() => coordinator.confirm(snapshot, preview, { snapshotId: preview.snapshotId, snapshotChecksum: preview.snapshotChecksum, destinationUserId: existing, clientRequestId: 'wrong-owner' }, existing, preview.plan), /GUEST_IMPORT_OWNER_MISMATCH/);
+assert.equal(applyCalls, 0, 'a second user cannot claim the first user snapshot before apply');
+await coordinator.confirm(snapshot, preview, { snapshotId: preview.snapshotId, snapshotChecksum: preview.snapshotChecksum, destinationUserId: first, clientRequestId: 'guest-confirmed' }, first, preview.plan);
+assert.equal(applyCalls, 1); assert.deepEqual(stateHistory.slice(-4), ['user_confirmed', 'import_running', 'verifying', 'completed']); assert.equal(count(first, 'v2_tasks', 'confirmed'), 2);
+
+// G/H: repeated content, multiple-goal ambiguity, and missing dependency stay in PR F's ledger semantics.
+let result = apply('same-source-repeat', source, 'guest-confirmed'); assert.equal(result.status, 0, result.stderr);
 result = apply('same-source-repeat', source, 'guest-confirmed'); assert.equal(result.status, 0, result.stderr); assert.equal(count(first, 'v2_tasks', 'repeat'), 2);
 result = apply('same-id-different-content', fixture(first, { changed: true }), 'guest-confirmed'); assert.equal(result.status, 0, result.stderr); assert.equal(count(first, 'v2_tasks', 'conflict-no-duplicate'), 2);
 const ambiguous = userId(3); user(ambiguous); result = apply('ambiguity-missing', fixture(ambiguous, { ambiguous: true, missingDependency: true }), 'guest-ambiguous'); assert.equal(result.status, 0, result.stderr); assert.ok(Number(query(`select count(*)::int count from public.v2_legacy_entity_refs where user_id=${quote(ambiguous)}::uuid and status='quarantined'`, 'ledger-visible')[0].count) > 0);

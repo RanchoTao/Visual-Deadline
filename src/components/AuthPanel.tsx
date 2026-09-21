@@ -187,10 +187,11 @@ export function AuthPanel({ isConfigured, isLoading, error, status: authStatus, 
           </div>
         ) : (
           <>
-            <div className="mt-6 grid grid-cols-2 gap-2 rounded-full bg-slate-100 p-1 text-sm font-semibold text-slate-500">
+            <div className={`mt-6 grid gap-2 rounded-full bg-slate-100 p-1 text-sm font-semibold text-slate-500 ${featureFlags.emailSignup ? 'grid-cols-2' : 'grid-cols-1'}`}>
               <button type="button" onClick={() => switchMode('signin')} className={`rounded-full px-4 py-2 transition ${mode === 'signin' ? 'bg-white text-slate-900 shadow-sm' : 'hover:text-slate-700'}`}>登录</button>
-              <button type="button" onClick={() => switchMode('signup')} className={`rounded-full px-4 py-2 transition ${mode === 'signup' ? 'bg-white text-slate-900 shadow-sm' : 'hover:text-slate-700'}`}>注册</button>
+              {featureFlags.emailSignup ? <button type="button" onClick={() => switchMode('signup')} className={`rounded-full px-4 py-2 transition ${mode === 'signup' ? 'bg-white text-slate-900 shadow-sm' : 'hover:text-slate-700'}`}>注册</button> : null}
             </div>
+            {!featureFlags.emailSignup ? <p className="mt-3 rounded-2xl bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800 ring-1 ring-amber-100">新邮箱注册暂未开放，现有账号仍可正常登录；待邮件确认链路复核完成后再启用。</p> : null}
 
             <form onSubmit={handleSubmit} className="mt-5 space-y-4">
               <label className="block text-sm font-semibold text-slate-600">邮箱

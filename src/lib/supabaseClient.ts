@@ -1,6 +1,6 @@
 import { createClient, type AuthChangeEvent, type Provider, type Session, type SupabaseClient, type User } from '@supabase/supabase-js';
 import { recordAuthDebugError } from './authDebug';
-import { assertOAuthProviderEnabled, assertPhoneEnabled, authFeatureFlags, type AuthFeatureFlags, type SupportedIdentityProvider } from './authFeatures';
+import { assertEmailSignupEnabled, assertOAuthProviderEnabled, assertPhoneEnabled, authFeatureFlags, type AuthFeatureFlags, type SupportedIdentityProvider } from './authFeatures';
 import { LegacySessionTransition } from './legacySessionTransition';
 import { identityClientAuthOptions } from './identityClientConfig';
 
@@ -131,7 +131,7 @@ class VisualDeadlineIdentityClient implements IdentityClient {
     const { data, error } = await this.requireClient().auth.getUser(); if (error) throw error; return data.user ? normalizeUser(data.user) : null;
   }
   async signUp(input: { email: string; password: string; options?: { emailRedirectTo?: string; data?: Record<string, unknown> } }): Promise<SupabaseSession | null> {
-    const { data, error } = await this.requireClient().auth.signUp({ email: input.email, password: input.password, options: input.options }); if (error) throw error; return normalizeSession(data.session);
+    assertEmailSignupEnabled(this.flags); const { data, error } = await this.requireClient().auth.signUp({ email: input.email, password: input.password, options: input.options }); if (error) throw error; return normalizeSession(data.session);
   }
   async signInWithPassword(input: { email: string; password: string }): Promise<SupabaseSession> {
     const { data, error } = await this.requireClient().auth.signInWithPassword(input); if (error) throw error;

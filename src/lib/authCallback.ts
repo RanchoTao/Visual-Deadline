@@ -48,18 +48,27 @@ export async function callbackCodeMarker(code: string): Promise<string> {
 export async function handleExplicitAuthCallback(port: AuthCallbackPort, environment: AuthCallbackEnvironment): Promise<{ session: CallbackSession | null; status?: 'verified' } | null> {
   const callback = readAuthCallbackParams(environment.href);
   if (!callback) return null;
+  let preserveRetryableCallback = false;
   try {
     if (callback.error) throw new Error(callback.errorCode === 'otp_expired' ? 'EMAIL_LINK_EXPIRED' : 'AUTH_CALLBACK_PROVIDER_ERROR');
     if (callback.code) {
       if (callback.code.length > 4096) throw new Error('AUTH_CALLBACK_MALFORMED');
       const marker = await callbackCodeMarker(callback.code);
       if (environment.sessionStorage.getItem(marker)) return { session: await port.getSession() };
+      let session: CallbackSession | null;
+      try { session = await port.exchangeCodeForSession(callback.code); }
+      catch (error) { preserveRetryableCallback = true; throw error; }
+      if (!session) { preserveRetryableCallback = true; throw new Error('AUTH_CALLBACK_SESSION_MISSING'); }
+      // Only a completed one-use exchange is marked consumed. A transient failure
+      // must remain retryable after reload, without persisting the raw code.
       environment.sessionStorage.setItem(marker, 'consumed');
-      return { session: await port.exchangeCodeForSession(callback.code) };
+      return { session };
     }
     if (callback.type === 'signup' || callback.type === 'recovery') return { session: null, status: 'verified' };
     return null;
   } finally {
-    environment.replaceUrl(cleanAuthCallbackUrl(environment.href));
+    // Keep only a retryable failed code in the address bar. It is never copied to
+    // app storage/logging, and the next callback attempt can still consume it.
+    if (!preserveRetryableCallback) environment.replaceUrl(cleanAuthCallbackUrl(environment.href));
   }
 }

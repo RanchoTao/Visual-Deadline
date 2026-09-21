@@ -1,5 +1,6 @@
 export interface AuthFeatureFlags {
   readonly emailPassword: true;
+  readonly emailSignup: boolean;
   readonly google: boolean;
   readonly github: boolean;
   readonly x: boolean;
@@ -17,6 +18,7 @@ const enabled = (value: unknown): boolean => value === 'true';
 export function createAuthFeatureFlags(environment: Record<string, unknown> = {}): AuthFeatureFlags {
   return Object.freeze({
   emailPassword: true,
+  emailSignup: enabled(environment.VITE_AUTH_EMAIL_SIGNUP_ENABLED),
   google: enabled(environment.VITE_AUTH_GOOGLE_ENABLED),
   github: enabled(environment.VITE_AUTH_GITHUB_ENABLED),
   x: enabled(environment.VITE_AUTH_X_ENABLED),
@@ -32,6 +34,10 @@ export const authFeatureFlags: AuthFeatureFlags = createAuthFeatureFlags(viteEnv
 
 export function assertOAuthProviderEnabled(flags: AuthFeatureFlags, provider: SupportedIdentityProvider): void {
   if (!flags[provider]) throw new Error(`AUTH_OAUTH_DISABLED:${provider}`);
+}
+
+export function assertEmailSignupEnabled(flags: AuthFeatureFlags): void {
+  if (!flags.emailSignup) throw new Error('AUTH_EMAIL_SIGNUP_DISABLED');
 }
 
 export function assertPhoneEnabled(flags: AuthFeatureFlags): void {
