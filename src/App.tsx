@@ -14,7 +14,8 @@ import { TaskForm } from './components/TaskForm';
 import { SocialPage } from './components/SocialPage';
 import { TaskPage } from './components/TaskPage';
 import { TermsPage } from './components/TermsPage';
-import { useLocalStorage } from './hooks/useLocalStorage';
+import { useWorkspaceLocalStorage, WorkspaceOwnerProvider } from './hooks/useLocalStorage';
+import { useWorkspaceOwner } from './hooks/useWorkspaceOwner';
 import { useSupabaseAuth } from './hooks/useSupabaseAuth';
 import type { Roadmap } from './types/roadmap';
 import type { VDNotification } from './types/notification';
@@ -40,10 +41,11 @@ import { appendPressureHistoryRecord, createPressureHistoryRecord, normalizePres
 import { sortActiveTasksByProgress } from './utils/taskDerivedState';
 import { createDailyReviewFromQuest, generateDailyQuest } from './utils/dailyQuest';
 import { deleteCloudLifeEvent, loadCloudData, loadCloudLifeEvents, saveCloudGoals, saveCloudPressureHistory, saveCloudProfile, saveCloudTasks, upsertCloudLifeEvents } from './lib/cloudSync';
-import { browserStorageAdapter, hasValue, loadValue, savePressure, saveTasks, saveValue, storageKeys } from './storage';
+import { assertWorkspaceSessionOwner, browserStorageAdapter, loadValue, mergeAuthenticatedWorkspaceRecords, saveValue, storageKeys, workspaceOnboardingFallback, workspaceOwnerKey } from './storage';
 import { createDefaultLifePreferences, createLifeEvent, deriveLifeState, getLifeEventsForOwner, mergeLifeEvents, planLifeController, setLifeEventsForOwner, undoLatestLifeEvent as removeLatestLifeEvent } from './domain/life-controller';
 import { buildHomeRecommendationComparison } from './domain/execution/homeProjection';
 import { advanceGuestImportState, assertGuestCloudImportRuntimeEnabled, captureGuestImportSource, createGuestImportPreviewFromPending, readPendingGuestImport, validatePendingGuestImportConfirmation, type GuestImportPreview, type PendingGuestImportSnapshot } from './domain/v2/guestImport';
+import { createOwnerScopedUiState, transitionOwnerScopedUiState } from './domain/v2/workspaceUiTransition';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const WELCOME_BACK_GAP_MS = 2 * 60 * 60 * 1000;
@@ -108,27 +110,6 @@ function isDeadlinePressureTask(task: Task): boolean {
   return getUrgencyScore(task.deadline) >= 30;
 }
 
-
-function readBaselinePressure(): number | null {
-  try {
-    const storedPressure = loadValue<number | null>(storageKeys.baselinePressure, null);
-    return storedPressure === null ? null : clampPressure(storedPressure);
-  } catch {
-    return null;
-  }
-}
-
-function readInitialOnboardingComplete(): boolean {
-  try {
-    if (hasValue(storageKeys.onboardingComplete)) return loadValue<boolean>(storageKeys.onboardingComplete, false) === true;
-
-    // Existing users may have tasks or a baseline before onboardingComplete existed.
-    // Treat that as already onboarded so migration never blocks their current data.
-    return hasValue(storageKeys.tasks) || hasValue(storageKeys.baselinePressure);
-  } catch {
-    return false;
-  }
-}
 
 function normalizeTaskInput(input: TaskInput): TaskInput {
   const lifecycleStatus = input.progress >= 100 ? 'completed' : input.lifecycleStatus;
@@ -358,13 +339,6 @@ function createTask(input: TaskInput): Task {
 }
 
 
-function mergeById<T extends { id: string }>(localItems: T[], cloudItems: T[]): T[] {
-  const merged = new Map<string, T>();
-  localItems.forEach((item) => merged.set(item.id, item));
-  cloudItems.forEach((item) => merged.set(item.id, item));
-  return Array.from(merged.values());
-}
-
 function createAchievement(id: string): Achievement | undefined {
   const achievement = achievementCatalog.find((item) => item.id === id);
   if (!achievement) return undefined;
@@ -380,7 +354,11 @@ function createAchievement(id: string): Achievement | undefined {
 
 function App() {
   const [publicPath, setPublicPath] = useState(() => window.location.pathname);
-  const { session, isLoading: isAuthLoading, error: authError, status: authStatus, authDebugInfo, isConfigured: isSupabaseConfigured, featureFlags: authFeatureFlags, signIn, signUp, resendVerificationEmail, signOut, signInWithOAuth, requestPhoneOtp, verifyPhoneOtp, phoneResendRemainingMs } = useSupabaseAuth();
+  const { session, isLoading: isAuthLoading, error: authError, status: authStatus, authDebugInfo, isConfigured: isSupabaseConfigured, featureFlags: authFeatureFlags, signIn, signUp, resendVerificationEmail, signOut, signInWithOAuth, requestPhoneOtp, verifyPhoneOtp, verifyEmailOtp, phoneResendRemainingMs, emailResendRemainingMs } = useSupabaseAuth();
+  const { owner: workspaceOwner, isReady: isWorkspaceOwnerReady } = useWorkspaceOwner(session?.user.id, !isAuthLoading);
+  const authoritativeOwnerKey = workspaceOwner ? workspaceOwnerKey(workspaceOwner) : undefined;
+  const currentAuthoritativeOwnerKey = useRef<string | undefined>(authoritativeOwnerKey);
+  currentAuthoritativeOwnerKey.current = authoritativeOwnerKey;
   const [hasChosenGuestMode, setHasChosenGuestMode] = useState(false);
   const [cloudStatus, setCloudStatus] = useState<string | undefined>();
   const [cloudToast, setCloudToast] = useState<string | undefined>();
@@ -393,23 +371,25 @@ function App() {
   const guestImportPreviewRef = useRef<GuestImportPreview | undefined>(undefined);
   const [guestImportPreview, setGuestImportPreview] = useState<GuestImportPreview | undefined>();
   const [pendingGuestImport, setPendingGuestImport] = useState<PendingGuestImportSnapshot | null>(() => readPendingGuestImport(browserStorageAdapter));
-  const [tasks, setTasks] = useLocalStorage<Task[]>(storageKeys.tasks, []);
-  const [goals, setGoals] = useLocalStorage<Goal[]>(storageKeys.goals, []);
-  const [achievements, setAchievements] = useLocalStorage<Achievement[]>(storageKeys.achievements, []);
-  const [aiArtifacts, setAIArtifacts] = useLocalStorage<AIArtifact[]>(storageKeys.aiArtifacts, []);
-  const [roadmaps, setRoadmaps] = useLocalStorage<Roadmap[]>(storageKeys.roadmaps, []);
-  const [notifications, setNotifications] = useLocalStorage<VDNotification[]>(storageKeys.notifications, [{ id: 'notification-ia', type: 'SYSTEM', title: '消息中心已启用', summary: '周报、风险提醒与系统建议将统一在这里送达。', content: 'VD 的后台分析结果会写入消息中心，不再占用首页的行动空间。', isRead: false, createdAt: new Date().toISOString() }]);
-  const [profile, setProfile] = useLocalStorage<UserProfile>(storageKeys.profile, defaultProfile);
-  const [socialNodes, setSocialNodes] = useLocalStorage<unknown[]>(storageKeys.socialNodes, []);
-  const [socialLayoutVersion, setSocialLayoutVersion] = useLocalStorage<number>(storageKeys.socialLayoutVersion, 0);
-  const [onboardingComplete, setOnboardingComplete] = useLocalStorage<boolean>(storageKeys.onboardingComplete, readInitialOnboardingComplete());
-  const legacyReferencePressure = readBaselinePressure() ?? 35;
-  const [pressureCalibration, setPressureCalibration] = useLocalStorage<PressureCalibrationSnapshot>(storageKeys.pressureCalibration, normalizePressureCalibration(null, legacyReferencePressure));
-  const [pressureHistory, setPressureHistory] = useLocalStorage<PressureHistoryRecord[]>(storageKeys.pressureHistory, []);
-  const [storedDailyQuest, setStoredDailyQuest] = useLocalStorage<DailyQuest | null>(storageKeys.dailyQuest, null);
-  const [dailyReview, setDailyReview] = useLocalStorage<DailyReview | null>(storageKeys.dailyReview, null);
-  const [reminderSettings, setReminderSettings] = useLocalStorage<ReminderSettings>(storageKeys.reminderSettings, defaultReminderSettings);
-  const [lifeEventsByOwner, setLifeEventsByOwner] = useLocalStorage<LifeEventStore>(storageKeys.lifeEventsByOwner, {});
+  const [tasks, setTasks, tasksReady] = useWorkspaceLocalStorage<Task[]>(workspaceOwner, storageKeys.tasks, []);
+  const [goals, setGoals, goalsReady] = useWorkspaceLocalStorage<Goal[]>(workspaceOwner, storageKeys.goals, []);
+  const [achievements, setAchievements, achievementsReady] = useWorkspaceLocalStorage<Achievement[]>(workspaceOwner, storageKeys.achievements, []);
+  const [aiArtifacts, setAIArtifacts, aiArtifactsReady] = useWorkspaceLocalStorage<AIArtifact[]>(workspaceOwner, storageKeys.aiArtifacts, []);
+  const [roadmaps, setRoadmaps, roadmapsReady] = useWorkspaceLocalStorage<Roadmap[]>(workspaceOwner, storageKeys.roadmaps, []);
+  const [notifications, setNotifications, notificationsReady] = useWorkspaceLocalStorage<VDNotification[]>(workspaceOwner, storageKeys.notifications, [{ id: 'notification-ia', type: 'SYSTEM', title: '消息中心已启用', summary: '周报、风险提醒与系统建议将统一在这里送达。', content: 'VD 的后台分析结果会写入消息中心，不再占用首页的行动空间。', isRead: false, createdAt: new Date().toISOString() }]);
+  const [profile, setProfile, profileReady] = useWorkspaceLocalStorage<UserProfile>(workspaceOwner, storageKeys.profile, defaultProfile);
+  const [socialNodes, setSocialNodes, socialNodesReady] = useWorkspaceLocalStorage<unknown[]>(workspaceOwner, storageKeys.socialNodes, []);
+  const [socialLayoutVersion, setSocialLayoutVersion, socialLayoutReady] = useWorkspaceLocalStorage<number>(workspaceOwner, storageKeys.socialLayoutVersion, 0);
+  const [onboardingComplete, setOnboardingComplete, onboardingReady] = useWorkspaceLocalStorage<boolean>(workspaceOwner, storageKeys.onboardingComplete, workspaceOnboardingFallback(browserStorageAdapter, workspaceOwner));
+  const [baselinePressure, setBaselinePressure, baselinePressureReady] = useWorkspaceLocalStorage<number | null>(workspaceOwner, storageKeys.baselinePressure, null);
+  const legacyReferencePressure = baselinePressure ?? 35;
+  const [pressureCalibration, setPressureCalibration, pressureCalibrationReady] = useWorkspaceLocalStorage<PressureCalibrationSnapshot | null>(workspaceOwner, storageKeys.pressureCalibration, null);
+  const [pressureHistory, setPressureHistory, pressureHistoryReady] = useWorkspaceLocalStorage<PressureHistoryRecord[]>(workspaceOwner, storageKeys.pressureHistory, []);
+  const [storedDailyQuest, setStoredDailyQuest, dailyQuestReady] = useWorkspaceLocalStorage<DailyQuest | null>(workspaceOwner, storageKeys.dailyQuest, null);
+  const [dailyReview, setDailyReview, dailyReviewReady] = useWorkspaceLocalStorage<DailyReview | null>(workspaceOwner, storageKeys.dailyReview, null);
+  const [reminderSettings, setReminderSettings, reminderSettingsReady] = useWorkspaceLocalStorage<ReminderSettings>(workspaceOwner, storageKeys.reminderSettings, defaultReminderSettings);
+  const [lifeEventsByOwner, setLifeEventsByOwner, lifeEventsReady] = useWorkspaceLocalStorage<LifeEventStore>(workspaceOwner, storageKeys.lifeEventsByOwner, {});
+  const isWorkspaceReady = isWorkspaceOwnerReady && [tasksReady, goalsReady, achievementsReady, aiArtifactsReady, roadmapsReady, notificationsReady, profileReady, socialNodesReady, socialLayoutReady, onboardingReady, baselinePressureReady, pressureCalibrationReady, pressureHistoryReady, dailyQuestReady, dailyReviewReady, reminderSettingsReady, lifeEventsReady].every(Boolean);
   const [activeModule, setActiveModule] = useState<LifeOSModule>('home');
   const [activeMobileTab, setActiveMobileTab] = useState<MobileTab>('today');
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
@@ -422,10 +402,37 @@ function App() {
   const [pressureClock, setPressureClock] = useState(() => Date.now());
   const hasCheckedWelcomeBack = useRef(false);
   const hasLoggedHydration = useRef(false);
+  const ownerScopedUiState = useRef(createOwnerScopedUiState(undefined));
+  const recalibrationOwnerKey = useRef<string | undefined>(undefined);
 
   const lifeEventOwner = session?.user.id ?? 'guest';
   const lifeEvents = useMemo(() => getLifeEventsForOwner(lifeEventsByOwner, lifeEventOwner), [lifeEventOwner, lifeEventsByOwner]);
   const lifePreferences = useMemo(() => createDefaultLifePreferences(), []);
+
+  useEffect(() => {
+    const reset = transitionOwnerScopedUiState(ownerScopedUiState.current, authoritativeOwnerKey);
+    if (reset === ownerScopedUiState.current) return;
+    ownerScopedUiState.current = reset;
+    setIsFormOpen(reset.isFormOpen);
+    setEditingTask(undefined);
+    setIsRecalibrationOpen(reset.isRecalibrationOpen);
+    setRecalibrationPressure(reset.recalibrationPressure);
+    setToastAchievement(undefined);
+    setWelcomeBackMessage(undefined);
+    setCloudToast(undefined);
+    setCloudStatus(undefined);
+    setCloudError(undefined);
+    setLifeEventCloudError(undefined);
+    setIsCloudLoading(false);
+    setIsCloudReady(false);
+    setIsLifeEventCloudReady(false);
+    setGuestImportPreview(undefined);
+    guestImportPreviewRef.current = undefined;
+    isApplyingCloudData.current = false;
+    hasCheckedWelcomeBack.current = false;
+    hasLoggedHydration.current = false;
+    recalibrationOwnerKey.current = undefined;
+  }, [authoritativeOwnerKey]);
 
   const normalizedTasks = useMemo(() => {
     const storedTasks = Array.isArray(tasks) ? tasks : [];
@@ -458,6 +465,12 @@ function App() {
     : '访客记录仅保存在当前浏览器。';
   const isMobileViewport = viewportWidth < 768;
 
+  useEffect(() => {
+    if (!isWorkspaceReady || !authoritativeOwnerKey || recalibrationOwnerKey.current === authoritativeOwnerKey) return;
+    recalibrationOwnerKey.current = authoritativeOwnerKey;
+    setRecalibrationPressure(legacyReferencePressure);
+  }, [authoritativeOwnerKey, isWorkspaceReady, legacyReferencePressure]);
+
   const dailyQuest = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
     if (storedDailyQuest?.date === today) return storedDailyQuest;
@@ -465,9 +478,10 @@ function App() {
   }, [dailyReview, normalizedTasks, storedDailyQuest]);
 
   useEffect(() => {
+    if (!isWorkspaceReady) return;
     if (storedDailyQuest?.id === dailyQuest.id && JSON.stringify(storedDailyQuest) === JSON.stringify(dailyQuest)) return;
     setStoredDailyQuest(dailyQuest);
-  }, [dailyQuest, setStoredDailyQuest, storedDailyQuest]);
+  }, [dailyQuest, isWorkspaceReady, setStoredDailyQuest, storedDailyQuest]);
 
   useEffect(() => {
     function handleResize() {
@@ -479,6 +493,7 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (isAuthLoading) return;
     if (!session || !pendingGuestImport) {
       guestImportPreviewRef.current = undefined;
       setGuestImportPreview(undefined);
@@ -497,9 +512,10 @@ function App() {
     const preview = createGuestImportPreviewFromPending(pendingGuestImport, session.user.id);
     guestImportPreviewRef.current = preview;
     setGuestImportPreview(preview);
-  }, [authFeatureFlags.guestImport, pendingGuestImport, session?.user.id]);
+  }, [authFeatureFlags.guestImport, isAuthLoading, pendingGuestImport, session?.user.id]);
 
   useEffect(() => {
+    if (isAuthLoading) return;
     if (!session) {
       setIsCloudReady(false);
       setIsLifeEventCloudReady(false);
@@ -509,27 +525,26 @@ function App() {
       return;
     }
 
-    if (pendingGuestImport) {
+    if (!isWorkspaceReady || !workspaceOwner) {
       setIsCloudReady(false);
       setIsLifeEventCloudReady(false);
-      setCloudStatus(authFeatureFlags.guestImport
-        ? '已检测到认证前保存的访客快照。请先查看并确认导入预览；登录本身不会同步或重写云端数据。'
-        : '已保留认证前访客快照，但访客导入功能尚未启用；不会自动合并或删除本机数据。');
+      setCloudStatus('正在切换到当前账号的隔离工作区…');
       return;
     }
+    assertWorkspaceSessionOwner(workspaceOwner, session.user.id);
 
     let isMounted = true;
     setIsCloudLoading(true);
     setCloudError(undefined);
     setLifeEventCloudError(undefined);
     setCloudStatus('正在从 Supabase 读取云端数据…');
-    loadCloudData(session)
+    loadCloudData(session, workspaceOwner)
       .then(async (cloudData) => {
         if (!isMounted) return;
         isApplyingCloudData.current = true;
-        const mergedTasks = mergeById(normalizedTasks, cloudData.tasks);
-        const mergedGoals = mergeById(normalizedGoals, cloudData.goals);
-        const mergedPressureHistory = mergeById(normalizedPressureHistory, cloudData.pressureHistory);
+        const mergedTasks = mergeAuthenticatedWorkspaceRecords(workspaceOwner, session.user.id, normalizedTasks, cloudData.tasks);
+        const mergedGoals = mergeAuthenticatedWorkspaceRecords(workspaceOwner, session.user.id, normalizedGoals, cloudData.goals);
+        const mergedPressureHistory = mergeAuthenticatedWorkspaceRecords(workspaceOwner, session.user.id, normalizedPressureHistory, cloudData.pressureHistory);
         const mergedSocialNodes = cloudData.socialNodes ?? socialNodes;
         const mergedSocialLayoutVersion = cloudData.socialLayoutVersion ?? socialLayoutVersion;
         setTasks(mergedTasks);
@@ -541,33 +556,25 @@ function App() {
         if (cloudData.pressureCalibration) setPressureCalibration(cloudData.pressureCalibration);
         if (cloudData.onboardingComplete !== null) setOnboardingComplete(cloudData.onboardingComplete);
         try {
-          const cloudLifeEvents = await loadCloudLifeEvents(session);
+          const cloudLifeEvents = await loadCloudLifeEvents(session, workspaceOwner);
+          if (!isMounted) return;
           const mergedLifeEvents = mergeLifeEvents(getLifeEventsForOwner(lifeEventsByOwner, session.user.id), cloudLifeEvents);
           setLifeEventsByOwner((current) => setLifeEventsForOwner(current, session.user.id, mergedLifeEvents));
-          await upsertCloudLifeEvents(mergedLifeEvents, session);
+          await upsertCloudLifeEvents(mergedLifeEvents, session, workspaceOwner);
+          if (!isMounted) return;
           setIsLifeEventCloudReady(true);
           setLifeEventCloudError(undefined);
         } catch (error) {
+          if (!isMounted) return;
           setIsLifeEventCloudReady(false);
           setLifeEventCloudError(`生活记录云同步未启用：${error instanceof Error ? error.message : '请先应用 Life Controller migration。'}`);
         }
+        if (!isMounted) return;
         setIsCloudReady(true);
-        await Promise.all([
-          saveCloudTasks(mergedTasks, session),
-          saveCloudGoals(mergedGoals, session),
-          saveCloudPressureHistory(mergedPressureHistory, session),
-          saveCloudProfile({
-            profile: cloudData.profile ?? normalizedProfile,
-            pressureCalibration: cloudData.pressureCalibration ?? normalizedPressureCalibration,
-            onboardingComplete: cloudData.onboardingComplete ?? onboardingComplete,
-            socialNodes: mergedSocialNodes,
-            socialLayoutVersion: mergedSocialLayoutVersion,
-          }, session),
-        ]);
-        setCloudStatus('已同步到云端');
-        setCloudToast('已同步到云端');
+        setCloudStatus(pendingGuestImport ? '检测到本机数据，尚未导入到当前账号。' : '已连接云端工作区');
+        if (!pendingGuestImport) setCloudToast('已连接云端工作区');
         window.setTimeout(() => {
-          isApplyingCloudData.current = false;
+          if (isMounted) isApplyingCloudData.current = false;
         }, 0);
       })
       .catch((error) => {
@@ -581,7 +588,7 @@ function App() {
     return () => {
       isMounted = false;
     };
-  }, [session?.access_token, session?.user.id]);
+  }, [isAuthLoading, isWorkspaceReady, pendingGuestImport, session?.access_token, session?.user.id, workspaceOwner]);
 
   function confirmGuestImport(): void {
     if (!session || !guestImportPreview) return;
@@ -616,12 +623,13 @@ function App() {
     });
     setPressureClock(Date.now());
 
-    if (!session || !isLifeEventCloudReady) return;
+    if (!session || !workspaceOwner || !isWorkspaceReady || !isLifeEventCloudReady) return;
+    const requestOwnerKey = authoritativeOwnerKey;
     try {
-      await upsertCloudLifeEvents([event], session);
-      setLifeEventCloudError(undefined);
+      await upsertCloudLifeEvents([event], session, workspaceOwner);
+      if (currentAuthoritativeOwnerKey.current === requestOwnerKey) setLifeEventCloudError(undefined);
     } catch (error) {
-      setLifeEventCloudError(`生活记录云同步失败：${error instanceof Error ? error.message : '未知错误'}`);
+      if (currentAuthoritativeOwnerKey.current === requestOwnerKey) setLifeEventCloudError(`生活记录云同步失败：${error instanceof Error ? error.message : '未知错误'}`);
       throw new Error('记录已保存在本机，但云端同步失败。');
     }
   }
@@ -635,40 +643,49 @@ function App() {
     });
     setPressureClock(Date.now());
 
-    if (!session || !isLifeEventCloudReady) return;
+    if (!session || !workspaceOwner || !isWorkspaceReady || !isLifeEventCloudReady) return;
+    const requestOwnerKey = authoritativeOwnerKey;
     try {
-      await deleteCloudLifeEvent(latest.id, session);
-      setLifeEventCloudError(undefined);
+      await deleteCloudLifeEvent(latest.id, session, workspaceOwner);
+      if (currentAuthoritativeOwnerKey.current === requestOwnerKey) setLifeEventCloudError(undefined);
     } catch (error) {
       setLifeEventsByOwner((current) => {
         return setLifeEventsForOwner(current, lifeEventOwner, mergeLifeEvents(getLifeEventsForOwner(current, lifeEventOwner), [latest]));
       });
-      setLifeEventCloudError(`撤销云同步失败：${error instanceof Error ? error.message : '未知错误'}`);
+      if (currentAuthoritativeOwnerKey.current === requestOwnerKey) setLifeEventCloudError(`撤销云同步失败：${error instanceof Error ? error.message : '未知错误'}`);
       throw new Error('云端撤销失败，最近记录已恢复。');
     }
   }
 
   useEffect(() => {
-    if (!session || !isCloudReady || isApplyingCloudData.current) return;
-    saveCloudTasks(normalizedTasks, session).then(() => setCloudStatus('已同步到云端')).catch((error) => setCloudError(error instanceof Error ? error.message : '任务云同步失败。'));
-  }, [isCloudReady, normalizedTasks, session]);
+    if (!session || !workspaceOwner || !isWorkspaceReady || !isCloudReady || isApplyingCloudData.current) return;
+    let isCurrent = true;
+    saveCloudTasks(normalizedTasks, session, workspaceOwner).then(() => { if (isCurrent) setCloudStatus('已同步到云端'); }).catch((error) => { if (isCurrent) setCloudError(error instanceof Error ? error.message : '任务云同步失败。'); });
+    return () => { isCurrent = false; };
+  }, [isCloudReady, isWorkspaceReady, normalizedTasks, session, workspaceOwner]);
 
   useEffect(() => {
-    if (!session || !isCloudReady || isApplyingCloudData.current) return;
-    saveCloudGoals(normalizedGoals, session).then(() => setCloudStatus('已同步到云端')).catch((error) => setCloudError(error instanceof Error ? error.message : '目标云同步失败。'));
-  }, [isCloudReady, normalizedGoals, session]);
+    if (!session || !workspaceOwner || !isWorkspaceReady || !isCloudReady || isApplyingCloudData.current) return;
+    let isCurrent = true;
+    saveCloudGoals(normalizedGoals, session, workspaceOwner).then(() => { if (isCurrent) setCloudStatus('已同步到云端'); }).catch((error) => { if (isCurrent) setCloudError(error instanceof Error ? error.message : '目标云同步失败。'); });
+    return () => { isCurrent = false; };
+  }, [isCloudReady, isWorkspaceReady, normalizedGoals, session, workspaceOwner]);
 
   useEffect(() => {
-    if (!session || !isCloudReady || isApplyingCloudData.current) return;
-    saveCloudPressureHistory(normalizedPressureHistory, session).then(() => setCloudStatus('已同步到云端')).catch((error) => setCloudError(error instanceof Error ? error.message : '压力历史云同步失败。'));
-  }, [isCloudReady, normalizedPressureHistory, session]);
+    if (!session || !workspaceOwner || !isWorkspaceReady || !isCloudReady || isApplyingCloudData.current) return;
+    let isCurrent = true;
+    saveCloudPressureHistory(normalizedPressureHistory, session, workspaceOwner).then(() => { if (isCurrent) setCloudStatus('已同步到云端'); }).catch((error) => { if (isCurrent) setCloudError(error instanceof Error ? error.message : '压力历史云同步失败。'); });
+    return () => { isCurrent = false; };
+  }, [isCloudReady, isWorkspaceReady, normalizedPressureHistory, session, workspaceOwner]);
 
   useEffect(() => {
-    if (!session || !isCloudReady || isApplyingCloudData.current) return;
-    saveCloudProfile({ profile: normalizedProfile, pressureCalibration: normalizedPressureCalibration, onboardingComplete, socialNodes, socialLayoutVersion }, session)
-      .then(() => setCloudStatus('已同步到云端'))
-      .catch((error) => setCloudError(error instanceof Error ? error.message : '个人设置云同步失败。'));
-  }, [isCloudReady, normalizedPressureCalibration, normalizedProfile, onboardingComplete, session, socialLayoutVersion, socialNodes]);
+    if (!session || !workspaceOwner || !isWorkspaceReady || !isCloudReady || isApplyingCloudData.current) return;
+    let isCurrent = true;
+    saveCloudProfile({ profile: normalizedProfile, pressureCalibration: normalizedPressureCalibration, onboardingComplete, socialNodes, socialLayoutVersion }, session, workspaceOwner)
+      .then(() => { if (isCurrent) setCloudStatus('已同步到云端'); })
+      .catch((error) => { if (isCurrent) setCloudError(error instanceof Error ? error.message : '个人设置云同步失败。'); });
+    return () => { isCurrent = false; };
+  }, [isCloudReady, isWorkspaceReady, normalizedPressureCalibration, normalizedProfile, onboardingComplete, session, socialLayoutVersion, socialNodes, workspaceOwner]);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => setPressureClock(Date.now()), 60 * 1000);
@@ -676,6 +693,7 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (!isWorkspaceReady) return;
     if (hasLoggedHydration.current) return;
     hasLoggedHydration.current = true;
     console.info('[VD_ONBOARDING] hydration/restored state after reload', {
@@ -685,49 +703,56 @@ function App() {
       pressureCoefficient: normalizedPressureCalibration.pressureCoefficient,
       realtimePressure: pressure.rawPressure,
     });
-  }, [normalizedPressureCalibration.lastSubjectivePressure, normalizedPressureCalibration.pressureCoefficient, normalizedTasks.length, onboardingComplete, pressure.rawPressure]);
+  }, [authoritativeOwnerKey, isWorkspaceReady, normalizedPressureCalibration.lastSubjectivePressure, normalizedPressureCalibration.pressureCoefficient, normalizedTasks.length, onboardingComplete, pressure.rawPressure]);
 
   useEffect(() => {
+    if (!isWorkspaceReady) return;
     if (JSON.stringify(tasks) !== JSON.stringify(normalizedTasks)) {
       setTasks(normalizedTasks);
     }
-  }, [normalizedTasks, setTasks, tasks]);
+  }, [isWorkspaceReady, normalizedTasks, setTasks, tasks]);
 
   useEffect(() => {
+    if (!isWorkspaceReady) return;
     if (JSON.stringify(goals) !== JSON.stringify(normalizedGoals)) {
       setGoals(normalizedGoals);
     }
-  }, [goals, normalizedGoals, setGoals]);
+  }, [goals, isWorkspaceReady, normalizedGoals, setGoals]);
 
   useEffect(() => {
+    if (!isWorkspaceReady) return;
     if (JSON.stringify(achievements) !== JSON.stringify(normalizedAchievements)) {
       setAchievements(normalizedAchievements);
     }
-  }, [achievements, normalizedAchievements, setAchievements]);
+  }, [achievements, isWorkspaceReady, normalizedAchievements, setAchievements]);
 
   useEffect(() => {
+    if (!isWorkspaceReady) return;
     if (JSON.stringify(aiArtifacts) !== JSON.stringify(normalizedAIArtifacts)) {
       setAIArtifacts(normalizedAIArtifacts);
     }
-  }, [aiArtifacts, normalizedAIArtifacts, setAIArtifacts]);
+  }, [aiArtifacts, isWorkspaceReady, normalizedAIArtifacts, setAIArtifacts]);
 
   useEffect(() => {
+    if (!isWorkspaceReady) return;
     if (JSON.stringify(profile) !== JSON.stringify(normalizedProfile)) {
       setProfile(normalizedProfile);
     }
-  }, [normalizedProfile, profile, setProfile]);
+  }, [isWorkspaceReady, normalizedProfile, profile, setProfile]);
 
   useEffect(() => {
+    if (!isWorkspaceReady) return;
     if (JSON.stringify(pressureCalibration) !== JSON.stringify(normalizedPressureCalibration)) {
       setPressureCalibration(normalizedPressureCalibration);
     }
-  }, [normalizedPressureCalibration, pressureCalibration, setPressureCalibration]);
+  }, [isWorkspaceReady, normalizedPressureCalibration, pressureCalibration, setPressureCalibration]);
 
   useEffect(() => {
+    if (!isWorkspaceReady) return;
     if (JSON.stringify(pressureHistory) !== JSON.stringify(normalizedPressureHistory)) {
       setPressureHistory(normalizedPressureHistory);
     }
-  }, [normalizedPressureHistory, pressureHistory, setPressureHistory]);
+  }, [isWorkspaceReady, normalizedPressureHistory, pressureHistory, setPressureHistory]);
 
 
   useEffect(() => {
@@ -743,6 +768,7 @@ function App() {
   }, [toastAchievement]);
 
   useEffect(() => {
+    if (!isWorkspaceReady) return;
     if (hasCheckedWelcomeBack.current) return;
     hasCheckedWelcomeBack.current = true;
     const now = Date.now();
@@ -786,7 +812,7 @@ function App() {
       window.removeEventListener('keydown', markActive);
       document.removeEventListener('visibilitychange', markVisible);
     };
-  }, [deadlinePressureTasks, normalizedProfile.nickname]);
+  }, [authoritativeOwnerKey, deadlinePressureTasks, isWorkspaceReady, normalizedProfile.nickname]);
 
   useEffect(() => {
     if (!welcomeBackMessage) return;
@@ -809,9 +835,10 @@ function App() {
   }
 
   useEffect(() => {
+    if (!isWorkspaceReady) return;
     if (!onboardingComplete) return;
     recordPressureSnapshot('auto');
-  }, [onboardingComplete, pressure.rawPressure, pressure.currentTaskLoad, pressure.recoveryRelief, activeTasks.length]);
+  }, [activeTasks.length, isWorkspaceReady, onboardingComplete, pressure.rawPressure, pressure.currentTaskLoad, pressure.recoveryRelief]);
 
   function saveAIArtifact(input: AIArtifactInput): AIArtifact {
     const artifact = createAIArtifact(input);
@@ -836,6 +863,7 @@ function App() {
   }
 
   useEffect(() => {
+    if (!isWorkspaceReady) return;
     if (!onboardingComplete) return;
 
     unlockAchievement('first-entry');
@@ -848,9 +876,10 @@ function App() {
     if (getMaxFinalHourCompletionRun(normalizedTasks) >= 10) unlockAchievement('knife-edge-streak');
     if (normalizedTasks.filter((task) => task.lifecycleStatus === 'active' && task.deadline && new Date(task.deadline).getTime() < Date.now()).length > 5) unlockAchievement('rotting');
     if (normalizedTasks.filter((task) => task.activityType === 'entertainment').length >= 5) unlockAchievement('hedonism');
-  }, [onboardingComplete, normalizedTasks]);
+  }, [isWorkspaceReady, onboardingComplete, normalizedTasks]);
 
   useEffect(() => {
+    if (!isWorkspaceReady) return;
     if (!onboardingComplete) return;
     const usageDateKeys = normalizedPressureHistory.map((record) => getLocalDateKey(record.timestamp)).filter((value): value is string => Boolean(value));
     if (hasConsecutiveDateRun(usageDateKeys, 7)) unlockAchievement('seven-day-streak');
@@ -863,21 +892,22 @@ function App() {
     });
     const over100Dates = [...pressureByDate.entries()].filter(([, values]) => values.length > 0 && values.every((value) => value > 100)).map(([dateKey]) => dateKey);
     if (hasConsecutiveDateRun(over100Dates, 3)) unlockAchievement('pressure-cooker');
-  }, [normalizedPressureHistory, onboardingComplete]);
+  }, [isWorkspaceReady, normalizedPressureHistory, onboardingComplete]);
 
   useEffect(() => {
+    if (!isWorkspaceReady) return;
     if (!onboardingComplete) return;
     if (activeModule === 'social') unlockAchievement('social-graph-opened');
     if (activeModule === 'map') unlockAchievement('life-tree-opened');
-  }, [activeModule, onboardingComplete]);
+  }, [activeModule, isWorkspaceReady, onboardingComplete]);
 
   function savePressureCalibration(referencePressure: number, sourceTasks = normalizedTasks) {
+    if (!isWorkspaceReady) return;
     const calibration = createPressureCalibration(referencePressure, sourceTasks, 0, new Date().toISOString());
     setPressureCalibration(calibration);
+    setBaselinePressure(calibration.lastSubjectivePressure);
     unlockAchievement('first-manageable-pressure');
     recordPressureSnapshot('recalibration', sourceTasks, `用户将主观压力重新校准为 ${calibration.lastSubjectivePressure}，系统已更新压力映射系数。`, calibration);
-    // Keep the legacy pressure value available through the centralized storage layer.
-    savePressure({ baselinePressure: calibration.lastSubjectivePressure, calibration });
   }
 
   function openRecalibration() {
@@ -894,6 +924,7 @@ function App() {
     console.info('[VD_ONBOARDING] submit reached app pipeline');
 
     try {
+      if (!isWorkspaceReady) throw new Error('工作区仍在切换，请稍后重试。');
       const createdTasks = importedTasks.map((task) => createTask(task));
       const validCreatedTasks = createdTasks.filter((task) => task.lifecycleStatus === 'active' && task.progress < 100 && task.title.trim());
       if (validCreatedTasks.length === 0) throw new Error('请至少保留一个未完成的有效任务后再进入 VD。');
@@ -912,53 +943,8 @@ function App() {
       console.info('[VD_ONBOARDING] pressureCoefficient', calibration.pressureCoefficient);
       console.info('[VD_ONBOARDING] realtimePressure', realtimePressure);
 
-      try {
-        saveTasks(nextTasks);
-        console.info('[VD_ONBOARDING] task persistence success', { taskCount: nextTasks.length });
-      } catch (error) {
-        console.error('[VD_ONBOARDING] task persistence failure', error);
-        throw new Error('任务保存失败，请检查浏览器存储权限后重试。');
-      }
-
-      try {
-        savePressure({ baselinePressure: calibration.lastSubjectivePressure, calibration });
-        console.info('[VD_ONBOARDING] user state persistence success', {
-          subjectivePressure: calibration.lastSubjectivePressure,
-          pressureCoefficient: calibration.pressureCoefficient,
-          realtimePressure,
-        });
-      } catch (error) {
-        console.error('[VD_ONBOARDING] user state persistence failure', error);
-        throw new Error('压力校准保存失败，请检查浏览器存储权限后重试。');
-      }
-
-      try {
-        saveValue(storageKeys.onboardingComplete, true);
-        console.info('[VD_ONBOARDING] onboarding completion flag update', true);
-      } catch (error) {
-        console.error('[VD_ONBOARDING] onboarding completion flag update failure', error);
-        throw new Error('引导完成状态保存失败，请检查浏览器存储权限后重试。');
-      }
-
-      const persistedTasks = loadValue<Task[]>(storageKeys.tasks, []);
-      const persistedCalibration = loadValue<PressureCalibrationSnapshot | null>(storageKeys.pressureCalibration, null);
-      const persistedOnboardingComplete = loadValue<boolean>(storageKeys.onboardingComplete, false);
-      const persistedRealtimePressure = calculatePressureIndex(persistedTasks.map((task) => normalizeStoredTask(task)), persistedCalibration, legacyReferencePressure).rawPressure;
-      const persistedStateIsValid = persistedTasks.length >= createdTasks.length
-        && persistedOnboardingComplete === true
-        && Boolean(persistedCalibration)
-        && Number.isFinite(persistedCalibration?.pressureCoefficient)
-        && Number.isFinite(persistedRealtimePressure);
-
-      if (!persistedStateIsValid) throw new Error('保存校验失败：任务或压力校准未正确写入。');
-      console.info('[VD_ONBOARDING] persisted state verified', {
-        taskCount: persistedTasks.length,
-        onboardingComplete: persistedOnboardingComplete,
-        pressureCoefficient: persistedCalibration?.pressureCoefficient,
-        realtimePressure: persistedRealtimePressure,
-      });
-
       setTasks(nextTasks);
+      setBaselinePressure(calibration.lastSubjectivePressure);
       setPressureCalibration(calibration);
       unlockAchievement('first-manageable-pressure');
       recordPressureSnapshot('recalibration', nextTasks, `用户将主观压力重新校准为 ${calibration.lastSubjectivePressure}，系统已更新压力映射系数。`, calibration);
@@ -966,11 +952,7 @@ function App() {
       setOnboardingComplete(true);
       return { ok: true };
     } catch (error) {
-      try {
-        saveValue(storageKeys.onboardingComplete, false);
-      } catch {
-        // The original error below is more actionable for the user; this rollback is best-effort.
-      }
+      setOnboardingComplete(false);
       console.error('[VD_ONBOARDING] onboarding pipeline failed', error);
       return { ok: false, error: error instanceof Error ? error.message : '进入 VD 失败，请稍后重试。' };
     }
@@ -1197,10 +1179,15 @@ function App() {
   }
 
   if (!session && !hasChosenGuestMode) {
-    return <AuthPanel isConfigured={isSupabaseConfigured} isLoading={isAuthLoading} error={authError} status={authStatus} authDebugInfo={authDebugInfo} featureFlags={authFeatureFlags} onSignIn={(email, password) => { capturePreAuthGuestSource(); return signIn(email, password); }} onSignUp={(email, password) => { capturePreAuthGuestSource(); return signUp(email, password); }} onResendVerification={resendVerificationEmail} onOAuth={(provider) => { capturePreAuthGuestSource(); return signInWithOAuth(provider); }} onRequestPhoneOtp={(phone) => { capturePreAuthGuestSource(); return requestPhoneOtp(phone); }} onVerifyPhoneOtp={(phone, token) => { capturePreAuthGuestSource(); return verifyPhoneOtp(phone, token); }} phoneResendRemainingMs={phoneResendRemainingMs} onContinueAsGuest={() => { capturePreAuthGuestSource(); setHasChosenGuestMode(true); }} />;
+    return <AuthPanel isConfigured={isSupabaseConfigured} isLoading={isAuthLoading} error={authError} status={authStatus} authDebugInfo={authDebugInfo} featureFlags={authFeatureFlags} onSignIn={(email, password) => { capturePreAuthGuestSource(); return signIn(email, password); }} onSignUp={(email, password) => { capturePreAuthGuestSource(); return signUp(email, password); }} onResendVerification={resendVerificationEmail} onVerifyEmailOtp={verifyEmailOtp} onOAuth={(provider) => { capturePreAuthGuestSource(); return signInWithOAuth(provider); }} onRequestPhoneOtp={(phone) => { capturePreAuthGuestSource(); return requestPhoneOtp(phone); }} onVerifyPhoneOtp={(phone, token) => { capturePreAuthGuestSource(); return verifyPhoneOtp(phone, token); }} phoneResendRemainingMs={phoneResendRemainingMs} emailResendRemainingMs={emailResendRemainingMs} onContinueAsGuest={() => { capturePreAuthGuestSource(); setHasChosenGuestMode(true); }} />;
+  }
+
+  if (!isWorkspaceReady) {
+    return <main className="flex min-h-screen items-center justify-center bg-slate-50 px-6 text-center text-sm font-medium text-slate-500">正在打开隔离工作区…</main>;
   }
 
   return (
+    <WorkspaceOwnerProvider owner={workspaceOwner}>
     <div className={isMobileViewport ? "min-h-screen overflow-x-hidden bg-slate-950" : "min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top_left,#dbeafe,transparent_36%),radial-gradient(circle_at_bottom_right,#e2e8f0,transparent_34%),linear-gradient(180deg,#f8fafc,#eef2f7)] px-3 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-3 text-slate-900 md:px-8 md:py-8"}>
       {!onboardingComplete ? <OnboardingFlow onComplete={completeOnboarding} /> : null}
       {taskFormOverlay}
@@ -1289,6 +1276,7 @@ function App() {
         />
       )}
     </div>
+    </WorkspaceOwnerProvider>
   );
 }
 

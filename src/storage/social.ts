@@ -1,18 +1,20 @@
-import { clearValue, loadValue, saveValue, storageKeys } from './schema';
+import { storageKeys } from './schema';
+import { browserStorageAdapter } from './dataSafety';
+import { readWorkspaceValue, removeWorkspaceValue, writeWorkspaceValue, type WorkspaceOwner } from './workspace';
 
-export function loadSocial() {
+export function loadSocial(owner: WorkspaceOwner) {
   return {
-    nodes: loadValue<unknown[]>(storageKeys.socialNodes, []),
-    layoutVersion: loadValue<number>(storageKeys.socialLayoutVersion, 0),
+    nodes: readWorkspaceValue<unknown[]>(browserStorageAdapter, owner, storageKeys.socialNodes, []),
+    layoutVersion: readWorkspaceValue<number>(browserStorageAdapter, owner, storageKeys.socialLayoutVersion, 0),
   };
 }
 
-export function saveSocial(social: { nodes?: unknown[]; layoutVersion?: number }): void {
-  if (social.nodes !== undefined) saveValue(storageKeys.socialNodes, social.nodes);
-  if (social.layoutVersion !== undefined) saveValue(storageKeys.socialLayoutVersion, social.layoutVersion);
+export function saveSocial(owner: WorkspaceOwner, social: { nodes?: unknown[]; layoutVersion?: number }): void {
+  if (social.nodes !== undefined) writeWorkspaceValue(browserStorageAdapter, owner, storageKeys.socialNodes, social.nodes);
+  if (social.layoutVersion !== undefined) writeWorkspaceValue(browserStorageAdapter, owner, storageKeys.socialLayoutVersion, social.layoutVersion);
 }
 
-export function clearSocial(): void {
-  clearValue(storageKeys.socialNodes);
-  clearValue(storageKeys.socialLayoutVersion);
+export function clearSocial(owner: WorkspaceOwner): void {
+  removeWorkspaceValue(browserStorageAdapter, owner, storageKeys.socialNodes);
+  removeWorkspaceValue(browserStorageAdapter, owner, storageKeys.socialLayoutVersion);
 }

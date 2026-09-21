@@ -9,3 +9,4 @@ export * from './schema';
 export * from './settings';
 export * from './social';
 export * from './tasks';
+export * from './workspace';

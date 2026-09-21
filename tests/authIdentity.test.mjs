@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-const { createAuthFeatureFlags, assertEmailSignupEnabled, assertOAuthProviderEnabled, assertPhoneEnabled, normalizePhoneE164, PhoneOtpCooldown, PHONE_OTP_RESEND_COOLDOWN_MS } = await import('./.compiled/src/lib/authFeatures.js');
+const { createAuthFeatureFlags, assertEmailSignupEnabled, assertOAuthProviderEnabled, assertPhoneEnabled, normalizeChinaPhoneE164, normalizePhoneE164, OtpResendCooldown, PhoneOtpCooldown, PHONE_OTP_RESEND_COOLDOWN_MS } = await import('./.compiled/src/lib/authFeatures.js');
+const { initialAuthPortalMode, isAvailableAuthPortalMode, isSixDigitOtp, nextModeAfterEmailSignup, normalizeChinaPhoneDigits } = await import('./.compiled/src/lib/authPortalState.js');
 const { callbackCodeMarker, cleanAuthCallbackUrl, handleExplicitAuthCallback } = await import('./.compiled/src/lib/authCallback.js');
 const { LegacySessionTransition } = await import('./.compiled/src/lib/legacySessionTransition.js');
 const { identityClientAuthOptions } = await import('./.compiled/src/lib/identityClientConfig.js');
@@ -35,6 +36,22 @@ test('E.164 validation and resend cooldown are deterministic', () => {
   assert.equal(cooldown.remainingMs(1_000), PHONE_OTP_RESEND_COOLDOWN_MS);
   assert.throws(() => cooldown.assertAvailable(1_001), /PHONE_OTP_COOLDOWN/);
   assert.doesNotThrow(() => cooldown.assertAvailable(1_000 + PHONE_OTP_RESEND_COOLDOWN_MS));
+});
+
+test('auth portal uses a functional default and keeps China phone and OTP boundaries explicit', () => {
+  assert.equal(initialAuthPortalMode(true), 'phone');
+  assert.equal(initialAuthPortalMode(false), 'password');
+  assert.equal(isAvailableAuthPortalMode('phone', false), false);
+  assert.equal(normalizeChinaPhoneDigits('138 1234-5678'), '13812345678');
+  assert.equal(normalizeChinaPhoneE164('+86 138 1234 5678'), '+8613812345678');
+  assert.throws(() => normalizeChinaPhoneE164('+14155552671'), /仅支持中国大陆/);
+  assert.equal(isSixDigitOtp('123456'), true);
+  assert.equal(isSixDigitOtp('12345'), false);
+  assert.equal(nextModeAfterEmailSignup(null), 'email-otp');
+  assert.equal(nextModeAfterEmailSignup({ access_token: 'session' }), undefined);
+  const emailCooldown = new OtpResendCooldown();
+  emailCooldown.request(100);
+  assert.throws(() => emailCooldown.request(101), /PHONE_OTP_COOLDOWN/);
 });
 
 test('successful explicit PKCE callback writes only a hashed consumed marker and reload restores session', async () => {

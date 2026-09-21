@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { EMAIL_VERIFICATION_RESENT_MESSAGE, EMAIL_VERIFIED_LOGIN_MESSAGE, getAuthErrorMessage } from '../constants/authMessages';
 import { getLastAuthDebugEntry, recordAuthDebugError, type AuthDebugEntry } from '../lib/authDebug';
-import { authFeatureFlags, getAuthCallbackUrl, normalizePhoneE164, PhoneOtpCooldown } from '../lib/authFeatures';
+import { authFeatureFlags, getAuthCallbackUrl, normalizeChinaPhoneE164, OtpResendCooldown, PhoneOtpCooldown } from '../lib/authFeatures';
 import { handleExplicitAuthCallback } from '../lib/authCallback';
 import { supabase, type IdentityProvider, type SupabaseSession } from '../lib/supabaseClient';
 
@@ -14,7 +14,9 @@ export function useSupabaseAuth() {
   const [status, setStatus] = useState<string | undefined>();
   const [authDebugInfo, setAuthDebugInfo] = useState<AuthDebugEntry | undefined>(() => getLastAuthDebugEntry());
   const phoneCooldown = useRef(new PhoneOtpCooldown());
+  const emailCooldown = useRef(new OtpResendCooldown());
   const [phoneResendRemainingMs, setPhoneResendRemainingMs] = useState(0);
+  const [emailResendRemainingMs, setEmailResendRemainingMs] = useState(0);
 
   useEffect(() => {
     let isMounted = true;
@@ -74,6 +76,10 @@ export function useSupabaseAuth() {
       },
     });
     if (nextSession) setSession(nextSession);
+    else {
+      emailCooldown.current.request();
+      setEmailResendRemainingMs(emailCooldown.current.remainingMs());
+    }
     return nextSession;
   }, []);
 
@@ -88,8 +94,19 @@ export function useSupabaseAuth() {
   const resendVerificationEmail = useCallback(async (email: string) => {
     setError(undefined);
     setStatus(undefined);
+    emailCooldown.current.assertAvailable();
     await supabase.auth.resendVerificationEmail(email, getEmailRedirectTo());
+    emailCooldown.current.request();
+    setEmailResendRemainingMs(emailCooldown.current.remainingMs());
     setStatus(EMAIL_VERIFICATION_RESENT_MESSAGE);
+  }, []);
+
+  // Reserved for a complete PASSWORD_RECOVERY follow-up. No current UI exposes this path.
+  const requestPasswordReset = useCallback(async (email: string) => {
+    setError(undefined);
+    setStatus(undefined);
+    await supabase.auth.resetPassword(email, getEmailRedirectTo());
+    setStatus('密码重置邮件已发送，请检查收件箱和垃圾邮件。');
   }, []);
 
   const signOut = useCallback(async () => {
@@ -107,7 +124,7 @@ export function useSupabaseAuth() {
   const requestPhoneOtp = useCallback(async (phone: string) => {
     setError(undefined); setStatus(undefined);
     phoneCooldown.current.assertAvailable();
-    await supabase.auth.requestPhoneOtp({ phone: normalizePhoneE164(phone) });
+    await supabase.auth.requestPhoneOtp({ phone: normalizeChinaPhoneE164(phone) });
     phoneCooldown.current.request();
     setPhoneResendRemainingMs(phoneCooldown.current.remainingMs());
   }, []);
@@ -118,12 +135,25 @@ export function useSupabaseAuth() {
     return () => window.clearInterval(timer);
   }, [phoneResendRemainingMs]);
 
+  useEffect(() => {
+    if (emailResendRemainingMs <= 0) return;
+    const timer = window.setInterval(() => setEmailResendRemainingMs(emailCooldown.current.remainingMs()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [emailResendRemainingMs]);
+
   const verifyPhoneOtp = useCallback(async (phone: string, token: string) => {
     setError(undefined); setStatus(undefined);
-    const nextSession = await supabase.auth.verifyPhoneOtp({ phone: normalizePhoneE164(phone), token });
+    const nextSession = await supabase.auth.verifyPhoneOtp({ phone: normalizeChinaPhoneE164(phone), token });
     setSession(nextSession);
     return nextSession;
   }, []);
 
-  return { session, isLoading, error: error ?? supabase.configError, status, authDebugInfo, isConfigured: supabase.isConfigured, featureFlags: authFeatureFlags, signUp, signIn, resendVerificationEmail, signOut, signInWithOAuth, requestPhoneOtp, verifyPhoneOtp, phoneResendRemainingMs };
+  const verifyEmailOtp = useCallback(async (email: string, token: string) => {
+    setError(undefined); setStatus(undefined);
+    const nextSession = await supabase.auth.verifyEmailOtp({ email, token });
+    if (nextSession) setSession(nextSession);
+    return nextSession;
+  }, []);
+
+  return { session, isLoading, error: error ?? supabase.configError, status, authDebugInfo, isConfigured: supabase.isConfigured, featureFlags: authFeatureFlags, signUp, signIn, resendVerificationEmail, requestPasswordReset, signOut, signInWithOAuth, requestPhoneOtp, verifyPhoneOtp, verifyEmailOtp, phoneResendRemainingMs, emailResendRemainingMs };
 }

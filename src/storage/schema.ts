@@ -52,6 +52,7 @@ export const storageKeys = {
   backup3: 'vd_backup_3',
   restoreRollback: 'vd_backup_restore_rollback',
   guestImportPending: 'vd.guest-import.pending.v1',
+  workspaceActiveOwner: 'vd.workspace.active-owner.v1',
 } as const;
 
 export interface PressureExportData {
