@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
-const { assertWorkspaceSessionOwner, guestWorkspaceOwner, mergeAuthenticatedWorkspaceRecords, readWorkspaceOwner, readWorkspaceValue, setWorkspaceOwner, userWorkspaceOwner, workspaceOwnerKey, workspaceStorageKey, writeWorkspaceValue } = await import('./.compiled/src/storage/workspace.js');
+const { assertWorkspaceSessionOwner, bindWorkspaceValue, canWriteWorkspaceBinding, guestWorkspaceOwner, mergeAuthenticatedWorkspaceRecords, readWorkspaceOwner, readWorkspaceValue, resolveWorkspaceAuth, setWorkspaceOwner, updateWorkspaceBinding, userWorkspaceOwner, workspaceOnboardingFallback, workspaceOwnerKey, workspaceStorageKey, writeWorkspaceValue } = await import('./.compiled/src/storage/workspace.js');
 
 function createStorage(initial = {}) {
   const values = new Map(Object.entries(initial));
@@ -105,4 +105,70 @@ test('failed authentication has no workspace-owner transition or authenticated c
   assert.equal(workspaceOwnerKey(readWorkspaceOwner(storage)), 'guest');
   assert.equal(storage.values.has(workspaceStorageKey(userWorkspaceOwner('never-authenticated'), 'visualized-deadline.goals')), false);
   assert.deepEqual(readWorkspaceValue(storage, guestWorkspaceOwner(), 'visualized-deadline.goals', []), [{ id: 'guest-goal' }]);
+});
+
+test('auth unresolved never changes a persisted owner or authorizes a workspace binding', () => {
+  const storage = createStorage(); const a = userWorkspaceOwner('user-a');
+  setWorkspaceOwner(storage, a);
+  const unresolved = resolveWorkspaceAuth(false, undefined);
+  assert.deepEqual(unresolved, { state: 'unresolved' });
+  const binding = bindWorkspaceValue(undefined, [], () => { throw new Error('unresolved auth must not read'); });
+  assert.equal(binding.ownerKey, undefined);
+  assert.equal(canWriteWorkspaceBinding(binding, undefined), false);
+  assert.equal(workspaceOwnerKey(readWorkspaceOwner(storage)), 'user:user-a');
+});
+
+test('resolved session A hydrates A directly while resolved null reaches guest only after auth completion', () => {
+  const storage = createStorage({
+    'visualized-deadline.tasks': JSON.stringify([{ id: 'guest-task' }]),
+    [workspaceStorageKey(userWorkspaceOwner('user-a'), 'visualized-deadline.tasks')]: JSON.stringify([{ id: 'a-task' }]),
+  });
+  const aResolution = resolveWorkspaceAuth(true, 'user-a');
+  assert.equal(aResolution.state, 'resolved');
+  const aBinding = bindWorkspaceValue(aResolution.owner, [], (owner) => readWorkspaceValue(storage, owner, 'visualized-deadline.tasks', []));
+  assert.deepEqual(aBinding.value, [{ id: 'a-task' }]);
+  const guestResolution = resolveWorkspaceAuth(true, undefined);
+  assert.equal(guestResolution.state, 'resolved');
+  const guestBinding = bindWorkspaceValue(guestResolution.owner, [], (owner) => readWorkspaceValue(storage, owner, 'visualized-deadline.tasks', []));
+  assert.deepEqual(guestBinding.value, [{ id: 'guest-task' }]);
+});
+
+test('stale A and guest setters cannot write during a transition to B or a new user', () => {
+  const a = userWorkspaceOwner('user-a'); const b = userWorkspaceOwner('user-b'); const guest = guestWorkspaceOwner();
+  const aBinding = bindWorkspaceValue(a, [{ id: 'a-task' }], () => [{ id: 'a-task' }]);
+  const staleA = updateWorkspaceBinding(aBinding, b, () => [{ id: 'must-not-reach-b' }]);
+  assert.deepEqual(staleA, aBinding);
+  assert.equal(canWriteWorkspaceBinding(staleA, b), false);
+  const guestBinding = bindWorkspaceValue(guest, [{ id: 'guest-task' }], () => [{ id: 'guest-task' }]);
+  const staleGuest = updateWorkspaceBinding(guestBinding, b, () => [{ id: 'must-not-reach-user' }]);
+  assert.deepEqual(staleGuest, guestBinding);
+  assert.equal(canWriteWorkspaceBinding(staleGuest, b), false);
+});
+
+test('new user defaults never inherit guest onboarding or pressure fallback values', () => {
+  const storage = createStorage({
+    'visualized-deadline.onboardingComplete': JSON.stringify(true),
+    'visualized-deadline.baselinePressure': JSON.stringify(91),
+  });
+  const user = userWorkspaceOwner('new-user');
+  const onboarding = bindWorkspaceValue(user, false, (owner) => readWorkspaceValue(storage, owner, 'visualized-deadline.onboardingComplete', false));
+  const pressure = bindWorkspaceValue(user, 35, (owner) => readWorkspaceValue(storage, owner, 'visualized-deadline.baselinePressure', 35));
+  assert.equal(onboarding.value, false);
+  assert.equal(pressure.value, 35);
+  assert.equal(workspaceOnboardingFallback(storage, user), false);
+  assert.equal(workspaceOnboardingFallback(storage, guestWorkspaceOwner()), true);
+});
+
+test('refreshing A and A-to-guest-to-B resolution produce only each authoritative owner binding', () => {
+  const a = userWorkspaceOwner('user-a'); const b = userWorkspaceOwner('user-b');
+  const refreshA = resolveWorkspaceAuth(true, 'user-a');
+  const logout = resolveWorkspaceAuth(true, undefined);
+  const loginB = resolveWorkspaceAuth(true, 'user-b');
+  assert.equal(refreshA.owner && workspaceOwnerKey(refreshA.owner), workspaceOwnerKey(a));
+  assert.equal(logout.owner && workspaceOwnerKey(logout.owner), 'guest');
+  assert.equal(loginB.owner && workspaceOwnerKey(loginB.owner), workspaceOwnerKey(b));
+  const aBinding = bindWorkspaceValue(a, 'fallback', () => 'A');
+  assert.equal(canWriteWorkspaceBinding(aBinding, loginB.owner), false);
+  const bBinding = bindWorkspaceValue(b, 'fallback', () => 'B');
+  assert.equal(canWriteWorkspaceBinding(bBinding, loginB.owner), true);
 });

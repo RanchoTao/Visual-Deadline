@@ -3,6 +3,8 @@ import { STORAGE_CHANGE_EVENT, storageKeys } from './schema.js';
 
 export type WorkspaceOwner = { kind: 'guest' } | { kind: 'user'; userId: string };
 export type AuthenticatedWorkspaceOwner = Extract<WorkspaceOwner, { kind: 'user' }>;
+export type WorkspaceAuthResolution = { state: 'unresolved' } | { state: 'resolved'; owner: WorkspaceOwner };
+export interface WorkspaceValueBinding<T> { ownerKey: string | undefined; value: T }
 
 const WORKSPACE_OWNER_FORMAT = 'vd.workspace.owner.v1';
 export const WORKSPACE_OWNER_CHANGE_EVENT = 'vd-workspace-owner-change';
@@ -15,6 +17,25 @@ export function userWorkspaceOwner(userId: string): AuthenticatedWorkspaceOwner 
 
 export function workspaceOwnerKey(owner: WorkspaceOwner): string {
   return owner.kind === 'guest' ? 'guest' : `user:${owner.userId}`;
+}
+
+/** Auth restoration is not guest mode. The session resolver is the only authority. */
+export function resolveWorkspaceAuth(authResolved: boolean, sessionUserId: string | undefined): WorkspaceAuthResolution {
+  if (!authResolved) return { state: 'unresolved' };
+  return { state: 'resolved', owner: sessionUserId ? userWorkspaceOwner(sessionUserId) : guestWorkspaceOwner() };
+}
+
+/** A binding names the owner that supplied its value, so stale setters cannot cross a transition. */
+export function bindWorkspaceValue<T>(owner: WorkspaceOwner | undefined, fallback: T, read: (owner: WorkspaceOwner) => T): WorkspaceValueBinding<T> {
+  return owner ? { ownerKey: workspaceOwnerKey(owner), value: read(owner) } : { ownerKey: undefined, value: fallback };
+}
+
+export function canWriteWorkspaceBinding<T>(binding: WorkspaceValueBinding<T>, owner: WorkspaceOwner | undefined): boolean {
+  return Boolean(owner) && binding.ownerKey === workspaceOwnerKey(owner as WorkspaceOwner);
+}
+
+export function updateWorkspaceBinding<T>(binding: WorkspaceValueBinding<T>, owner: WorkspaceOwner | undefined, update: (value: T) => T): WorkspaceValueBinding<T> {
+  return canWriteWorkspaceBinding(binding, owner) ? { ...binding, value: update(binding.value) } : binding;
 }
 
 /** Guest compatibility stays on legacy keys; authenticated caches never read or write them. */
@@ -46,6 +67,15 @@ export function readWorkspaceValue<T>(storage: StorageAdapter, owner: WorkspaceO
   const raw = storage.getItem(workspaceStorageKey(owner, legacyKey));
   if (raw === null) return fallback;
   try { return JSON.parse(raw) as T; } catch { return fallback; }
+}
+
+/** Legacy completion inference is guest-only and never supplies an authenticated fallback. */
+export function workspaceOnboardingFallback(storage: StorageAdapter, owner: WorkspaceOwner | undefined): boolean {
+  if (!owner || owner.kind !== 'guest') return false;
+  const onboardingKey = workspaceStorageKey(owner, storageKeys.onboardingComplete);
+  if (storage.getItem(onboardingKey) !== null) return readWorkspaceValue<boolean>(storage, owner, storageKeys.onboardingComplete, false) === true;
+  return storage.getItem(workspaceStorageKey(owner, storageKeys.tasks)) !== null
+    || storage.getItem(workspaceStorageKey(owner, storageKeys.baselinePressure)) !== null;
 }
 
 export function writeWorkspaceValue<T>(storage: StorageAdapter, owner: WorkspaceOwner, legacyKey: string, value: T): void {

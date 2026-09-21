@@ -7,10 +7,12 @@ import { loadSocial } from './social';
 import { loadTasks } from './tasks';
 import { APP_NAME, loadValue, notifyStorageChange, saveValue, storageKeys, type VisualizedDeadlineData, type VisualizedDeadlineExport } from './schema';
 import { browserStorageAdapter, createCompleteBackup, restoreBackup, type CompleteBackupEnvelope } from './dataSafety';
+import { guestWorkspaceOwner } from './workspace';
 
 const rollingBackupKeys = [storageKeys.backup1, storageKeys.backup2, storageKeys.backup3] as const;
 
 export function collectCurrentData(): VisualizedDeadlineData {
+  const guestOwner = guestWorkspaceOwner();
   const safeLoad = <T,>(reader: () => T, fallback: T): T => {
     try {
       return reader();
@@ -20,14 +22,14 @@ export function collectCurrentData(): VisualizedDeadlineData {
   };
 
   return {
-    tasks: safeLoad(loadTasks, []),
+    tasks: safeLoad(() => loadTasks(guestOwner), []),
     goals: safeLoad(() => loadValue(storageKeys.goals, []), []),
-    pressure: safeLoad(loadPressure, { baselinePressure: null, calibration: null, history: [] }),
-    social: safeLoad(loadSocial, { nodes: [], layoutVersion: 0 }),
-    lifeMap: safeLoad(loadLifeMap, { nodes: [], layoutVersion: 0 }),
-    lifeController: { eventsByOwner: safeLoad(loadLifeEventStore, {}) },
-    logs: safeLoad(loadLogs, { achievements: [], aiArtifacts: [] }),
-    settings: safeLoad(loadSettings, { profile: null, onboardingComplete: false }),
+    pressure: safeLoad(() => loadPressure(guestOwner), { baselinePressure: null, calibration: null, history: [] }),
+    social: safeLoad(() => loadSocial(guestOwner), { nodes: [], layoutVersion: 0 }),
+    lifeMap: safeLoad(() => loadLifeMap(guestOwner), { nodes: [], layoutVersion: 0 }),
+    lifeController: { eventsByOwner: safeLoad(() => loadLifeEventStore(guestOwner), {}) },
+    logs: safeLoad(() => loadLogs(guestOwner), { achievements: [], aiArtifacts: [] }),
+    settings: safeLoad(() => loadSettings(guestOwner), { profile: null, onboardingComplete: false }),
     metadata: { source: 'browser-local', futureSafe: false },
   };
 }

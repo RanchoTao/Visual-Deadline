@@ -101,6 +101,7 @@ export function useSupabaseAuth() {
     setStatus(EMAIL_VERIFICATION_RESENT_MESSAGE);
   }, []);
 
+  // Reserved for a complete PASSWORD_RECOVERY follow-up. No current UI exposes this path.
   const requestPasswordReset = useCallback(async (email: string) => {
     setError(undefined);
     setStatus(undefined);

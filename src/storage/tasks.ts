@@ -1,16 +1,16 @@
 import type { Task } from '../types/task';
 import { storageKeys } from './schema';
 import { browserStorageAdapter } from './dataSafety';
-import { readWorkspaceOwner, readWorkspaceValue, removeWorkspaceValue, writeWorkspaceValue } from './workspace';
+import { readWorkspaceValue, removeWorkspaceValue, writeWorkspaceValue, type WorkspaceOwner } from './workspace';
 
-export function loadTasks(): Task[] {
-  return readWorkspaceValue<Task[]>(browserStorageAdapter, readWorkspaceOwner(browserStorageAdapter), storageKeys.tasks, []);
+export function loadTasks(owner: WorkspaceOwner): Task[] {
+  return readWorkspaceValue<Task[]>(browserStorageAdapter, owner, storageKeys.tasks, []);
 }
 
-export function saveTasks(tasks: Task[]): void {
-  writeWorkspaceValue(browserStorageAdapter, readWorkspaceOwner(browserStorageAdapter), storageKeys.tasks, tasks);
+export function saveTasks(owner: WorkspaceOwner, tasks: Task[]): void {
+  writeWorkspaceValue(browserStorageAdapter, owner, storageKeys.tasks, tasks);
 }
 
-export function clearTasks(): void {
-  removeWorkspaceValue(browserStorageAdapter, readWorkspaceOwner(browserStorageAdapter), storageKeys.tasks);
+export function clearTasks(owner: WorkspaceOwner): void {
+  removeWorkspaceValue(browserStorageAdapter, owner, storageKeys.tasks);
 }

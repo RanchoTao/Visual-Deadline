@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { browserStorageAdapter, hasValue, readWorkspaceOwner, removeWorkspaceValue, storageKeys, workspaceStorageKey, writeWorkspaceValue } from '../storage';
+import { useEffect, useState } from 'react';
+import { browserStorageAdapter, hasValue, removeWorkspaceValue, storageKeys, workspaceStorageKey, writeWorkspaceValue } from '../storage';
+import { useCurrentWorkspaceOwner } from '../hooks/useLocalStorage';
 
 const deviceGlobalKeys: ReadonlySet<string> = new Set([
   storageKeys.welcomeLastActive,
@@ -13,8 +14,7 @@ const deviceGlobalKeys: ReadonlySet<string> = new Set([
 ]);
 const appStorageKeys = Object.values(storageKeys).filter((key) => !deviceGlobalKeys.has(key));
 
-function getStorageKeyRows() {
-  const owner = readWorkspaceOwner(browserStorageAdapter);
+function getStorageKeyRows(owner: NonNullable<ReturnType<typeof useCurrentWorkspaceOwner>>) {
   return appStorageKeys.map((key) => ({ key, exists: hasValue(workspaceStorageKey(owner, key)) }));
 }
 
@@ -23,17 +23,22 @@ function reloadPage(): void {
 }
 
 export function DeveloperToolsPanel() {
+  const owner = useCurrentWorkspaceOwner();
   const [isKeyListVisible, setIsKeyListVisible] = useState(false);
-  const [keyRows, setKeyRows] = useState(getStorageKeyRows);
+  const [keyRows, setKeyRows] = useState(() => owner ? getStorageKeyRows(owner) : []);
+
+  useEffect(() => {
+    setKeyRows(owner ? getStorageKeyRows(owner) : []);
+  }, [owner]);
 
   function refreshKeyRows() {
-    setKeyRows(getStorageKeyRows());
+    setKeyRows(owner ? getStorageKeyRows(owner) : []);
   }
 
   function clearAllLocalData() {
     const confirmed = window.confirm('确定要清除当前工作区的本地数据并重启吗？任务、压力、人生树、社交图谱与设置都会被删除；其他账号和保留的访客快照不会受影响。');
     if (!confirmed) return;
-    const owner = readWorkspaceOwner(browserStorageAdapter);
+    if (!owner) return;
     appStorageKeys.forEach((key) => removeWorkspaceValue(browserStorageAdapter, owner, key));
     reloadPage();
   }
@@ -41,7 +46,8 @@ export function DeveloperToolsPanel() {
   function resetOnboarding() {
     const confirmed = window.confirm('确定要重置初始问答吗？现有任务、压力、社交与人生树数据会保留。');
     if (!confirmed) return;
-    writeWorkspaceValue(browserStorageAdapter, readWorkspaceOwner(browserStorageAdapter), storageKeys.onboardingComplete, false);
+    if (!owner) return;
+    writeWorkspaceValue(browserStorageAdapter, owner, storageKeys.onboardingComplete, false);
     refreshKeyRows();
     reloadPage();
   }

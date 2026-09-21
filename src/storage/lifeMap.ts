@@ -1,22 +1,20 @@
 import { storageKeys } from './schema';
 import { browserStorageAdapter } from './dataSafety';
-import { readWorkspaceOwner, readWorkspaceValue, removeWorkspaceValue, writeWorkspaceValue } from './workspace';
+import { readWorkspaceValue, removeWorkspaceValue, writeWorkspaceValue, type WorkspaceOwner } from './workspace';
 
-export function loadLifeMap() {
+export function loadLifeMap(owner: WorkspaceOwner) {
   return {
-    nodes: readWorkspaceValue<unknown[]>(browserStorageAdapter, readWorkspaceOwner(browserStorageAdapter), storageKeys.lifeMapNodes, []),
-    layoutVersion: readWorkspaceValue<number>(browserStorageAdapter, readWorkspaceOwner(browserStorageAdapter), storageKeys.lifeMapLayoutVersion, 0),
+    nodes: readWorkspaceValue<unknown[]>(browserStorageAdapter, owner, storageKeys.lifeMapNodes, []),
+    layoutVersion: readWorkspaceValue<number>(browserStorageAdapter, owner, storageKeys.lifeMapLayoutVersion, 0),
   };
 }
 
-export function saveLifeMap(lifeMap: { nodes?: unknown[]; layoutVersion?: number }): void {
-  const owner = readWorkspaceOwner(browserStorageAdapter);
+export function saveLifeMap(owner: WorkspaceOwner, lifeMap: { nodes?: unknown[]; layoutVersion?: number }): void {
   if (lifeMap.nodes !== undefined) writeWorkspaceValue(browserStorageAdapter, owner, storageKeys.lifeMapNodes, lifeMap.nodes);
   if (lifeMap.layoutVersion !== undefined) writeWorkspaceValue(browserStorageAdapter, owner, storageKeys.lifeMapLayoutVersion, lifeMap.layoutVersion);
 }
 
-export function clearLifeMap(): void {
-  const owner = readWorkspaceOwner(browserStorageAdapter);
+export function clearLifeMap(owner: WorkspaceOwner): void {
   removeWorkspaceValue(browserStorageAdapter, owner, storageKeys.lifeMapNodes);
   removeWorkspaceValue(browserStorageAdapter, owner, storageKeys.lifeMapLayoutVersion);
 }
