@@ -41,10 +41,11 @@ import { appendPressureHistoryRecord, createPressureHistoryRecord, normalizePres
 import { sortActiveTasksByProgress } from './utils/taskDerivedState';
 import { createDailyReviewFromQuest, generateDailyQuest } from './utils/dailyQuest';
 import { deleteCloudLifeEvent, loadCloudData, loadCloudLifeEvents, saveCloudGoals, saveCloudPressureHistory, saveCloudProfile, saveCloudTasks, upsertCloudLifeEvents } from './lib/cloudSync';
-import { assertWorkspaceSessionOwner, browserStorageAdapter, loadValue, mergeAuthenticatedWorkspaceRecords, saveValue, storageKeys, workspaceOnboardingFallback } from './storage';
+import { assertWorkspaceSessionOwner, browserStorageAdapter, loadValue, mergeAuthenticatedWorkspaceRecords, saveValue, storageKeys, workspaceOnboardingFallback, workspaceOwnerKey } from './storage';
 import { createDefaultLifePreferences, createLifeEvent, deriveLifeState, getLifeEventsForOwner, mergeLifeEvents, planLifeController, setLifeEventsForOwner, undoLatestLifeEvent as removeLatestLifeEvent } from './domain/life-controller';
 import { buildHomeRecommendationComparison } from './domain/execution/homeProjection';
 import { advanceGuestImportState, assertGuestCloudImportRuntimeEnabled, captureGuestImportSource, createGuestImportPreviewFromPending, readPendingGuestImport, validatePendingGuestImportConfirmation, type GuestImportPreview, type PendingGuestImportSnapshot } from './domain/v2/guestImport';
+import { createOwnerScopedUiState, transitionOwnerScopedUiState } from './domain/v2/workspaceUiTransition';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const WELCOME_BACK_GAP_MS = 2 * 60 * 60 * 1000;
@@ -355,6 +356,9 @@ function App() {
   const [publicPath, setPublicPath] = useState(() => window.location.pathname);
   const { session, isLoading: isAuthLoading, error: authError, status: authStatus, authDebugInfo, isConfigured: isSupabaseConfigured, featureFlags: authFeatureFlags, signIn, signUp, resendVerificationEmail, signOut, signInWithOAuth, requestPhoneOtp, verifyPhoneOtp, verifyEmailOtp, phoneResendRemainingMs, emailResendRemainingMs } = useSupabaseAuth();
   const { owner: workspaceOwner, isReady: isWorkspaceOwnerReady } = useWorkspaceOwner(session?.user.id, !isAuthLoading);
+  const authoritativeOwnerKey = workspaceOwner ? workspaceOwnerKey(workspaceOwner) : undefined;
+  const currentAuthoritativeOwnerKey = useRef<string | undefined>(authoritativeOwnerKey);
+  currentAuthoritativeOwnerKey.current = authoritativeOwnerKey;
   const [hasChosenGuestMode, setHasChosenGuestMode] = useState(false);
   const [cloudStatus, setCloudStatus] = useState<string | undefined>();
   const [cloudToast, setCloudToast] = useState<string | undefined>();
@@ -379,7 +383,7 @@ function App() {
   const [onboardingComplete, setOnboardingComplete, onboardingReady] = useWorkspaceLocalStorage<boolean>(workspaceOwner, storageKeys.onboardingComplete, workspaceOnboardingFallback(browserStorageAdapter, workspaceOwner));
   const [baselinePressure, setBaselinePressure, baselinePressureReady] = useWorkspaceLocalStorage<number | null>(workspaceOwner, storageKeys.baselinePressure, null);
   const legacyReferencePressure = baselinePressure ?? 35;
-  const [pressureCalibration, setPressureCalibration, pressureCalibrationReady] = useWorkspaceLocalStorage<PressureCalibrationSnapshot>(workspaceOwner, storageKeys.pressureCalibration, normalizePressureCalibration(null, 35));
+  const [pressureCalibration, setPressureCalibration, pressureCalibrationReady] = useWorkspaceLocalStorage<PressureCalibrationSnapshot | null>(workspaceOwner, storageKeys.pressureCalibration, null);
   const [pressureHistory, setPressureHistory, pressureHistoryReady] = useWorkspaceLocalStorage<PressureHistoryRecord[]>(workspaceOwner, storageKeys.pressureHistory, []);
   const [storedDailyQuest, setStoredDailyQuest, dailyQuestReady] = useWorkspaceLocalStorage<DailyQuest | null>(workspaceOwner, storageKeys.dailyQuest, null);
   const [dailyReview, setDailyReview, dailyReviewReady] = useWorkspaceLocalStorage<DailyReview | null>(workspaceOwner, storageKeys.dailyReview, null);
@@ -398,10 +402,37 @@ function App() {
   const [pressureClock, setPressureClock] = useState(() => Date.now());
   const hasCheckedWelcomeBack = useRef(false);
   const hasLoggedHydration = useRef(false);
+  const ownerScopedUiState = useRef(createOwnerScopedUiState(undefined));
+  const recalibrationOwnerKey = useRef<string | undefined>(undefined);
 
   const lifeEventOwner = session?.user.id ?? 'guest';
   const lifeEvents = useMemo(() => getLifeEventsForOwner(lifeEventsByOwner, lifeEventOwner), [lifeEventOwner, lifeEventsByOwner]);
   const lifePreferences = useMemo(() => createDefaultLifePreferences(), []);
+
+  useEffect(() => {
+    const reset = transitionOwnerScopedUiState(ownerScopedUiState.current, authoritativeOwnerKey);
+    if (reset === ownerScopedUiState.current) return;
+    ownerScopedUiState.current = reset;
+    setIsFormOpen(reset.isFormOpen);
+    setEditingTask(undefined);
+    setIsRecalibrationOpen(reset.isRecalibrationOpen);
+    setRecalibrationPressure(reset.recalibrationPressure);
+    setToastAchievement(undefined);
+    setWelcomeBackMessage(undefined);
+    setCloudToast(undefined);
+    setCloudStatus(undefined);
+    setCloudError(undefined);
+    setLifeEventCloudError(undefined);
+    setIsCloudLoading(false);
+    setIsCloudReady(false);
+    setIsLifeEventCloudReady(false);
+    setGuestImportPreview(undefined);
+    guestImportPreviewRef.current = undefined;
+    isApplyingCloudData.current = false;
+    hasCheckedWelcomeBack.current = false;
+    hasLoggedHydration.current = false;
+    recalibrationOwnerKey.current = undefined;
+  }, [authoritativeOwnerKey]);
 
   const normalizedTasks = useMemo(() => {
     const storedTasks = Array.isArray(tasks) ? tasks : [];
@@ -433,6 +464,12 @@ function App() {
     ? (lifeEventCloudError || (isLifeEventCloudReady ? '生活记录已启用用户隔离云同步。' : '生活记录保存在本机，正在检查云端 migration。'))
     : '访客记录仅保存在当前浏览器。';
   const isMobileViewport = viewportWidth < 768;
+
+  useEffect(() => {
+    if (!isWorkspaceReady || !authoritativeOwnerKey || recalibrationOwnerKey.current === authoritativeOwnerKey) return;
+    recalibrationOwnerKey.current = authoritativeOwnerKey;
+    setRecalibrationPressure(legacyReferencePressure);
+  }, [authoritativeOwnerKey, isWorkspaceReady, legacyReferencePressure]);
 
   const dailyQuest = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
@@ -520,20 +557,24 @@ function App() {
         if (cloudData.onboardingComplete !== null) setOnboardingComplete(cloudData.onboardingComplete);
         try {
           const cloudLifeEvents = await loadCloudLifeEvents(session, workspaceOwner);
+          if (!isMounted) return;
           const mergedLifeEvents = mergeLifeEvents(getLifeEventsForOwner(lifeEventsByOwner, session.user.id), cloudLifeEvents);
           setLifeEventsByOwner((current) => setLifeEventsForOwner(current, session.user.id, mergedLifeEvents));
           await upsertCloudLifeEvents(mergedLifeEvents, session, workspaceOwner);
+          if (!isMounted) return;
           setIsLifeEventCloudReady(true);
           setLifeEventCloudError(undefined);
         } catch (error) {
+          if (!isMounted) return;
           setIsLifeEventCloudReady(false);
           setLifeEventCloudError(`生活记录云同步未启用：${error instanceof Error ? error.message : '请先应用 Life Controller migration。'}`);
         }
+        if (!isMounted) return;
         setIsCloudReady(true);
         setCloudStatus(pendingGuestImport ? '检测到本机数据，尚未导入到当前账号。' : '已连接云端工作区');
         if (!pendingGuestImport) setCloudToast('已连接云端工作区');
         window.setTimeout(() => {
-          isApplyingCloudData.current = false;
+          if (isMounted) isApplyingCloudData.current = false;
         }, 0);
       })
       .catch((error) => {
@@ -583,11 +624,12 @@ function App() {
     setPressureClock(Date.now());
 
     if (!session || !workspaceOwner || !isWorkspaceReady || !isLifeEventCloudReady) return;
+    const requestOwnerKey = authoritativeOwnerKey;
     try {
       await upsertCloudLifeEvents([event], session, workspaceOwner);
-      setLifeEventCloudError(undefined);
+      if (currentAuthoritativeOwnerKey.current === requestOwnerKey) setLifeEventCloudError(undefined);
     } catch (error) {
-      setLifeEventCloudError(`生活记录云同步失败：${error instanceof Error ? error.message : '未知错误'}`);
+      if (currentAuthoritativeOwnerKey.current === requestOwnerKey) setLifeEventCloudError(`生活记录云同步失败：${error instanceof Error ? error.message : '未知错误'}`);
       throw new Error('记录已保存在本机，但云端同步失败。');
     }
   }
@@ -602,38 +644,47 @@ function App() {
     setPressureClock(Date.now());
 
     if (!session || !workspaceOwner || !isWorkspaceReady || !isLifeEventCloudReady) return;
+    const requestOwnerKey = authoritativeOwnerKey;
     try {
       await deleteCloudLifeEvent(latest.id, session, workspaceOwner);
-      setLifeEventCloudError(undefined);
+      if (currentAuthoritativeOwnerKey.current === requestOwnerKey) setLifeEventCloudError(undefined);
     } catch (error) {
       setLifeEventsByOwner((current) => {
         return setLifeEventsForOwner(current, lifeEventOwner, mergeLifeEvents(getLifeEventsForOwner(current, lifeEventOwner), [latest]));
       });
-      setLifeEventCloudError(`撤销云同步失败：${error instanceof Error ? error.message : '未知错误'}`);
+      if (currentAuthoritativeOwnerKey.current === requestOwnerKey) setLifeEventCloudError(`撤销云同步失败：${error instanceof Error ? error.message : '未知错误'}`);
       throw new Error('云端撤销失败，最近记录已恢复。');
     }
   }
 
   useEffect(() => {
     if (!session || !workspaceOwner || !isWorkspaceReady || !isCloudReady || isApplyingCloudData.current) return;
-    saveCloudTasks(normalizedTasks, session, workspaceOwner).then(() => setCloudStatus('已同步到云端')).catch((error) => setCloudError(error instanceof Error ? error.message : '任务云同步失败。'));
+    let isCurrent = true;
+    saveCloudTasks(normalizedTasks, session, workspaceOwner).then(() => { if (isCurrent) setCloudStatus('已同步到云端'); }).catch((error) => { if (isCurrent) setCloudError(error instanceof Error ? error.message : '任务云同步失败。'); });
+    return () => { isCurrent = false; };
   }, [isCloudReady, isWorkspaceReady, normalizedTasks, session, workspaceOwner]);
 
   useEffect(() => {
     if (!session || !workspaceOwner || !isWorkspaceReady || !isCloudReady || isApplyingCloudData.current) return;
-    saveCloudGoals(normalizedGoals, session, workspaceOwner).then(() => setCloudStatus('已同步到云端')).catch((error) => setCloudError(error instanceof Error ? error.message : '目标云同步失败。'));
+    let isCurrent = true;
+    saveCloudGoals(normalizedGoals, session, workspaceOwner).then(() => { if (isCurrent) setCloudStatus('已同步到云端'); }).catch((error) => { if (isCurrent) setCloudError(error instanceof Error ? error.message : '目标云同步失败。'); });
+    return () => { isCurrent = false; };
   }, [isCloudReady, isWorkspaceReady, normalizedGoals, session, workspaceOwner]);
 
   useEffect(() => {
     if (!session || !workspaceOwner || !isWorkspaceReady || !isCloudReady || isApplyingCloudData.current) return;
-    saveCloudPressureHistory(normalizedPressureHistory, session, workspaceOwner).then(() => setCloudStatus('已同步到云端')).catch((error) => setCloudError(error instanceof Error ? error.message : '压力历史云同步失败。'));
+    let isCurrent = true;
+    saveCloudPressureHistory(normalizedPressureHistory, session, workspaceOwner).then(() => { if (isCurrent) setCloudStatus('已同步到云端'); }).catch((error) => { if (isCurrent) setCloudError(error instanceof Error ? error.message : '压力历史云同步失败。'); });
+    return () => { isCurrent = false; };
   }, [isCloudReady, isWorkspaceReady, normalizedPressureHistory, session, workspaceOwner]);
 
   useEffect(() => {
     if (!session || !workspaceOwner || !isWorkspaceReady || !isCloudReady || isApplyingCloudData.current) return;
+    let isCurrent = true;
     saveCloudProfile({ profile: normalizedProfile, pressureCalibration: normalizedPressureCalibration, onboardingComplete, socialNodes, socialLayoutVersion }, session, workspaceOwner)
-      .then(() => setCloudStatus('已同步到云端'))
-      .catch((error) => setCloudError(error instanceof Error ? error.message : '个人设置云同步失败。'));
+      .then(() => { if (isCurrent) setCloudStatus('已同步到云端'); })
+      .catch((error) => { if (isCurrent) setCloudError(error instanceof Error ? error.message : '个人设置云同步失败。'); });
+    return () => { isCurrent = false; };
   }, [isCloudReady, isWorkspaceReady, normalizedPressureCalibration, normalizedProfile, onboardingComplete, session, socialLayoutVersion, socialNodes, workspaceOwner]);
 
   useEffect(() => {
@@ -642,6 +693,7 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (!isWorkspaceReady) return;
     if (hasLoggedHydration.current) return;
     hasLoggedHydration.current = true;
     console.info('[VD_ONBOARDING] hydration/restored state after reload', {
@@ -651,7 +703,7 @@ function App() {
       pressureCoefficient: normalizedPressureCalibration.pressureCoefficient,
       realtimePressure: pressure.rawPressure,
     });
-  }, [normalizedPressureCalibration.lastSubjectivePressure, normalizedPressureCalibration.pressureCoefficient, normalizedTasks.length, onboardingComplete, pressure.rawPressure]);
+  }, [authoritativeOwnerKey, isWorkspaceReady, normalizedPressureCalibration.lastSubjectivePressure, normalizedPressureCalibration.pressureCoefficient, normalizedTasks.length, onboardingComplete, pressure.rawPressure]);
 
   useEffect(() => {
     if (!isWorkspaceReady) return;
@@ -716,6 +768,7 @@ function App() {
   }, [toastAchievement]);
 
   useEffect(() => {
+    if (!isWorkspaceReady) return;
     if (hasCheckedWelcomeBack.current) return;
     hasCheckedWelcomeBack.current = true;
     const now = Date.now();
@@ -759,7 +812,7 @@ function App() {
       window.removeEventListener('keydown', markActive);
       document.removeEventListener('visibilitychange', markVisible);
     };
-  }, [deadlinePressureTasks, normalizedProfile.nickname]);
+  }, [authoritativeOwnerKey, deadlinePressureTasks, isWorkspaceReady, normalizedProfile.nickname]);
 
   useEffect(() => {
     if (!welcomeBackMessage) return;

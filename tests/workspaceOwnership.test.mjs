@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const { assertWorkspaceSessionOwner, bindWorkspaceValue, canWriteWorkspaceBinding, guestWorkspaceOwner, mergeAuthenticatedWorkspaceRecords, readWorkspaceOwner, readWorkspaceValue, resolveWorkspaceAuth, setWorkspaceOwner, updateWorkspaceBinding, userWorkspaceOwner, workspaceOnboardingFallback, workspaceOwnerKey, workspaceStorageKey, writeWorkspaceValue } = await import('./.compiled/src/storage/workspace.js');
+const { normalizePressureCalibration } = await import('./.compiled/src/utils/taskScoring.js');
+const { createOwnerScopedUiState, transitionOwnerScopedUiState } = await import('./.compiled/src/domain/v2/workspaceUiTransition.js');
 
 function createStorage(initial = {}) {
   const values = new Map(Object.entries(initial));
@@ -171,4 +173,56 @@ test('refreshing A and A-to-guest-to-B resolution produce only each authoritativ
   assert.equal(canWriteWorkspaceBinding(aBinding, loginB.owner), false);
   const bBinding = bindWorkspaceValue(b, 'fallback', () => 'B');
   assert.equal(canWriteWorkspaceBinding(bBinding, loginB.owner), true);
+});
+
+test('an A-to-B transition clears owner-derived form, welcome, toast, cloud, and recalibration UI before B renders', () => {
+  const aUi = {
+    ...createOwnerScopedUiState('user:user-a', 80),
+    isFormOpen: true,
+    editingTask: { id: 'task-a', title: 'A-only task' },
+    isRecalibrationOpen: true,
+    recalibrationPressure: 80,
+    toastAchievement: { id: 'achievement-a', title: 'A-only achievement' },
+    welcomeBackMessage: { detail: 'A-only task is urgent' },
+    cloudToast: 'A-only cloud toast',
+    cloudStatus: 'A-only cloud status',
+    cloudError: 'A-only cloud error',
+    lifeEventCloudError: 'A-only life-event error',
+    isCloudLoading: true,
+    isCloudReady: true,
+    isLifeEventCloudReady: true,
+    guestImportPreview: { destinationUserId: 'user-a' },
+  };
+  const bUi = transitionOwnerScopedUiState(aUi, 'user:user-b');
+  assert.equal(bUi.ownerKey, 'user:user-b');
+  assert.equal(bUi.isFormOpen, false);
+  assert.equal(bUi.editingTask, undefined);
+  assert.equal(bUi.isRecalibrationOpen, false);
+  assert.equal(bUi.recalibrationPressure, 35);
+  assert.equal(bUi.toastAchievement, undefined);
+  assert.equal(bUi.welcomeBackMessage, undefined);
+  assert.equal(bUi.cloudToast, undefined);
+  assert.equal(bUi.cloudStatus, undefined);
+  assert.equal(bUi.cloudError, undefined);
+  assert.equal(bUi.lifeEventCloudError, undefined);
+  assert.equal(bUi.isCloudLoading, false);
+  assert.equal(bUi.isCloudReady, false);
+  assert.equal(bUi.isLifeEventCloudReady, false);
+  assert.equal(bUi.guestImportPreview, undefined);
+});
+
+test('missing calibration derives only from the current owner baseline', () => {
+  const guest = guestWorkspaceOwner(); const a = userWorkspaceOwner('user-a'); const b = userWorkspaceOwner('user-b');
+  const storage = createStorage({
+    'visualized-deadline.baselinePressure': JSON.stringify(80),
+    [workspaceStorageKey(a, 'visualized-deadline.baselinePressure')]: JSON.stringify(80),
+  });
+  const normalizedFor = (owner) => normalizePressureCalibration(
+    readWorkspaceValue(storage, owner, 'visualized-deadline.pressureCalibration', null),
+    readWorkspaceValue(storage, owner, 'visualized-deadline.baselinePressure', null) ?? 35,
+  );
+  assert.equal(normalizedFor(guest).referencePressure, 80);
+  assert.equal(normalizedFor(a).referencePressure, 80);
+  assert.equal(normalizedFor(b).referencePressure, 35);
+  assert.equal(transitionOwnerScopedUiState({ ...createOwnerScopedUiState('user:user-a'), recalibrationPressure: 80 }, 'user:user-b').recalibrationPressure, 35);
 });

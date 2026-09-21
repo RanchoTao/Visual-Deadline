@@ -18,6 +18,7 @@
     "../src/domain/life-controller/**/*.ts",
     "../src/domain/execution/**/*.ts",
     "../src/domain/v2/**/*.ts",
+    "../src/utils/taskScoring.ts",
     "../src/storage/schema.ts",
     "../src/storage/inventory.ts",
     "../src/storage/dataSafety.ts",
