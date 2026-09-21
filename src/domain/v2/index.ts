@@ -7,4 +7,6 @@ export * from './compatibility.js';
 export * from './ranking.js';
 export * from './rankingComparison.js';
 export * from './backfill.js';
+export * from './guestImport.js';
+export * from './guestImportExecutor.js';
 export * from './shadowRead.js';

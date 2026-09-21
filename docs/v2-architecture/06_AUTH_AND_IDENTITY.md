@@ -2,13 +2,13 @@
 
 ## Current state
 
-VisualDeadline currently has email/password auth, email verification callback/resend, refresh-token rotation, sign-out, and guest mode through a custom Supabase REST client. Session tokens are stored in browser localStorage. There is no phone OTP, OAuth, identity-link UI, or explicit guest import workflow.
+Before PR G, VisualDeadline used a custom Supabase REST Auth client. PR G replaces its Auth path with the supported client, preserving email/password and session persistence. Phone, OAuth, identity linking, and production guest import remain independently gated; only a local zero-write guest preview is available by default.
 
 ## Target outcomes
 
 - Email/password remains supported.
 - Phone OTP is supported only after an SMS provider, abuse controls, rate limits, and recovery policy are configured.
-- Google and Apple OAuth use Authorization Code + PKCE through the supported Supabase client.
+- Google, GitHub, and X OAuth 2.0 use Authorization Code + PKCE through the supported Supabase client when independently enabled. X uses Supabase's current `x` provider identifier.
 - One product user can link multiple verified identities.
 - Guest data moves to an account through a previewable, idempotent import, never an implicit merge-and-replace.
 - Account recovery, unlinking, deletion, and audit events are designed before public rollout.
@@ -35,7 +35,7 @@ Editable profile fields and raw user metadata are never authorization inputs.
 1. Sign up.
 2. Present verification status and resend/recovery actions.
 3. Establish a session through the supported client.
-4. If guest data exists, start guest import preview; do not begin cloud writes automatically.
+4. Only an explicit snapshot captured before authentication is guest input. Do not infer guest ownership from ordinary authenticated local cache; do not begin cloud writes automatically.
 
 ### Phone OTP
 
@@ -45,10 +45,10 @@ Editable profile fields and raw user metadata are never authorization inputs.
 4. Offer identity linking only while the current account is strongly authenticated.
 5. Never use phone number as a product primary key.
 
-### Google / Apple OAuth
+### Google / GitHub / X OAuth
 
 1. Start PKCE OAuth with an allow-listed redirect URL and CSRF state.
-2. Complete callback through Supabase Auth.
+2. The SPA callback handler exchanges the one-use PKCE code exactly once, then removes callback parameters from the URL. `detectSessionInUrl` remains false so Supabase does not race the explicit handler.
 3. Detect whether this is a new user, automatically linked verified identity, or separate account.
 4. Present explicit resolution when two populated VD accounts cannot be safely auto-merged.
 
@@ -68,7 +68,8 @@ Current sign-in hydration merges arrays by ID, lets cloud win collisions, and th
 ### Target state machine
 
 ```text
-guest_detected
+NO_GUEST_SOURCE / GUEST_SOURCE_PENDING / GUEST_IMPORT_DISABLED
+ -> guest_detected
  -> inventory_created
  -> preview_ready
  -> user_confirmed
@@ -80,7 +81,7 @@ guest_detected
 
 ### Inventory and preview
 
-Create a local immutable snapshot before import. The inventory includes schema version, per-domain counts, record IDs/checksums, attachment references, relationships, and omitted/unsupported records. Show:
+While conclusively unauthenticated, before an email/OAuth/phone action starts, capture a sanitized immutable `vd.guest-import.pending.v1` snapshot. It stores snapshot ID/checksum, creation time, backup schema version, state, optional request ID, and the PR D sanitized backup envelope; it contains no authorization code, PKCE verifier, access/refresh token, or provider secret. Existing authenticated cache is never reclassified as guest input. Show:
 
 - new records to add;
 - identical records to skip;
@@ -103,12 +104,12 @@ Create a local immutable snapshot before import. The inventory includes schema v
 
 ### Import execution
 
-- Server creates an `import_job` bound to the authenticated user and client request ID.
+- Production execution is hard-disabled in PR G. A local-only executor binds the destination to the authenticated test owner and reuses the PR F planner/ledger/apply/reconciliation semantics.
 - Each source record maps through `legacy_entity_refs` with a unique constraint.
 - Writes are small transactional batches ordered by dependencies. Beta imports only domains supported by the active persistence stage: profile/preferences, Goals, Milestones, Tasks, dependencies, current Capture data, and any enabled notification/billing continuity records. Deferred OPS resources and REVIEW events/reports are imported only when those owning surfaces activate durable persistence.
 - Progress is resumable. Retry reads the ledger and continues; it does not replay successful materializations.
 - Local data remains unchanged until cloud reconciliation passes. The user may download the snapshot at any time.
-- Completion compares counts, checksums, unresolved references, and representative reads under the user's RLS session.
+- Before confirmation, recompute the current local source checksum; if it differs from the reviewed snapshot, reject with `GUEST_IMPORT_SOURCE_CHANGED` and require a new preview. Completion compares counts, checksums, unresolved references, and representative reads under the user's RLS session.
 
 ### After completion
 

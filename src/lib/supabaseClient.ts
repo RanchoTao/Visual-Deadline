@@ -1,58 +1,52 @@
+import { createClient, type AuthChangeEvent, type Provider, type Session, type SupabaseClient, type User } from '@supabase/supabase-js';
 import { recordAuthDebugError } from './authDebug';
-export interface SupabaseUser {
-  id: string;
-  email?: string;
-  identities?: unknown[];
-  email_confirmed_at?: string | null;
-}
+import { assertEmailSignupEnabled, assertOAuthProviderEnabled, assertPhoneEnabled, authFeatureFlags, type AuthFeatureFlags, type SupportedIdentityProvider } from './authFeatures';
+import { LegacySessionTransition } from './legacySessionTransition';
+import { identityClientAuthOptions } from './identityClientConfig';
 
-export interface SupabaseSession {
-  access_token: string;
-  refresh_token: string;
-  expires_at?: number;
-  user: SupabaseUser;
-}
+export interface SupabaseUser { id: string; email?: string; identities?: unknown[]; email_confirmed_at?: string | null; phone?: string; }
+export interface SupabaseSession { access_token: string; refresh_token: string; expires_at?: number; user: SupabaseUser; }
+export interface IdentityProvider { provider: SupportedIdentityProvider; }
+export interface PhoneOtpRequest { phone: string; }
+export interface PhoneOtpVerification { phone: string; token: string; }
 
-type AuthChangeCallback = (session: SupabaseSession | null) => void;
+/** Application-facing Auth boundary. Components never receive Supabase's raw client. */
+export interface IdentityClient {
+  readonly isConfigured: boolean;
+  readonly configError?: string;
+  getSession(): Promise<SupabaseSession | null>;
+  getUser(): Promise<SupabaseUser | null>;
+  signUp(input: { email: string; password: string; options?: { emailRedirectTo?: string; data?: Record<string, unknown> } }): Promise<SupabaseSession | null>;
+  signInWithPassword(input: { email: string; password: string }): Promise<SupabaseSession>;
+  signOut(): Promise<void>;
+  clearLocalAuthState(): Promise<void>;
+  resendVerificationEmail(email: string, emailRedirectTo?: string): Promise<void>;
+  resetPassword(email: string, redirectTo?: string): Promise<void>;
+  exchangeCodeForSession(code: string): Promise<SupabaseSession | null>;
+  onAuthStateChange(callback: (session: SupabaseSession | null, event: AuthChangeEvent) => void): { data: { subscription: { unsubscribe(): void } } };
+  signInWithOAuth(provider: IdentityProvider['provider'], redirectTo: string): Promise<void>;
+  requestPhoneOtp(input: PhoneOtpRequest): Promise<void>;
+  verifyPhoneOtp(input: PhoneOtpVerification): Promise<SupabaseSession | null>;
+  getIdentities(): Promise<readonly unknown[]>;
+  setSession(input: { access_token: string; refresh_token: string; expires_in?: number }): Promise<SupabaseSession>;
+}
 
 export class SupabaseRestError extends Error {
-  status: number;
-  code?: string;
-  details?: string;
-  hint?: string;
-
+  readonly status: number; readonly code?: string; readonly details?: string; readonly hint?: string;
   constructor(message: string, response: Response, body: Record<string, unknown> | null) {
-    super(message);
-    this.name = 'SupabaseRestError';
-    this.status = response.status;
+    super(message); this.name = 'SupabaseRestError'; this.status = response.status;
     this.code = typeof body?.code === 'string' ? body.code : undefined;
     this.details = typeof body?.details === 'string' ? body.details : undefined;
     this.hint = typeof body?.hint === 'string' ? body.hint : undefined;
   }
 }
 
-interface EmailPasswordCredentials {
-  email: string;
-  password: string;
-}
-
-interface SignUpCredentials extends EmailPasswordCredentials {
-  options?: {
-    emailRedirectTo?: string;
-    data?: Record<string, unknown>;
-  };
-}
-
-interface SetSessionCredentials {
-  access_token: string;
-  refresh_token: string;
-  expires_in?: number;
-}
-
+interface SupabaseConfig { url: string; anonKey: string; }
+interface SupabaseConfigStatus { config?: SupabaseConfig; error?: string; }
 const RAW_SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const RAW_SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
-const SESSION_STORAGE_KEY = 'vd.supabase.session';
-const CODE_VERIFIER_STORAGE_KEY = 'vd.supabase.code_verifier';
+const LEGACY_SESSION_STORAGE_KEY = 'vd.supabase.session';
+const LEGACY_CODE_VERIFIER_STORAGE_KEY = 'vd.supabase.code_verifier';
 const LEGACY_SUPABASE_AUTH_PREFIX = 'sb-';
 const MAX_AUTH_TOKEN_LENGTH = 8_192;
 const JWT_LIKE_PATTERN = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
@@ -60,409 +54,135 @@ const MISSING_CONFIG_MESSAGE = 'Supabase 环境变量未配置。';
 const INVALID_URL_MESSAGE = 'Supabase URL 必须是有效的项目根地址。';
 const SUPABASE_PATH_SUFFIX_PATTERN = /\/(?:rest|auth)\/v1\/?$/i;
 
-interface SupabaseConfig {
-  url: string;
-  anonKey: string;
-}
-
-interface SupabaseConfigStatus {
-  config?: SupabaseConfig;
-  error?: string;
-}
-
 function normalizeSupabaseUrl(rawUrl: string): string {
   let normalizedUrl = rawUrl.trim();
-  while (SUPABASE_PATH_SUFFIX_PATTERN.test(normalizedUrl)) {
-    normalizedUrl = normalizedUrl.replace(SUPABASE_PATH_SUFFIX_PATTERN, '');
-  }
+  while (SUPABASE_PATH_SUFFIX_PATTERN.test(normalizedUrl)) normalizedUrl = normalizedUrl.replace(SUPABASE_PATH_SUFFIX_PATTERN, '');
   return normalizedUrl.replace(/\/+$/, '');
 }
-
 function getSupabaseConfigStatus(): SupabaseConfigStatus {
   const anonKey = RAW_SUPABASE_ANON_KEY?.trim();
-  if (!RAW_SUPABASE_URL?.trim() || !anonKey) {
-    return { error: MISSING_CONFIG_MESSAGE };
-  }
-
+  if (!RAW_SUPABASE_URL?.trim() || !anonKey) return { error: MISSING_CONFIG_MESSAGE };
   const url = normalizeSupabaseUrl(RAW_SUPABASE_URL);
   try {
     const parsedUrl = new URL(url);
-    if (!['http:', 'https:'].includes(parsedUrl.protocol) || parsedUrl.pathname !== '/') {
-      return { error: INVALID_URL_MESSAGE };
-    }
-    return { config: { url: parsedUrl.origin, anonKey } };
-  } catch {
-    return { error: INVALID_URL_MESSAGE };
-  }
+    return !['http:', 'https:'].includes(parsedUrl.protocol) || parsedUrl.pathname !== '/'
+      ? { error: INVALID_URL_MESSAGE } : { config: { url: parsedUrl.origin, anonKey } };
+  } catch { return { error: INVALID_URL_MESSAGE }; }
 }
-
-const supabaseConfigStatus = getSupabaseConfigStatus();
-
-if (import.meta.env.DEV) {
-  const debugUrl = supabaseConfigStatus.config?.url ?? (RAW_SUPABASE_URL?.trim() ? normalizeSupabaseUrl(RAW_SUPABASE_URL) : undefined);
-  let urlOrigin: string | undefined;
-  try {
-    urlOrigin = debugUrl ? new URL(debugUrl).origin : undefined;
-  } catch {
-    urlOrigin = undefined;
-  }
-  console.debug('[Visual Deadline Supabase]', {
-    hasUrl: Boolean(RAW_SUPABASE_URL?.trim()),
-    hasAnonKey: Boolean(RAW_SUPABASE_ANON_KEY?.trim()),
-    urlOrigin,
-  });
+function isUsableStoredToken(value: unknown): value is string { return typeof value === 'string' && value.length > 0 && value.length <= MAX_AUTH_TOKEN_LENGTH; }
+function isUsableAccessToken(value: unknown): value is string { return isUsableStoredToken(value) && JWT_LIKE_PATTERN.test(value); }
+function normalizeUser(user: User): SupabaseUser {
+  return { id: user.id, email: user.email ?? undefined, phone: user.phone ?? undefined, email_confirmed_at: user.email_confirmed_at ?? null,
+    identities: user.identities?.map((identity) => ({ provider: identity.provider, providerIdentityId: identity.identity_id, createdAt: identity.created_at, updatedAt: identity.updated_at })) };
 }
-
-function getRequiredConfig(): SupabaseConfig {
-  if (!supabaseConfigStatus.config) {
-    throw new Error(supabaseConfigStatus.error ?? MISSING_CONFIG_MESSAGE);
-  }
-  return supabaseConfigStatus.config;
+function normalizeSession(session: Session | null | undefined): SupabaseSession | null {
+  if (!session || !isUsableAccessToken(session.access_token) || !isUsableStoredToken(session.refresh_token) || !session.user?.id) return null;
+  return { access_token: session.access_token, refresh_token: session.refresh_token, expires_at: session.expires_at, user: normalizeUser(session.user) };
 }
-
-
-function readStoredCodeVerifier(): string | null {
-  if (typeof window === 'undefined') return null;
-  return window.localStorage.getItem(CODE_VERIFIER_STORAGE_KEY);
-}
-
-function clearStoredCodeVerifier(): void {
-  if (typeof window === 'undefined') return;
-  window.localStorage.removeItem(CODE_VERIFIER_STORAGE_KEY);
-}
-
-function isUsableStoredToken(value: unknown): value is string {
-  return typeof value === 'string' && value.length > 0 && value.length <= MAX_AUTH_TOKEN_LENGTH;
-}
-
-function isUsableAccessToken(value: unknown): value is string {
-  return isUsableStoredToken(value) && JWT_LIKE_PATTERN.test(value);
-}
-
-function clearLegacySupabaseStorage(): void {
-  if (typeof window === 'undefined') return;
-
-  const storages = [window.localStorage, window.sessionStorage];
-  storages.forEach((storage) => {
-    for (let index = storage.length - 1; index >= 0; index -= 1) {
-      const key = storage.key(index);
-      if (!key) continue;
-      if (key === SESSION_STORAGE_KEY || key === CODE_VERIFIER_STORAGE_KEY || key.startsWith(LEGACY_SUPABASE_AUTH_PREFIX)) {
-        storage.removeItem(key);
-      }
-    }
-  });
-
-  document.cookie.split(';').forEach((cookie) => {
-    const [rawName] = cookie.split('=');
-    const name = rawName?.trim();
-    if (!name || (!name.startsWith(LEGACY_SUPABASE_AUTH_PREFIX) && !name.startsWith('vd.supabase'))) return;
-    document.cookie = `${name}=; Max-Age=0; path=/; SameSite=Lax`;
-  });
-}
-
-function normalizeStoredSession(value: unknown): SupabaseSession | null {
-  if (!value || typeof value !== 'object') return null;
-  const candidate = value as Record<string, unknown>;
-  if (!isUsableAccessToken(candidate.access_token) || !isUsableStoredToken(candidate.refresh_token)) return null;
-
-  const user = candidate.user && typeof candidate.user === 'object' ? candidate.user as Record<string, unknown> : null;
-  if (!user || typeof user.id !== 'string' || !user.id) return null;
-
-  return {
-    access_token: candidate.access_token,
-    refresh_token: candidate.refresh_token,
-    expires_at: typeof candidate.expires_at === 'number' ? candidate.expires_at : undefined,
-    user: {
-      id: user.id,
-      email: typeof user.email === 'string' ? user.email : undefined,
-      identities: Array.isArray(user.identities) ? user.identities : undefined,
-      email_confirmed_at: typeof user.email_confirmed_at === 'string' ? user.email_confirmed_at : null,
-    },
-  };
-}
-
-function readStoredSession(): SupabaseSession | null {
+function readLegacySession(): { access_token: string; refresh_token: string; userId: string } | null {
   if (typeof window === 'undefined') return null;
   try {
-    const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
-    if (!raw) return null;
-    const session = normalizeStoredSession(JSON.parse(raw));
-    if (!session) clearLegacySupabaseStorage();
-    return session;
-  } catch {
-    clearLegacySupabaseStorage();
-    return null;
-  }
+    const value: unknown = JSON.parse(window.localStorage.getItem(LEGACY_SESSION_STORAGE_KEY) ?? 'null');
+    if (!value || typeof value !== 'object') return null;
+    const candidate = value as Record<string, unknown>; const user = candidate.user && typeof candidate.user === 'object' ? candidate.user as Record<string, unknown> : null;
+    if (!isUsableAccessToken(candidate.access_token) || !isUsableStoredToken(candidate.refresh_token) || !user || typeof user.id !== 'string' || !user.id) return null;
+    return { access_token: candidate.access_token, refresh_token: candidate.refresh_token, userId: user.id };
+  } catch { return null; }
 }
-
-function persistSession(session: SupabaseSession | null): void {
+function removeLegacySession(): void { if (typeof window !== 'undefined') window.localStorage.removeItem(LEGACY_SESSION_STORAGE_KEY); }
+function clearLegacyAuthStorage(): void {
   if (typeof window === 'undefined') return;
-  if (session) {
-    const normalizedSession = normalizeStoredSession(session);
-    if (normalizedSession) {
-      try {
-        window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(normalizedSession));
-      } catch (error) {
-        console.error('[VD_AUTH_STORAGE_WRITE_FAILED]', error);
-      }
-    }
-    else clearLegacySupabaseStorage();
-  } else {
-    clearLegacySupabaseStorage();
+  for (const storage of [window.localStorage, window.sessionStorage]) for (let index = storage.length - 1; index >= 0; index -= 1) {
+    const key = storage.key(index); if (key && (key === LEGACY_SESSION_STORAGE_KEY || key === LEGACY_CODE_VERIFIER_STORAGE_KEY || key.startsWith(LEGACY_SUPABASE_AUTH_PREFIX))) storage.removeItem(key);
   }
 }
-
-function toSession(payload: { access_token: string; refresh_token: string; expires_in?: number; user: SupabaseUser }): SupabaseSession {
-  const session = normalizeStoredSession({
-    access_token: payload.access_token,
-    refresh_token: payload.refresh_token,
-    expires_at: payload.expires_in ? Math.floor(Date.now() / 1000) + payload.expires_in : undefined,
-    user: payload.user,
-  });
-  if (!session) throw new Error('登录没有返回有效会话，请稍后重试或联系支持。');
-  return session;
-}
-
-export function clearSupabaseAuthCache(): void {
-  clearLegacySupabaseStorage();
-}
-
-function parseJsonBody(text: string): unknown {
+function parseJsonBody(text: string): Record<string, unknown> | null {
   if (!text) return null;
-  try {
-    return JSON.parse(text);
-  } catch {
-    return { message: text.slice(0, 240) };
-  }
+  try { const parsed: unknown = JSON.parse(text); return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : null; }
+  catch { return { message: text.slice(0, 240) }; }
 }
-
 async function parseResponse<T>(response: Response): Promise<T> {
-  const text = await response.text();
-  const body = parseJsonBody(text);
-  const bodyRecord = body && typeof body === 'object' ? body as Record<string, unknown> : null;
-  if (!response.ok) {
-    const message = bodyRecord?.msg || bodyRecord?.message || bodyRecord?.error_description || bodyRecord?.error || 'Supabase 请求失败。';
-    if (import.meta.env.DEV) {
-      console.error('[Visual Deadline Supabase REST error]', {
-        status: response.status,
-        statusText: response.statusText,
-        body,
-      });
-    }
-    throw new SupabaseRestError(String(message), response, bodyRecord);
-  }
+  const text = await response.text(); const body = parseJsonBody(text);
+  if (!response.ok) throw new SupabaseRestError(String(body?.msg ?? body?.message ?? body?.error_description ?? body?.error ?? 'Supabase 请求失败。'), response, body);
   return body as T;
 }
 
-class VisualDeadlineSupabaseClient {
-  private listeners = new Set<AuthChangeCallback>();
-
-  get isConfigured(): boolean {
-    return Boolean(supabaseConfigStatus.config);
-  }
-
-  get configError(): string | undefined {
-    return supabaseConfigStatus.error;
-  }
-
-  auth = {
-    clearLocalAuthState: async (): Promise<void> => {
-      persistSession(null);
-      this.emit(null);
-    },
-    getSession: async (): Promise<SupabaseSession | null> => {
-      try {
-        const stored = readStoredSession();
-        if (!stored) return null;
-        if (stored.expires_at && stored.expires_at - 60 < Math.floor(Date.now() / 1000)) {
-          return this.auth.refreshSession(stored.refresh_token);
-        }
-        return stored;
-      } catch (error) {
-        recordAuthDebugError('getSession', error);
-        throw error;
-      }
-    },
-    signUp: async ({ email, password, options }: SignUpCredentials): Promise<SupabaseSession | null> => {
-      try {
-        const { url, anonKey } = getRequiredConfig();
-        const signUpUrl = new URL(`${url}/auth/v1/signup`);
-        if (options?.emailRedirectTo) signUpUrl.searchParams.set('redirect_to', options.emailRedirectTo);
-
-        const payload = await parseResponse<{ access_token?: string; refresh_token?: string; expires_in?: number; user: SupabaseUser }>(await fetch(signUpUrl, {
-          method: 'POST',
-          headers: { apikey: anonKey, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password, data: options?.data }),
-        }));
-        if (!payload.access_token || !payload.refresh_token) {
-          if (Array.isArray(payload.user?.identities) && payload.user.identities.length === 0) {
-            throw new Error('USER_ALREADY_REGISTERED_OR_UNVERIFIED');
-          }
-          return null;
-        }
-        const session = toSession(payload as { access_token: string; refresh_token: string; expires_in?: number; user: SupabaseUser });
-        persistSession(session);
-        clearStoredCodeVerifier();
-        this.emit(session);
-        return session;
-      } catch (error) {
-        recordAuthDebugError('signUp', error);
-        throw error;
-      }
-    },
-    exchangeCodeForSession: async (code: string): Promise<SupabaseSession | null> => {
-      try {
-        const { url, anonKey } = getRequiredConfig();
-        const codeVerifier = readStoredCodeVerifier();
-        if (!codeVerifier) return null;
-        const payload = await parseResponse<{ access_token: string; refresh_token: string; expires_in?: number; user: SupabaseUser }>(await fetch(`${url}/auth/v1/token?grant_type=pkce`, {
-          method: 'POST',
-          headers: { apikey: anonKey, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ auth_code: code, code_verifier: codeVerifier }),
-        }));
-        const session = toSession(payload);
-        persistSession(session);
-        clearStoredCodeVerifier();
-        this.emit(session);
-        return session;
-      } catch (error) {
-        recordAuthDebugError('exchangeCodeForSession', error);
-        throw error;
-      }
-    },
-    signInWithPassword: async ({ email, password }: EmailPasswordCredentials): Promise<SupabaseSession> => {
-      try {
-        const { url, anonKey } = getRequiredConfig();
-        const payload = await parseResponse<{ access_token?: string; refresh_token?: string; expires_in?: number; user?: SupabaseUser }>(await fetch(`${url}/auth/v1/token?grant_type=password`, {
-          method: 'POST',
-          headers: { apikey: anonKey, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password }),
-        }));
-        const session = toSession(payload as { access_token: string; refresh_token: string; expires_in?: number; user: SupabaseUser });
-        persistSession(session);
-        this.emit(session);
-        return session;
-      } catch (error) {
-        recordAuthDebugError('signInWithPassword', error);
-        throw error;
-      }
-    },
-    setSession: async ({ access_token, refresh_token, expires_in }: SetSessionCredentials): Promise<SupabaseSession> => {
-      try {
-        const { url, anonKey } = getRequiredConfig();
-        const user = await parseResponse<SupabaseUser>(await fetch(`${url}/auth/v1/user`, {
-          headers: { apikey: anonKey, Authorization: `Bearer ${access_token}` },
-        }));
-        const session = toSession({ access_token, refresh_token, expires_in, user });
-        persistSession(session);
-        clearStoredCodeVerifier();
-        this.emit(session);
-        return session;
-      } catch (error) {
-        recordAuthDebugError('setSession', error);
-        throw error;
-      }
-    },
-    resendVerificationEmail: async (email: string, emailRedirectTo?: string): Promise<void> => {
-      try {
-        const { url, anonKey } = getRequiredConfig();
-        const resendUrl = new URL(`${url}/auth/v1/resend`);
-        await parseResponse<unknown>(await fetch(resendUrl, {
-          method: 'POST',
-          headers: { apikey: anonKey, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type: 'signup', email, options: emailRedirectTo ? { emailRedirectTo } : undefined }),
-        }));
-      } catch (error) {
-        recordAuthDebugError('resendVerificationEmail', error);
-        throw error;
-      }
-    },
-    acknowledgeEmailVerificationCallback: async (): Promise<void> => {
-      clearStoredCodeVerifier();
-    },
-    refreshSession: async (refreshToken: string): Promise<SupabaseSession | null> => {
-      const { url, anonKey } = getRequiredConfig();
-      try {
-        const payload = await parseResponse<{ access_token: string; refresh_token: string; expires_in?: number; user: SupabaseUser }>(await fetch(`${url}/auth/v1/token?grant_type=refresh_token`, {
-          method: 'POST',
-          headers: { apikey: anonKey, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ refresh_token: refreshToken }),
-        }));
-        const session = toSession(payload);
-        persistSession(session);
-        this.emit(session);
-        return session;
-      } catch (error) {
-        recordAuthDebugError('getSession', error);
-        persistSession(null);
-        this.emit(null);
-        return null;
-      }
-    },
-    signOut: async (): Promise<void> => {
-      const session = readStoredSession();
-      const config = this.isConfigured ? getRequiredConfig() : null;
-      if (session && config) {
-        await fetch(`${config.url}/auth/v1/logout`, {
-          method: 'POST',
-          headers: { apikey: config.anonKey, Authorization: `Bearer ${session.access_token}` },
-        }).catch(() => undefined);
-      }
-      persistSession(null);
-      this.emit(null);
-    },
-    onAuthStateChange: (callback: AuthChangeCallback) => {
-      this.listeners.add(callback);
-      return { data: { subscription: { unsubscribe: () => this.listeners.delete(callback) } } };
-    },
-  };
-
-  async rest<T>(path: string, init: RequestInit = {}, session?: SupabaseSession | null): Promise<T> {
-    const { url, anonKey } = getRequiredConfig();
-    const activeSession = session ?? (await this.auth.getSession());
-    const headers = new Headers(init.headers);
-    headers.set('apikey', anonKey);
-    headers.set('Content-Type', 'application/json');
-    if (activeSession) headers.set('Authorization', `Bearer ${activeSession.access_token}`);
-    return parseResponse<T>(await fetch(`${url}/rest/v1/${path}`, { ...init, headers }));
-  }
-
-  async uploadStorageObject(bucket: string, path: string, file: Blob, session?: SupabaseSession | null, upsert = false): Promise<void> {
-    const { url, anonKey } = getRequiredConfig();
-    const activeSession = session ?? (await this.auth.getSession());
-    if (!activeSession) throw new Error('请先登录后上传附件。');
-    await parseResponse(await fetch(`${url}/storage/v1/object/${encodeURIComponent(bucket)}/${path.split('/').map(encodeURIComponent).join('/')}`, {
-      method: 'POST',
-      headers: { apikey: anonKey, Authorization: `Bearer ${activeSession.access_token}`, 'Content-Type': file.type || 'application/octet-stream', 'x-upsert': String(upsert) },
-      body: file,
-    }));
-  }
-
-  getPublicStorageUrl(bucket: string, path: string): string {
-    const { url } = getRequiredConfig();
-    return `${url}/storage/v1/object/public/${encodeURIComponent(bucket)}/${path.split('/').map(encodeURIComponent).join('/')}`;
-  }
-
-  async removeStorageObject(bucket: string, path: string, session?: SupabaseSession | null): Promise<void> {
-    const { url, anonKey } = getRequiredConfig();
-    const activeSession = session ?? (await this.auth.getSession());
-    if (!activeSession) return;
-    await parseResponse(await fetch(`${url}/storage/v1/object/${encodeURIComponent(bucket)}/${path.split('/').map(encodeURIComponent).join('/')}`, {
-      method: 'DELETE', headers: { apikey: anonKey, Authorization: `Bearer ${activeSession.access_token}` },
-    }));
-  }
-
-  private emit(session: SupabaseSession | null): void {
-    this.listeners.forEach((listener) => {
-      try {
-        listener(session);
-      } catch (error) {
-        recordAuthDebugError('onAuthStateChange', error);
-        throw error;
-      }
+class VisualDeadlineIdentityClient implements IdentityClient {
+  private readonly client?: SupabaseClient;
+  private readonly legacyTransition: LegacySessionTransition<SupabaseSession, SupabaseUser>;
+  constructor(private readonly status: SupabaseConfigStatus, private readonly flags: AuthFeatureFlags = authFeatureFlags) {
+    if (status.config) this.client = createClient(status.config.url, status.config.anonKey, { auth: identityClientAuthOptions });
+    this.legacyTransition = new LegacySessionTransition({
+      readLegacy: readLegacySession,
+      removeLegacy: removeLegacySession,
+      setSession: (legacy) => this.setSession(legacy),
+      getUser: () => this.getUser(),
+      clearSupportedSession: () => this.clearSupportedSessionOnly(),
     });
   }
+  get isConfigured(): boolean { return Boolean(this.client); }
+  get configError(): string | undefined { return this.status.error; }
+  requireClient(): SupabaseClient { if (!this.client) throw new Error(this.status.error ?? MISSING_CONFIG_MESSAGE); return this.client; }
+  async getSession(): Promise<SupabaseSession | null> {
+    const { data, error } = await this.requireClient().auth.getSession(); if (error) throw error;
+    return normalizeSession(data.session) ?? this.transitionLegacySession();
+  }
+  async getUser(): Promise<SupabaseUser | null> {
+    const { data, error } = await this.requireClient().auth.getUser(); if (error) throw error; return data.user ? normalizeUser(data.user) : null;
+  }
+  async signUp(input: { email: string; password: string; options?: { emailRedirectTo?: string; data?: Record<string, unknown> } }): Promise<SupabaseSession | null> {
+    assertEmailSignupEnabled(this.flags); const { data, error } = await this.requireClient().auth.signUp({ email: input.email, password: input.password, options: input.options }); if (error) throw error; return normalizeSession(data.session);
+  }
+  async signInWithPassword(input: { email: string; password: string }): Promise<SupabaseSession> {
+    const { data, error } = await this.requireClient().auth.signInWithPassword(input); if (error) throw error;
+    const session = normalizeSession(data.session); if (!session) throw new Error('EMAIL_SESSION_MISSING_AFTER_SIGNIN'); return session;
+  }
+  async signOut(): Promise<void> { const { error } = await this.requireClient().auth.signOut(); clearLegacyAuthStorage(); if (error) throw error; }
+  async clearLocalAuthState(): Promise<void> { await this.requireClient().auth.signOut({ scope: 'local' }); clearLegacyAuthStorage(); }
+  async resendVerificationEmail(email: string, emailRedirectTo?: string): Promise<void> {
+    const { error } = await this.requireClient().auth.resend({ type: 'signup', email, options: emailRedirectTo ? { emailRedirectTo } : undefined }); if (error) throw error;
+  }
+  async resetPassword(email: string, redirectTo?: string): Promise<void> { const { error } = await this.requireClient().auth.resetPasswordForEmail(email, redirectTo ? { redirectTo } : undefined); if (error) throw error; }
+  async exchangeCodeForSession(code: string): Promise<SupabaseSession | null> { const { data, error } = await this.requireClient().auth.exchangeCodeForSession(code); if (error) throw error; return normalizeSession(data.session); }
+  onAuthStateChange(callback: (session: SupabaseSession | null, event: AuthChangeEvent) => void) { return this.requireClient().auth.onAuthStateChange((event, session) => callback(normalizeSession(session), event)); }
+  async signInWithOAuth(provider: IdentityProvider['provider'], redirectTo: string): Promise<void> { assertOAuthProviderEnabled(this.flags, provider); const { error } = await this.requireClient().auth.signInWithOAuth({ provider: provider as Provider, options: { redirectTo } }); if (error) throw error; }
+  async requestPhoneOtp(input: PhoneOtpRequest): Promise<void> { assertPhoneEnabled(this.flags); const { error } = await this.requireClient().auth.signInWithOtp({ phone: input.phone }); if (error) throw error; }
+  async verifyPhoneOtp(input: PhoneOtpVerification): Promise<SupabaseSession | null> { assertPhoneEnabled(this.flags); const { data, error } = await this.requireClient().auth.verifyOtp({ phone: input.phone, token: input.token, type: 'sms' }); if (error) throw error; return normalizeSession(data.session); }
+  async getIdentities(): Promise<readonly unknown[]> { return (await this.getUser())?.identities ?? []; }
+  async setSession(input: { access_token: string; refresh_token: string; expires_in?: number }): Promise<SupabaseSession> {
+    const { data, error } = await this.requireClient().auth.setSession(input); if (error) throw error;
+    const session = normalizeSession(data.session); if (!session) throw new Error('登录没有返回有效会话，请稍后重试或联系支持。'); return session;
+  }
+  private async transitionLegacySession(): Promise<SupabaseSession | null> {
+    const session = await this.legacyTransition.run();
+    if (!session) recordAuthDebugError('legacySessionTransition', new Error('LEGACY_SESSION_TRANSITION_NOT_VERIFIED'));
+    return session;
+  }
+  private async clearSupportedSessionOnly(): Promise<void> { await this.requireClient().auth.signOut({ scope: 'local' }); }
 }
 
-export const supabase = new VisualDeadlineSupabaseClient();
+const configStatus = getSupabaseConfigStatus();
+export const identityClient: IdentityClient = new VisualDeadlineIdentityClient(configStatus);
+
+/** Compatibility facade for existing data/storage services; Auth is the narrow IdentityClient above. */
+class VisualDeadlineSupabaseFacade {
+  readonly auth = identityClient;
+  get isConfigured(): boolean { return identityClient.isConfigured; }
+  get configError(): string | undefined { return identityClient.configError; }
+  private get config(): SupabaseConfig { if (!configStatus.config) throw new Error(configStatus.error ?? MISSING_CONFIG_MESSAGE); return configStatus.config; }
+  private get client(): SupabaseClient { return (identityClient as VisualDeadlineIdentityClient).requireClient(); }
+  async rest<T>(path: string, init: RequestInit = {}, session?: SupabaseSession | null): Promise<T> {
+    const activeSession = session ?? await identityClient.getSession(); const headers = new Headers(init.headers);
+    headers.set('apikey', this.config.anonKey); headers.set('Content-Type', 'application/json'); if (activeSession) headers.set('Authorization', `Bearer ${activeSession.access_token}`);
+    return parseResponse<T>(await fetch(`${this.config.url}/rest/v1/${path}`, { ...init, headers }));
+  }
+  async uploadStorageObject(bucket: string, path: string, file: Blob, session?: SupabaseSession | null, upsert = false): Promise<void> {
+    if (!(session ?? await identityClient.getSession())) throw new Error('请先登录后上传附件。'); const { error } = await this.client.storage.from(bucket).upload(path, file, { upsert }); if (error) throw error;
+  }
+  getPublicStorageUrl(bucket: string, path: string): string { return this.client.storage.from(bucket).getPublicUrl(path).data.publicUrl; }
+  async removeStorageObject(bucket: string, path: string, session?: SupabaseSession | null): Promise<void> {
+    if (!(session ?? await identityClient.getSession())) return; const { error } = await this.client.storage.from(bucket).remove([path]); if (error) throw error;
+  }
+}
+export const supabase = new VisualDeadlineSupabaseFacade();
+export function clearSupabaseAuthCache(): void { void identityClient.clearLocalAuthState(); }

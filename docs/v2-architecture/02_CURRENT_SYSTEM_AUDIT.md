@@ -96,7 +96,7 @@ Schema mismatch already exists: core Goal IDs are text, while `roadmaps.goal_id`
 
 ## Auth and identity
 
-Current auth supports email/password signup, sign-in, email verification callback/resend, token refresh, sign-out, and local guest mode. It does not support phone OTP, Google/Apple OAuth, identity linking, guest migration review, or merge recovery.
+Before PR G, auth supported email/password signup, sign-in, email verification callback/resend, token refresh, sign-out, and local guest mode. PR G adds independently gated Google, GitHub, X OAuth 2.0 (`x` provider), and phone entry points; identity linking and production guest import remain disabled until their separate gates are approved.
 
 The custom client persists access and refresh tokens in localStorage. This increases the impact of any XSS and makes future OAuth/PKCE/identity-linking behavior costly to own manually. v2 should use the supported Supabase client unless a documented constraint prevents it.
 
