@@ -1,10 +1,21 @@
 import { useState } from 'react';
-import { clearValue, hasValue, saveValue, storageKeys } from '../storage';
+import { browserStorageAdapter, hasValue, readWorkspaceOwner, removeWorkspaceValue, storageKeys, workspaceStorageKey, writeWorkspaceValue } from '../storage';
 
-const appStorageKeys = Object.values(storageKeys);
+const deviceGlobalKeys: ReadonlySet<string> = new Set([
+  storageKeys.welcomeLastActive,
+  storageKeys.backupLatest,
+  storageKeys.backup1,
+  storageKeys.backup2,
+  storageKeys.backup3,
+  storageKeys.restoreRollback,
+  storageKeys.guestImportPending,
+  storageKeys.workspaceActiveOwner,
+]);
+const appStorageKeys = Object.values(storageKeys).filter((key) => !deviceGlobalKeys.has(key));
 
 function getStorageKeyRows() {
-  return appStorageKeys.map((key) => ({ key, exists: hasValue(key) }));
+  const owner = readWorkspaceOwner(browserStorageAdapter);
+  return appStorageKeys.map((key) => ({ key, exists: hasValue(workspaceStorageKey(owner, key)) }));
 }
 
 function reloadPage(): void {
@@ -20,16 +31,17 @@ export function DeveloperToolsPanel() {
   }
 
   function clearAllLocalData() {
-    const confirmed = window.confirm('确定要清除所有 VD 本地数据并重启吗？任务、压力、人生树、社交图谱、备份快照与设置都会被删除。');
+    const confirmed = window.confirm('确定要清除当前工作区的本地数据并重启吗？任务、压力、人生树、社交图谱与设置都会被删除；其他账号和保留的访客快照不会受影响。');
     if (!confirmed) return;
-    appStorageKeys.forEach((key) => clearValue(key));
+    const owner = readWorkspaceOwner(browserStorageAdapter);
+    appStorageKeys.forEach((key) => removeWorkspaceValue(browserStorageAdapter, owner, key));
     reloadPage();
   }
 
   function resetOnboarding() {
     const confirmed = window.confirm('确定要重置初始问答吗？现有任务、压力、社交与人生树数据会保留。');
     if (!confirmed) return;
-    saveValue(storageKeys.onboardingComplete, false);
+    writeWorkspaceValue(browserStorageAdapter, readWorkspaceOwner(browserStorageAdapter), storageKeys.onboardingComplete, false);
     refreshKeyRows();
     reloadPage();
   }
@@ -51,8 +63,8 @@ export function DeveloperToolsPanel() {
 
       <div className="mt-4 grid gap-3 md:grid-cols-3">
         <button type="button" onClick={clearAllLocalData} className="rounded-3xl bg-rose-50 px-4 py-3 text-left text-sm font-semibold text-rose-600 ring-1 ring-rose-100 hover:bg-rose-100/70">
-          清除本地数据并重启
-          <span className="mt-1 block text-xs font-medium text-rose-400">仅清除VD 使用的本地存储键</span>
+          清除当前工作区并重启
+          <span className="mt-1 block text-xs font-medium text-rose-400">仅清除当前访客或账号工作区的本地存储键</span>
         </button>
         <button type="button" onClick={resetOnboarding} className="rounded-3xl bg-white/85 px-4 py-3 text-left text-sm font-semibold text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50">
           重置初始问答

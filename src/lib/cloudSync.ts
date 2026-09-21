@@ -2,6 +2,7 @@ import type { Goal, PressureCalibrationSnapshot, PressureHistoryRecord, Task, Us
 import type { LifeEvent } from '../types/lifeController';
 import { normalizeLifeEvents } from '../domain/life-controller';
 import { SupabaseRestError, supabase, type SupabaseSession } from './supabaseClient';
+import { assertWorkspaceSessionOwner, type WorkspaceOwner } from '../storage/workspace';
 
 interface JsonRow<T> {
   id: string;
@@ -113,7 +114,8 @@ async function replaceJsonRows<T extends { id: string }>(table: 'tasks' | 'goals
   }, session);
 }
 
-export async function loadCloudData(session: SupabaseSession): Promise<CloudData> {
+export async function loadCloudData(session: SupabaseSession, owner: WorkspaceOwner): Promise<CloudData> {
+  assertWorkspaceSessionOwner(owner, session.user.id);
   return withCloudSyncErrors((async () => {
     const [tasks, goals, pressureHistory, profiles] = await Promise.all([
       loadJsonRows<Task>('tasks', session),
@@ -135,19 +137,23 @@ export async function loadCloudData(session: SupabaseSession): Promise<CloudData
   })());
 }
 
-export async function saveCloudTasks(tasks: Task[], session: SupabaseSession): Promise<void> {
+export async function saveCloudTasks(tasks: Task[], session: SupabaseSession, owner: WorkspaceOwner): Promise<void> {
+  assertWorkspaceSessionOwner(owner, session.user.id);
   await withCloudSyncErrors(replaceJsonRows('tasks', tasks, session));
 }
 
-export async function saveCloudGoals(goals: Goal[], session: SupabaseSession): Promise<void> {
+export async function saveCloudGoals(goals: Goal[], session: SupabaseSession, owner: WorkspaceOwner): Promise<void> {
+  assertWorkspaceSessionOwner(owner, session.user.id);
   await withCloudSyncErrors(replaceJsonRows('goals', goals, session));
 }
 
-export async function saveCloudPressureHistory(records: PressureHistoryRecord[], session: SupabaseSession): Promise<void> {
+export async function saveCloudPressureHistory(records: PressureHistoryRecord[], session: SupabaseSession, owner: WorkspaceOwner): Promise<void> {
+  assertWorkspaceSessionOwner(owner, session.user.id);
   await withCloudSyncErrors(replaceJsonRows('pressure_logs', records, session));
 }
 
-export async function loadCloudLifeEvents(session: SupabaseSession): Promise<LifeEvent[]> {
+export async function loadCloudLifeEvents(session: SupabaseSession, owner: WorkspaceOwner): Promise<LifeEvent[]> {
+  assertWorkspaceSessionOwner(owner, session.user.id);
   try {
     const rows = await supabase.rest<LifeEventRow[]>(`life_events?select=id,user_id,type,occurred_at,metadata,created_at,updated_at&user_id=eq.${encode(session.user.id)}&order=occurred_at.asc`, { method: 'GET' }, session);
     return normalizeLifeEvents(rows.map((row) => ({
@@ -170,7 +176,8 @@ export async function loadCloudLifeEvents(session: SupabaseSession): Promise<Lif
   }
 }
 
-export async function upsertCloudLifeEvents(events: LifeEvent[], session: SupabaseSession): Promise<void> {
+export async function upsertCloudLifeEvents(events: LifeEvent[], session: SupabaseSession, owner: WorkspaceOwner): Promise<void> {
+  assertWorkspaceSessionOwner(owner, session.user.id);
   if (events.length === 0) return;
   await withCloudSyncErrors(supabase.rest('life_events', {
     method: 'POST',
@@ -187,11 +194,13 @@ export async function upsertCloudLifeEvents(events: LifeEvent[], session: Supaba
   }, session));
 }
 
-export async function deleteCloudLifeEvent(eventId: string, session: SupabaseSession): Promise<void> {
+export async function deleteCloudLifeEvent(eventId: string, session: SupabaseSession, owner: WorkspaceOwner): Promise<void> {
+  assertWorkspaceSessionOwner(owner, session.user.id);
   await withCloudSyncErrors(supabase.rest(`life_events?id=eq.${encode(eventId)}&user_id=eq.${encode(session.user.id)}`, { method: 'DELETE' }, session));
 }
 
-export async function saveCloudProfile(input: { profile: UserProfile; pressureCalibration: PressureCalibrationSnapshot; onboardingComplete: boolean; socialNodes: unknown[]; socialLayoutVersion: number }, session: SupabaseSession): Promise<void> {
+export async function saveCloudProfile(input: { profile: UserProfile; pressureCalibration: PressureCalibrationSnapshot; onboardingComplete: boolean; socialNodes: unknown[]; socialLayoutVersion: number }, session: SupabaseSession, owner: WorkspaceOwner): Promise<void> {
+  assertWorkspaceSessionOwner(owner, session.user.id);
   await withCloudSyncErrors(supabase.rest('profiles', {
     method: 'POST',
     headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },

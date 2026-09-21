@@ -1,15 +1,17 @@
 import type { LifeEventStore } from '../types/lifeController';
 import { normalizeLifeEventStore } from '../domain/life-controller';
-import { clearValue, loadValue, saveValue, storageKeys } from './schema';
+import { storageKeys } from './schema';
+import { browserStorageAdapter } from './dataSafety';
+import { readWorkspaceOwner, readWorkspaceValue, removeWorkspaceValue, writeWorkspaceValue } from './workspace';
 
 export function loadLifeEventStore(): LifeEventStore {
-  return normalizeLifeEventStore(loadValue<unknown>(storageKeys.lifeEventsByOwner, {}));
+  return normalizeLifeEventStore(readWorkspaceValue<unknown>(browserStorageAdapter, readWorkspaceOwner(browserStorageAdapter), storageKeys.lifeEventsByOwner, {}));
 }
 
 export function saveLifeEventStore(store: LifeEventStore): void {
-  saveValue(storageKeys.lifeEventsByOwner, normalizeLifeEventStore(store));
+  writeWorkspaceValue(browserStorageAdapter, readWorkspaceOwner(browserStorageAdapter), storageKeys.lifeEventsByOwner, normalizeLifeEventStore(store));
 }
 
 export function clearLifeEventStore(): void {
-  clearValue(storageKeys.lifeEventsByOwner);
+  removeWorkspaceValue(browserStorageAdapter, readWorkspaceOwner(browserStorageAdapter), storageKeys.lifeEventsByOwner);
 }

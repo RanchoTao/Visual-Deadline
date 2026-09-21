@@ -21,6 +21,7 @@
     "../src/storage/schema.ts",
     "../src/storage/inventory.ts",
     "../src/storage/dataSafety.ts",
+    "../src/storage/workspace.ts",
     "../src/lib/authFeatures.ts",
     "../src/lib/authPortalState.ts",
     "../src/lib/identityClientConfig.ts",

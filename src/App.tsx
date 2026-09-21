@@ -15,6 +15,7 @@ import { SocialPage } from './components/SocialPage';
 import { TaskPage } from './components/TaskPage';
 import { TermsPage } from './components/TermsPage';
 import { useLocalStorage } from './hooks/useLocalStorage';
+import { useWorkspaceOwner } from './hooks/useWorkspaceOwner';
 import { useSupabaseAuth } from './hooks/useSupabaseAuth';
 import type { Roadmap } from './types/roadmap';
 import type { VDNotification } from './types/notification';
@@ -40,7 +41,7 @@ import { appendPressureHistoryRecord, createPressureHistoryRecord, normalizePres
 import { sortActiveTasksByProgress } from './utils/taskDerivedState';
 import { createDailyReviewFromQuest, generateDailyQuest } from './utils/dailyQuest';
 import { deleteCloudLifeEvent, loadCloudData, loadCloudLifeEvents, saveCloudGoals, saveCloudPressureHistory, saveCloudProfile, saveCloudTasks, upsertCloudLifeEvents } from './lib/cloudSync';
-import { browserStorageAdapter, hasValue, loadValue, savePressure, saveTasks, saveValue, storageKeys } from './storage';
+import { assertWorkspaceSessionOwner, browserStorageAdapter, hasValue, loadValue, mergeAuthenticatedWorkspaceRecords, readWorkspaceOwner, readWorkspaceValue, saveValue, storageKeys, workspaceStorageKey, writeWorkspaceValue } from './storage';
 import { createDefaultLifePreferences, createLifeEvent, deriveLifeState, getLifeEventsForOwner, mergeLifeEvents, planLifeController, setLifeEventsForOwner, undoLatestLifeEvent as removeLatestLifeEvent } from './domain/life-controller';
 import { buildHomeRecommendationComparison } from './domain/execution/homeProjection';
 import { advanceGuestImportState, assertGuestCloudImportRuntimeEnabled, captureGuestImportSource, createGuestImportPreviewFromPending, readPendingGuestImport, validatePendingGuestImportConfirmation, type GuestImportPreview, type PendingGuestImportSnapshot } from './domain/v2/guestImport';
@@ -111,7 +112,7 @@ function isDeadlinePressureTask(task: Task): boolean {
 
 function readBaselinePressure(): number | null {
   try {
-    const storedPressure = loadValue<number | null>(storageKeys.baselinePressure, null);
+    const storedPressure = readWorkspaceValue<number | null>(browserStorageAdapter, readWorkspaceOwner(browserStorageAdapter), storageKeys.baselinePressure, null);
     return storedPressure === null ? null : clampPressure(storedPressure);
   } catch {
     return null;
@@ -120,7 +121,15 @@ function readBaselinePressure(): number | null {
 
 function readInitialOnboardingComplete(): boolean {
   try {
-    if (hasValue(storageKeys.onboardingComplete)) return loadValue<boolean>(storageKeys.onboardingComplete, false) === true;
+    const owner = readWorkspaceOwner(browserStorageAdapter);
+    const onboardingPresent = owner.kind === 'guest'
+      ? hasValue(storageKeys.onboardingComplete)
+      : browserStorageAdapter.getItem(workspaceStorageKey(owner, storageKeys.onboardingComplete)) !== null;
+    if (onboardingPresent) {
+      return readWorkspaceValue<boolean>(browserStorageAdapter, owner, storageKeys.onboardingComplete, false) === true;
+    }
+
+    if (owner.kind === 'user') return false;
 
     // Existing users may have tasks or a baseline before onboardingComplete existed.
     // Treat that as already onboarded so migration never blocks their current data.
@@ -358,13 +367,6 @@ function createTask(input: TaskInput): Task {
 }
 
 
-function mergeById<T extends { id: string }>(localItems: T[], cloudItems: T[]): T[] {
-  const merged = new Map<string, T>();
-  localItems.forEach((item) => merged.set(item.id, item));
-  cloudItems.forEach((item) => merged.set(item.id, item));
-  return Array.from(merged.values());
-}
-
 function createAchievement(id: string): Achievement | undefined {
   const achievement = achievementCatalog.find((item) => item.id === id);
   if (!achievement) return undefined;
@@ -381,6 +383,7 @@ function createAchievement(id: string): Achievement | undefined {
 function App() {
   const [publicPath, setPublicPath] = useState(() => window.location.pathname);
   const { session, isLoading: isAuthLoading, error: authError, status: authStatus, authDebugInfo, isConfigured: isSupabaseConfigured, featureFlags: authFeatureFlags, signIn, signUp, resendVerificationEmail, requestPasswordReset, signOut, signInWithOAuth, requestPhoneOtp, verifyPhoneOtp, verifyEmailOtp, phoneResendRemainingMs, emailResendRemainingMs } = useSupabaseAuth();
+  const { owner: workspaceOwner, isReady: isWorkspaceReady } = useWorkspaceOwner(session?.user.id);
   const [hasChosenGuestMode, setHasChosenGuestMode] = useState(false);
   const [cloudStatus, setCloudStatus] = useState<string | undefined>();
   const [cloudToast, setCloudToast] = useState<string | undefined>();
@@ -509,27 +512,26 @@ function App() {
       return;
     }
 
-    if (pendingGuestImport) {
+    if (!isWorkspaceReady) {
       setIsCloudReady(false);
       setIsLifeEventCloudReady(false);
-      setCloudStatus(authFeatureFlags.guestImport
-        ? '已检测到认证前保存的访客快照。请先查看并确认导入预览；登录本身不会同步或重写云端数据。'
-        : '已保留认证前访客快照，但访客导入功能尚未启用；不会自动合并或删除本机数据。');
+      setCloudStatus('正在切换到当前账号的隔离工作区…');
       return;
     }
+    assertWorkspaceSessionOwner(workspaceOwner, session.user.id);
 
     let isMounted = true;
     setIsCloudLoading(true);
     setCloudError(undefined);
     setLifeEventCloudError(undefined);
     setCloudStatus('正在从 Supabase 读取云端数据…');
-    loadCloudData(session)
+    loadCloudData(session, workspaceOwner)
       .then(async (cloudData) => {
         if (!isMounted) return;
         isApplyingCloudData.current = true;
-        const mergedTasks = mergeById(normalizedTasks, cloudData.tasks);
-        const mergedGoals = mergeById(normalizedGoals, cloudData.goals);
-        const mergedPressureHistory = mergeById(normalizedPressureHistory, cloudData.pressureHistory);
+        const mergedTasks = mergeAuthenticatedWorkspaceRecords(workspaceOwner, session.user.id, normalizedTasks, cloudData.tasks);
+        const mergedGoals = mergeAuthenticatedWorkspaceRecords(workspaceOwner, session.user.id, normalizedGoals, cloudData.goals);
+        const mergedPressureHistory = mergeAuthenticatedWorkspaceRecords(workspaceOwner, session.user.id, normalizedPressureHistory, cloudData.pressureHistory);
         const mergedSocialNodes = cloudData.socialNodes ?? socialNodes;
         const mergedSocialLayoutVersion = cloudData.socialLayoutVersion ?? socialLayoutVersion;
         setTasks(mergedTasks);
@@ -541,10 +543,10 @@ function App() {
         if (cloudData.pressureCalibration) setPressureCalibration(cloudData.pressureCalibration);
         if (cloudData.onboardingComplete !== null) setOnboardingComplete(cloudData.onboardingComplete);
         try {
-          const cloudLifeEvents = await loadCloudLifeEvents(session);
+          const cloudLifeEvents = await loadCloudLifeEvents(session, workspaceOwner);
           const mergedLifeEvents = mergeLifeEvents(getLifeEventsForOwner(lifeEventsByOwner, session.user.id), cloudLifeEvents);
           setLifeEventsByOwner((current) => setLifeEventsForOwner(current, session.user.id, mergedLifeEvents));
-          await upsertCloudLifeEvents(mergedLifeEvents, session);
+          await upsertCloudLifeEvents(mergedLifeEvents, session, workspaceOwner);
           setIsLifeEventCloudReady(true);
           setLifeEventCloudError(undefined);
         } catch (error) {
@@ -552,20 +554,8 @@ function App() {
           setLifeEventCloudError(`生活记录云同步未启用：${error instanceof Error ? error.message : '请先应用 Life Controller migration。'}`);
         }
         setIsCloudReady(true);
-        await Promise.all([
-          saveCloudTasks(mergedTasks, session),
-          saveCloudGoals(mergedGoals, session),
-          saveCloudPressureHistory(mergedPressureHistory, session),
-          saveCloudProfile({
-            profile: cloudData.profile ?? normalizedProfile,
-            pressureCalibration: cloudData.pressureCalibration ?? normalizedPressureCalibration,
-            onboardingComplete: cloudData.onboardingComplete ?? onboardingComplete,
-            socialNodes: mergedSocialNodes,
-            socialLayoutVersion: mergedSocialLayoutVersion,
-          }, session),
-        ]);
-        setCloudStatus('已同步到云端');
-        setCloudToast('已同步到云端');
+        setCloudStatus(pendingGuestImport ? '检测到本机数据，尚未导入到当前账号。' : '已连接云端工作区');
+        if (!pendingGuestImport) setCloudToast('已连接云端工作区');
         window.setTimeout(() => {
           isApplyingCloudData.current = false;
         }, 0);
@@ -581,7 +571,7 @@ function App() {
     return () => {
       isMounted = false;
     };
-  }, [session?.access_token, session?.user.id]);
+  }, [isWorkspaceReady, pendingGuestImport, session?.access_token, session?.user.id, workspaceOwner]);
 
   function confirmGuestImport(): void {
     if (!session || !guestImportPreview) return;
@@ -616,9 +606,9 @@ function App() {
     });
     setPressureClock(Date.now());
 
-    if (!session || !isLifeEventCloudReady) return;
+    if (!session || !isWorkspaceReady || !isLifeEventCloudReady) return;
     try {
-      await upsertCloudLifeEvents([event], session);
+      await upsertCloudLifeEvents([event], session, workspaceOwner);
       setLifeEventCloudError(undefined);
     } catch (error) {
       setLifeEventCloudError(`生活记录云同步失败：${error instanceof Error ? error.message : '未知错误'}`);
@@ -635,9 +625,9 @@ function App() {
     });
     setPressureClock(Date.now());
 
-    if (!session || !isLifeEventCloudReady) return;
+    if (!session || !isWorkspaceReady || !isLifeEventCloudReady) return;
     try {
-      await deleteCloudLifeEvent(latest.id, session);
+      await deleteCloudLifeEvent(latest.id, session, workspaceOwner);
       setLifeEventCloudError(undefined);
     } catch (error) {
       setLifeEventsByOwner((current) => {
@@ -649,26 +639,26 @@ function App() {
   }
 
   useEffect(() => {
-    if (!session || !isCloudReady || isApplyingCloudData.current) return;
-    saveCloudTasks(normalizedTasks, session).then(() => setCloudStatus('已同步到云端')).catch((error) => setCloudError(error instanceof Error ? error.message : '任务云同步失败。'));
-  }, [isCloudReady, normalizedTasks, session]);
+    if (!session || !isWorkspaceReady || !isCloudReady || isApplyingCloudData.current) return;
+    saveCloudTasks(normalizedTasks, session, workspaceOwner).then(() => setCloudStatus('已同步到云端')).catch((error) => setCloudError(error instanceof Error ? error.message : '任务云同步失败。'));
+  }, [isCloudReady, isWorkspaceReady, normalizedTasks, session, workspaceOwner]);
 
   useEffect(() => {
-    if (!session || !isCloudReady || isApplyingCloudData.current) return;
-    saveCloudGoals(normalizedGoals, session).then(() => setCloudStatus('已同步到云端')).catch((error) => setCloudError(error instanceof Error ? error.message : '目标云同步失败。'));
-  }, [isCloudReady, normalizedGoals, session]);
+    if (!session || !isWorkspaceReady || !isCloudReady || isApplyingCloudData.current) return;
+    saveCloudGoals(normalizedGoals, session, workspaceOwner).then(() => setCloudStatus('已同步到云端')).catch((error) => setCloudError(error instanceof Error ? error.message : '目标云同步失败。'));
+  }, [isCloudReady, isWorkspaceReady, normalizedGoals, session, workspaceOwner]);
 
   useEffect(() => {
-    if (!session || !isCloudReady || isApplyingCloudData.current) return;
-    saveCloudPressureHistory(normalizedPressureHistory, session).then(() => setCloudStatus('已同步到云端')).catch((error) => setCloudError(error instanceof Error ? error.message : '压力历史云同步失败。'));
-  }, [isCloudReady, normalizedPressureHistory, session]);
+    if (!session || !isWorkspaceReady || !isCloudReady || isApplyingCloudData.current) return;
+    saveCloudPressureHistory(normalizedPressureHistory, session, workspaceOwner).then(() => setCloudStatus('已同步到云端')).catch((error) => setCloudError(error instanceof Error ? error.message : '压力历史云同步失败。'));
+  }, [isCloudReady, isWorkspaceReady, normalizedPressureHistory, session, workspaceOwner]);
 
   useEffect(() => {
-    if (!session || !isCloudReady || isApplyingCloudData.current) return;
-    saveCloudProfile({ profile: normalizedProfile, pressureCalibration: normalizedPressureCalibration, onboardingComplete, socialNodes, socialLayoutVersion }, session)
+    if (!session || !isWorkspaceReady || !isCloudReady || isApplyingCloudData.current) return;
+    saveCloudProfile({ profile: normalizedProfile, pressureCalibration: normalizedPressureCalibration, onboardingComplete, socialNodes, socialLayoutVersion }, session, workspaceOwner)
       .then(() => setCloudStatus('已同步到云端'))
       .catch((error) => setCloudError(error instanceof Error ? error.message : '个人设置云同步失败。'));
-  }, [isCloudReady, normalizedPressureCalibration, normalizedProfile, onboardingComplete, session, socialLayoutVersion, socialNodes]);
+  }, [isCloudReady, isWorkspaceReady, normalizedPressureCalibration, normalizedProfile, onboardingComplete, session, socialLayoutVersion, socialNodes, workspaceOwner]);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => setPressureClock(Date.now()), 60 * 1000);
@@ -876,8 +866,7 @@ function App() {
     setPressureCalibration(calibration);
     unlockAchievement('first-manageable-pressure');
     recordPressureSnapshot('recalibration', sourceTasks, `用户将主观压力重新校准为 ${calibration.lastSubjectivePressure}，系统已更新压力映射系数。`, calibration);
-    // Keep the legacy pressure value available through the centralized storage layer.
-    savePressure({ baselinePressure: calibration.lastSubjectivePressure, calibration });
+    writeWorkspaceValue(browserStorageAdapter, workspaceOwner, storageKeys.baselinePressure, calibration.lastSubjectivePressure);
   }
 
   function openRecalibration() {
@@ -913,7 +902,7 @@ function App() {
       console.info('[VD_ONBOARDING] realtimePressure', realtimePressure);
 
       try {
-        saveTasks(nextTasks);
+        writeWorkspaceValue(browserStorageAdapter, workspaceOwner, storageKeys.tasks, nextTasks);
         console.info('[VD_ONBOARDING] task persistence success', { taskCount: nextTasks.length });
       } catch (error) {
         console.error('[VD_ONBOARDING] task persistence failure', error);
@@ -921,7 +910,8 @@ function App() {
       }
 
       try {
-        savePressure({ baselinePressure: calibration.lastSubjectivePressure, calibration });
+        writeWorkspaceValue(browserStorageAdapter, workspaceOwner, storageKeys.baselinePressure, calibration.lastSubjectivePressure);
+        writeWorkspaceValue(browserStorageAdapter, workspaceOwner, storageKeys.pressureCalibration, calibration);
         console.info('[VD_ONBOARDING] user state persistence success', {
           subjectivePressure: calibration.lastSubjectivePressure,
           pressureCoefficient: calibration.pressureCoefficient,
@@ -933,16 +923,16 @@ function App() {
       }
 
       try {
-        saveValue(storageKeys.onboardingComplete, true);
+        writeWorkspaceValue(browserStorageAdapter, workspaceOwner, storageKeys.onboardingComplete, true);
         console.info('[VD_ONBOARDING] onboarding completion flag update', true);
       } catch (error) {
         console.error('[VD_ONBOARDING] onboarding completion flag update failure', error);
         throw new Error('引导完成状态保存失败，请检查浏览器存储权限后重试。');
       }
 
-      const persistedTasks = loadValue<Task[]>(storageKeys.tasks, []);
-      const persistedCalibration = loadValue<PressureCalibrationSnapshot | null>(storageKeys.pressureCalibration, null);
-      const persistedOnboardingComplete = loadValue<boolean>(storageKeys.onboardingComplete, false);
+      const persistedTasks = readWorkspaceValue<Task[]>(browserStorageAdapter, workspaceOwner, storageKeys.tasks, []);
+      const persistedCalibration = readWorkspaceValue<PressureCalibrationSnapshot | null>(browserStorageAdapter, workspaceOwner, storageKeys.pressureCalibration, null);
+      const persistedOnboardingComplete = readWorkspaceValue<boolean>(browserStorageAdapter, workspaceOwner, storageKeys.onboardingComplete, false);
       const persistedRealtimePressure = calculatePressureIndex(persistedTasks.map((task) => normalizeStoredTask(task)), persistedCalibration, legacyReferencePressure).rawPressure;
       const persistedStateIsValid = persistedTasks.length >= createdTasks.length
         && persistedOnboardingComplete === true
@@ -967,7 +957,7 @@ function App() {
       return { ok: true };
     } catch (error) {
       try {
-        saveValue(storageKeys.onboardingComplete, false);
+        writeWorkspaceValue(browserStorageAdapter, workspaceOwner, storageKeys.onboardingComplete, false);
       } catch {
         // The original error below is more actionable for the user; this rollback is best-effort.
       }
@@ -1198,6 +1188,10 @@ function App() {
 
   if (!session && !hasChosenGuestMode) {
     return <AuthPanel isConfigured={isSupabaseConfigured} isLoading={isAuthLoading} error={authError} status={authStatus} authDebugInfo={authDebugInfo} featureFlags={authFeatureFlags} onSignIn={(email, password) => { capturePreAuthGuestSource(); return signIn(email, password); }} onSignUp={(email, password) => { capturePreAuthGuestSource(); return signUp(email, password); }} onResendVerification={resendVerificationEmail} onRequestPasswordReset={requestPasswordReset} onVerifyEmailOtp={verifyEmailOtp} onOAuth={(provider) => { capturePreAuthGuestSource(); return signInWithOAuth(provider); }} onRequestPhoneOtp={(phone) => { capturePreAuthGuestSource(); return requestPhoneOtp(phone); }} onVerifyPhoneOtp={(phone, token) => { capturePreAuthGuestSource(); return verifyPhoneOtp(phone, token); }} phoneResendRemainingMs={phoneResendRemainingMs} emailResendRemainingMs={emailResendRemainingMs} onContinueAsGuest={() => { capturePreAuthGuestSource(); setHasChosenGuestMode(true); }} />;
+  }
+
+  if (!isWorkspaceReady) {
+    return <main className="flex min-h-screen items-center justify-center bg-slate-50 px-6 text-center text-sm font-medium text-slate-500">正在打开隔离工作区…</main>;
   }
 
   return (

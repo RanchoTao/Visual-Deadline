@@ -80,6 +80,9 @@ export const STORAGE_DOMAIN_INVENTORY: readonly StorageDomainInventoryItem[] = [
     id: 'guest-import.pending', storageKey: storageKeys.guestImportPending, domainVersion: 1, ownership: 'backup-internal', exportPolicy: 'exclude', restorePolicy: 'exclude', sensitivity: 'sensitive', attachmentPolicy: 'none', cloudSync: 'not-applicable', betaMigration: 'excluded', notes: 'Immutable sanitized pre-auth guest snapshot. It is intentionally retained locally and never recursively exported.',
   },
   {
+    id: 'workspace.active-owner', storageKey: storageKeys.workspaceActiveOwner, domainVersion: 1, ownership: 'derived-cache', exportPolicy: 'exclude', restorePolicy: 'exclude', sensitivity: 'normal', attachmentPolicy: 'none', cloudSync: 'not-applicable', betaMigration: 'excluded', notes: 'Device-local routing marker only. The authoritative Supabase session always supersedes it.',
+  },
+  {
     id: 'auth.supabase.session', storageKey: 'vd.supabase.session', domainVersion: 1, ownership: 'session-secret', exportPolicy: 'exclude', restorePolicy: 'exclude', sensitivity: 'secret', attachmentPolicy: 'none', cloudSync: 'not-applicable', betaMigration: 'excluded', notes: 'Access and refresh tokens are never exported or restored.',
   },
   {
