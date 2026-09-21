@@ -3,45 +3,57 @@
 ## Code ready
 
 - Browser authentication is behind the narrow `IdentityClient` boundary and uses `@supabase/supabase-js` with persistent PKCE sessions. The SPA explicitly owns one callback exchange (`detectSessionInUrl: false`).
-- Email/password login remains enabled. New email signup is independently deployment-gated by `VITE_AUTH_EMAIL_SIGNUP_ENABLED` and defaults to off. Google, GitHub, X OAuth 2.0, phone, identity linking, and guest-cloud-import flags also default to off.
-- Confirmation-required email signups with no initial session can use `verifyOtp({ email, token, type: 'email' })`. The confirmation link flow remains supported as a fallback; the application does not store email OTPs.
-- The phone portal appears only when `VITE_AUTH_PHONE_ENABLED=true`. It accepts Chinese mainland `+86` numbers only and asks Supabase Auth to create/sign in the user through its SMS OTP flow; the browser neither creates nor validates an OTP.
-- `supabase/functions/send-sms-aliyun/index.ts` is an un-deployed HTTP Send SMS Hook implementation. It verifies the Standard Webhooks request, passes Supabase's OTP to Aliyun PNVS `SendSmsVerifyCode` only as template data, and never calls Aliyun `CheckSmsVerifyCode`.
-- The only permitted browser redirect is `https://www.visualdeadline.com/auth/callback` (or a localhost callback during local development). Vercel must serve the Vite SPA for callback and client-side deep links; the callback remains a client-side PKCE handler, not a server endpoint.
-- Guest import snapshots and previews are local and zero-write. Production canonical import is hard-disabled until the v2 schema and server execution gate are separately approved.
+- Email/password login remains enabled. New email signup is independently deployment-gated by `VITE_AUTH_EMAIL_SIGNUP_ENABLED`. Google, GitHub, X OAuth 2.0, identity linking, and guest-cloud-import flags remain separately gated.
+- Confirmation-required email signups with no initial session use `verifyOtp({ email, token, type: 'email' })`. The confirmation link flow remains a fallback; VD never stores email OTPs.
+- The phone portal appears only when `VITE_AUTH_PHONE_ENABLED=true`. It accepts Chinese mainland +86 numbers and asks Supabase Auth to create/sign in the user through its SMS OTP flow; the browser neither creates nor validates an OTP.
+- `supabase/functions/send-sms-aliyun/index.ts` implements the production-tested Supabase Send SMS Hook bridge to Aliyun PNVS. It verifies Standard Webhooks, accepts Supabase hook phone payloads in either `+861...` or `861...` form, normalizes them to PNVS local-number format, transports Supabase's six-digit OTP through `SendSmsVerifyCode`, and never calls Aliyun `CheckSmsVerifyCode`.
+- The Aliyun SDK bridge uses the Deno-compatible npm module namespace at runtime. The verified resolver scans the full module export graph, prefers the exported `Client` constructor, falls back to the constructor exposing `sendSmsVerifyCodeWithOptions`, and resolves `SendSmsVerifyCodeRequest` by name. Diagnostic export-key truncation is kept separate from constructor traversal.
+- The only permitted browser redirect is `https://www.visualdeadline.com/auth/callback` (or a localhost callback during local development). Vercel serves the Vite SPA for callback and client-side deep links.
+- Guest import snapshots and previews are local and zero-write. Production canonical import remains hard-disabled until its separate schema/server execution gate is approved.
 
-## Owner verified
+## Production verified
 
-- The `visualdeadline.com` Resend domain, DKIM, and SPF are verified; sending is enabled and open/click tracking is disabled.
-- Supabase custom SMTP is saved with Resend externally. Its SMTP credential is never stored in this repository or frontend environment.
+- The `visualdeadline.com` Resend domain, DKIM, and SPF are verified; Supabase custom SMTP is configured externally.
+- Email signup delivers a six-digit verification code through Resend and the verification path has been exercised against production.
+- Supabase phone auth is enabled with six-digit OTPs and the Send SMS Hook points to the deployed `send-sms-aliyun` Edge Function.
+- The production Edge Function has the required server-only secrets configured, verifies the Supabase Standard Webhooks signature, and has completed a real Aliyun PNVS send.
+- A real +86 phone signup completed OTP verification successfully in production. The resulting phone user was confirmed and did not inherit guest/account task or goal data.
+- The PNVS beta transport currently uses an Aliyun system-provided sender signature/template. That sender branding is acceptable for beta transport only; a future branded sender requires a compliant SMS product/signature path and should be implemented as a transport swap, not by changing Supabase OTP authority.
 
-## Owner action required before enabling email signup
+## Email configuration contract
 
-1. In Supabase Auth, set Site URL and add these redirect URLs:
-   - `https://www.visualdeadline.com/auth/callback`
-   - the exact approved localhost development callback, for example `http://localhost:5173/auth/callback`
-2. Enable **Confirm email**. In the signup email template, include the six-digit `{{ .Token }}` for the in-product OTP screen and retain `{{ .ConfirmationURL }}` as the link fallback. Do not place either value in VD source.
-3. Confirm the configured Resend SMTP sender can deliver both the token and fallback link to Gmail, Outlook, and QQ or 163. Test a real signup, OTP verification, confirmation-link verification, resend cooldown, expired token, and a refresh after `email_confirmed_at` changes.
-4. Review Supabase Auth abuse controls and email rate limits. Only after all checks pass, set `VITE_AUTH_EMAIL_SIGNUP_ENABLED=true` in the intended build environment; it remains `false` by default.
+1. Supabase Email OTP length must remain **6**. Recommended beta expiry is **600 seconds**.
+2. The signup template should contain `{{ .Token }}` for the in-product OTP screen and may retain `{{ .ConfirmationURL }}` as a fallback.
+3. Resend SMTP credentials stay outside this repository and outside `VITE_*` variables.
+4. Before changing email auth behavior, re-test signup, OTP verification, resend cooldown, expired token, fallback link, and session persistence after refresh.
 
-## Owner action required before enabling Aliyun phone auth
+## Aliyun PNVS production contract
 
-1. In Alibaba Cloud PNVS, enable SMS Authentication and create or select an approved current system-provided SMS signature and SMS template for `SendSmsVerifyCode`. Record the configured code and validity variable names from that template. The bridge intentionally supplies Supabase's OTP as the configured code variable; it does not ask Aliyun to generate or verify one.
-2. Create a least-privilege RAM principal or role limited to `dypns:SendSmsVerifyCode`; do not use a root-account access key. Keep its credentials outside this repository and browser environment.
-3. Deploy `send-sms-aliyun` only after a controlled staging review, then configure Supabase **Authentication → Hooks → Send SMS** to call that HTTPS function. Generate a Standard Webhooks secret in Supabase and configure the same value server-side as `SEND_SMS_HOOK_SECRET`.
-4. Set these server-only Edge Function secrets/config values: `SEND_SMS_HOOK_SECRET`, `ALIYUN_ACCESS_KEY_ID`, `ALIYUN_ACCESS_KEY_SECRET`, `ALIYUN_PNVS_SIGN_NAME`, `ALIYUN_PNVS_TEMPLATE_CODE`, `ALIYUN_PNVS_CODE_VARIABLE`, `ALIYUN_PNVS_VALIDITY_VARIABLE`, and optional `ALIYUN_PNVS_VALIDITY_SECONDS` (default `300`). Never set any of them as `VITE_*` values or commit them.
-5. In Supabase Auth, enable phone login and ensure automatic phone confirmation is off so the Send SMS Hook receives an OTP. Set rate limits and CAPTCHA/abuse controls, then test only `+86` delivery, resend behavior, provider failure, bad webhook signature, and successful Supabase OTP verification.
-6. Only after the staging path is verified may an owner set `VITE_AUTH_PHONE_ENABLED=true`. It remains `false` by default. This PR does not deploy the function, set secrets, enable the hook, or change production settings.
+1. Supabase remains the OTP authority. The Edge Function sends `sms.otp` to Aliyun as template data; Aliyun must not generate or verify the login OTP.
+2. The RAM principal must remain least-privilege for `dypns:SendSmsVerifyCode`; do not use root-account credentials.
+3. Required Edge Function secrets/config:
+   - `SEND_SMS_HOOK_SECRET`
+   - `ALIYUN_ACCESS_KEY_ID`
+   - `ALIYUN_ACCESS_KEY_SECRET`
+   - `ALIYUN_PNVS_SIGN_NAME`
+   - `ALIYUN_PNVS_TEMPLATE_CODE`
+   - `ALIYUN_PNVS_CODE_VARIABLE`
+   - `ALIYUN_PNVS_VALIDITY_VARIABLE`
+   - `ALIYUN_PNVS_VALIDITY_SECONDS` (production currently uses 300 seconds)
+4. Phone confirmation must remain enabled so Supabase actually emits and verifies SMS OTPs. Keep SMS OTP length at 6 and align Supabase expiry with the PNVS validity window.
+5. The bridge intentionally supports the two formats observed/accepted at the boundary: `+861xxxxxxxxxx` and Supabase-hook `861xxxxxxxxxx`. Both normalize to the 11-digit mainland number while PNVS receives `CountryCode=86`.
+6. Do not reintroduce the original Node-only constructor assumptions. Supabase Edge Runtime is Deno-based; the runtime resolver exists because the Aliyun npm package namespace differs from ordinary Node/CommonJS examples.
+7. Temporary successful-request payload-shape logging is not part of the repository-stable implementation. Provider/SDK diagnostics must remain sanitized and must never log phone numbers, OTP values, AccessKey secrets, or webhook secrets.
 
-## Owner action required before enabling an OAuth provider
+## OAuth providers
 
-1. For each provider, register an application in that provider's developer console. Copy its **Supabase Auth callback URL** from the Supabase provider configuration, then enable the provider in Supabase and enter credentials there. Do not put a provider secret in VD source or browser environment variables.
-2. Only after a real provider login and callback have been tested, set exactly its public build flag to `true`:
+1. For each provider, register an application in its developer console and use the Supabase Auth callback URL shown by that provider configuration.
+2. Enable only after a real provider login/callback test, then set the corresponding public flag:
    - `VITE_AUTH_GOOGLE_ENABLED`
    - `VITE_AUTH_GITHUB_ENABLED`
-   - `VITE_AUTH_X_ENABLED` (Supabase provider identifier: `x`, not the deprecated Twitter OAuth 1.0a identifier)
-3. Keep `VITE_AUTH_IDENTITY_LINKING_ENABLED` and `VITE_AUTH_GUEST_IMPORT_ENABLED` false until their separate recovery and production-schema gates are approved.
+   - `VITE_AUTH_X_ENABLED`
+3. Keep `VITE_AUTH_IDENTITY_LINKING_ENABLED` and `VITE_AUTH_GUEST_IMPORT_ENABLED` disabled until their separate recovery/production gates are approved.
 
 ## Explicit exclusions
 
-Apple, WeChat, QQ, Douyin, Feishu, OAuth client secrets, SMS provider secrets, service-role keys, production provider enablement, deployment, and production Supabase configuration are not part of PR G.
+Apple, WeChat, QQ, Douyin, Feishu, branded mainland-SMS sender migration, OAuth client secrets, SMS credentials, service-role keys, and production secret values are not stored in this repository.
