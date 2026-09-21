@@ -2,24 +2,54 @@ export interface AuthFeatureFlags {
   readonly emailPassword: true;
   readonly google: boolean;
   readonly github: boolean;
-  readonly twitter: boolean;
+  readonly x: boolean;
   readonly phone: boolean;
   readonly identityLinking: boolean;
   readonly guestImport: boolean;
 }
 
+export type SupportedIdentityProvider = 'google' | 'github' | 'x';
+export const PHONE_OTP_RESEND_COOLDOWN_MS = 60_000;
+
 const enabled = (value: unknown): boolean => value === 'true';
 
 /** New providers are opt-in and require a deliberately set public readiness flag. */
-export const authFeatureFlags: AuthFeatureFlags = Object.freeze({
+export function createAuthFeatureFlags(environment: Record<string, unknown> = {}): AuthFeatureFlags {
+  return Object.freeze({
   emailPassword: true,
-  google: enabled(import.meta.env.VITE_AUTH_GOOGLE_ENABLED),
-  github: enabled(import.meta.env.VITE_AUTH_GITHUB_ENABLED),
-  twitter: enabled(import.meta.env.VITE_AUTH_TWITTER_ENABLED),
-  phone: enabled(import.meta.env.VITE_AUTH_PHONE_ENABLED),
-  identityLinking: enabled(import.meta.env.VITE_AUTH_IDENTITY_LINKING_ENABLED),
-  guestImport: enabled(import.meta.env.VITE_AUTH_GUEST_IMPORT_ENABLED),
-});
+  google: enabled(environment.VITE_AUTH_GOOGLE_ENABLED),
+  github: enabled(environment.VITE_AUTH_GITHUB_ENABLED),
+  x: enabled(environment.VITE_AUTH_X_ENABLED),
+  phone: enabled(environment.VITE_AUTH_PHONE_ENABLED),
+  identityLinking: enabled(environment.VITE_AUTH_IDENTITY_LINKING_ENABLED),
+  guestImport: enabled(environment.VITE_AUTH_GUEST_IMPORT_ENABLED),
+  });
+}
+
+/** New providers are opt-in and require a deliberately set public readiness flag. */
+const viteEnvironment = (import.meta as unknown as { env?: Record<string, unknown> }).env;
+export const authFeatureFlags: AuthFeatureFlags = createAuthFeatureFlags(viteEnvironment);
+
+export function assertOAuthProviderEnabled(flags: AuthFeatureFlags, provider: SupportedIdentityProvider): void {
+  if (!flags[provider]) throw new Error(`AUTH_OAUTH_DISABLED:${provider}`);
+}
+
+export function assertPhoneEnabled(flags: AuthFeatureFlags): void {
+  if (!flags.phone) throw new Error('AUTH_PHONE_DISABLED');
+}
+
+export class PhoneOtpCooldown {
+  private availableAt = 0;
+  assertAvailable(now = Date.now()): void {
+    if (now < this.availableAt) throw new Error(`PHONE_OTP_COOLDOWN:${this.availableAt - now}`);
+  }
+  request(now = Date.now()): void {
+    this.assertAvailable(now);
+    this.availableAt = now + PHONE_OTP_RESEND_COOLDOWN_MS;
+  }
+  remainingMs(now = Date.now()): number { return Math.max(0, this.availableAt - now); }
+  get nextAvailableAt(): number { return this.availableAt; }
+}
 
 const PRODUCTION_ORIGINS = new Set(['https://www.visualdeadline.com', 'https://visualdeadline.com']);
 

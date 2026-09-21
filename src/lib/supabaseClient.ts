@@ -1,9 +1,12 @@
 import { createClient, type AuthChangeEvent, type Provider, type Session, type SupabaseClient, type User } from '@supabase/supabase-js';
 import { recordAuthDebugError } from './authDebug';
+import { assertOAuthProviderEnabled, assertPhoneEnabled, authFeatureFlags, type AuthFeatureFlags, type SupportedIdentityProvider } from './authFeatures';
+import { LegacySessionTransition } from './legacySessionTransition';
+import { identityClientAuthOptions } from './identityClientConfig';
 
 export interface SupabaseUser { id: string; email?: string; identities?: unknown[]; email_confirmed_at?: string | null; phone?: string; }
 export interface SupabaseSession { access_token: string; refresh_token: string; expires_at?: number; user: SupabaseUser; }
-export interface IdentityProvider { provider: 'google' | 'github' | 'twitter'; }
+export interface IdentityProvider { provider: SupportedIdentityProvider; }
 export interface PhoneOtpRequest { phone: string; }
 export interface PhoneOtpVerification { phone: string; token: string; }
 
@@ -105,9 +108,17 @@ async function parseResponse<T>(response: Response): Promise<T> {
 }
 
 class VisualDeadlineIdentityClient implements IdentityClient {
-  private readonly client?: SupabaseClient; private legacyTransitionAttempted = false;
-  constructor(private readonly status: SupabaseConfigStatus) {
-    if (status.config) this.client = createClient(status.config.url, status.config.anonKey, { auth: { flowType: 'pkce', persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storageKey: 'vd.supabase.auth' } });
+  private readonly client?: SupabaseClient;
+  private readonly legacyTransition: LegacySessionTransition<SupabaseSession, SupabaseUser>;
+  constructor(private readonly status: SupabaseConfigStatus, private readonly flags: AuthFeatureFlags = authFeatureFlags) {
+    if (status.config) this.client = createClient(status.config.url, status.config.anonKey, { auth: identityClientAuthOptions });
+    this.legacyTransition = new LegacySessionTransition({
+      readLegacy: readLegacySession,
+      removeLegacy: removeLegacySession,
+      setSession: (legacy) => this.setSession(legacy),
+      getUser: () => this.getUser(),
+      clearSupportedSession: () => this.clearSupportedSessionOnly(),
+    });
   }
   get isConfigured(): boolean { return Boolean(this.client); }
   get configError(): string | undefined { return this.status.error; }
@@ -134,23 +145,20 @@ class VisualDeadlineIdentityClient implements IdentityClient {
   async resetPassword(email: string, redirectTo?: string): Promise<void> { const { error } = await this.requireClient().auth.resetPasswordForEmail(email, redirectTo ? { redirectTo } : undefined); if (error) throw error; }
   async exchangeCodeForSession(code: string): Promise<SupabaseSession | null> { const { data, error } = await this.requireClient().auth.exchangeCodeForSession(code); if (error) throw error; return normalizeSession(data.session); }
   onAuthStateChange(callback: (session: SupabaseSession | null, event: AuthChangeEvent) => void) { return this.requireClient().auth.onAuthStateChange((event, session) => callback(normalizeSession(session), event)); }
-  async signInWithOAuth(provider: IdentityProvider['provider'], redirectTo: string): Promise<void> { const { error } = await this.requireClient().auth.signInWithOAuth({ provider: provider as Provider, options: { redirectTo } }); if (error) throw error; }
-  async requestPhoneOtp(input: PhoneOtpRequest): Promise<void> { const { error } = await this.requireClient().auth.signInWithOtp({ phone: input.phone }); if (error) throw error; }
-  async verifyPhoneOtp(input: PhoneOtpVerification): Promise<SupabaseSession | null> { const { data, error } = await this.requireClient().auth.verifyOtp({ phone: input.phone, token: input.token, type: 'sms' }); if (error) throw error; return normalizeSession(data.session); }
+  async signInWithOAuth(provider: IdentityProvider['provider'], redirectTo: string): Promise<void> { assertOAuthProviderEnabled(this.flags, provider); const { error } = await this.requireClient().auth.signInWithOAuth({ provider: provider as Provider, options: { redirectTo } }); if (error) throw error; }
+  async requestPhoneOtp(input: PhoneOtpRequest): Promise<void> { assertPhoneEnabled(this.flags); const { error } = await this.requireClient().auth.signInWithOtp({ phone: input.phone }); if (error) throw error; }
+  async verifyPhoneOtp(input: PhoneOtpVerification): Promise<SupabaseSession | null> { assertPhoneEnabled(this.flags); const { data, error } = await this.requireClient().auth.verifyOtp({ phone: input.phone, token: input.token, type: 'sms' }); if (error) throw error; return normalizeSession(data.session); }
   async getIdentities(): Promise<readonly unknown[]> { return (await this.getUser())?.identities ?? []; }
   async setSession(input: { access_token: string; refresh_token: string; expires_in?: number }): Promise<SupabaseSession> {
     const { data, error } = await this.requireClient().auth.setSession(input); if (error) throw error;
     const session = normalizeSession(data.session); if (!session) throw new Error('登录没有返回有效会话，请稍后重试或联系支持。'); return session;
   }
   private async transitionLegacySession(): Promise<SupabaseSession | null> {
-    if (this.legacyTransitionAttempted) return null; this.legacyTransitionAttempted = true;
-    const legacy = readLegacySession(); if (!legacy) return null;
-    try {
-      const session = await this.setSession(legacy); const user = await this.getUser();
-      if (!user || user.id !== legacy.userId || session.user.id !== legacy.userId) throw new Error('LEGACY_SESSION_USER_MISMATCH');
-      removeLegacySession(); return session;
-    } catch (error) { recordAuthDebugError('legacySessionTransition', error); return null; }
+    const session = await this.legacyTransition.run();
+    if (!session) recordAuthDebugError('legacySessionTransition', new Error('LEGACY_SESSION_TRANSITION_NOT_VERIFIED'));
+    return session;
   }
+  private async clearSupportedSessionOnly(): Promise<void> { await this.requireClient().auth.signOut({ scope: 'local' }); }
 }
 
 const configStatus = getSupabaseConfigStatus();

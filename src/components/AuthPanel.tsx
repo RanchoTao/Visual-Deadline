@@ -24,10 +24,11 @@ interface AuthPanelProps {
   onOAuth: (provider: IdentityProvider['provider']) => Promise<unknown>;
   onRequestPhoneOtp: (phone: string) => Promise<unknown>;
   onVerifyPhoneOtp: (phone: string, token: string) => Promise<unknown>;
+  phoneResendRemainingMs: number;
   onContinueAsGuest: () => void;
 }
 
-export function AuthPanel({ isConfigured, isLoading, error, status: authStatus, authDebugInfo, onSignIn, onSignUp, onResendVerification, featureFlags, onOAuth, onRequestPhoneOtp, onVerifyPhoneOtp, onContinueAsGuest }: AuthPanelProps) {
+export function AuthPanel({ isConfigured, isLoading, error, status: authStatus, authDebugInfo, onSignIn, onSignUp, onResendVerification, featureFlags, onOAuth, onRequestPhoneOtp, onVerifyPhoneOtp, phoneResendRemainingMs, onContinueAsGuest }: AuthPanelProps) {
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -230,15 +231,15 @@ export function AuthPanel({ isConfigured, isLoading, error, status: authStatus, 
                 {isSubmitting ? '处理中…' : mode === 'signin' ? '登录并同步' : '注册账号'}
               </button>
             </form>
-            {featureFlags.google || featureFlags.github || featureFlags.twitter || featureFlags.phone ? (
+            {featureFlags.google || featureFlags.github || featureFlags.x || featureFlags.phone ? (
               <section className="mt-5 border-t border-slate-100 pt-5" aria-label="其他登录方式">
                 <p className="text-center text-xs font-semibold text-slate-400">其他登录方式</p>
                 <div className="mt-3 grid gap-2 sm:grid-cols-3">
                   {featureFlags.google ? <button type="button" disabled={!isConfigured || isSubmitting} onClick={() => void handleOAuth('google')} className="rounded-full bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 ring-1 ring-slate-200 disabled:opacity-40">Google</button> : null}
                   {featureFlags.github ? <button type="button" disabled={!isConfigured || isSubmitting} onClick={() => void handleOAuth('github')} className="rounded-full bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 ring-1 ring-slate-200 disabled:opacity-40">GitHub</button> : null}
-                  {featureFlags.twitter ? <button type="button" disabled={!isConfigured || isSubmitting} onClick={() => void handleOAuth('twitter')} className="rounded-full bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 ring-1 ring-slate-200 disabled:opacity-40">X</button> : null}
+                  {featureFlags.x ? <button type="button" disabled={!isConfigured || isSubmitting} onClick={() => void handleOAuth('x')} className="rounded-full bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 ring-1 ring-slate-200 disabled:opacity-40">X</button> : null}
                 </div>
-                {featureFlags.phone ? <div className="mt-3 rounded-2xl bg-slate-50 p-3"><label className="block text-xs font-semibold text-slate-600">手机号（E.164）<input value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="+8613812345678" disabled={phoneStage === 'sending' || phoneStage === 'verifying'} className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm" /></label>{phoneStage === 'code' || phoneStage === 'verifying' ? <label className="mt-2 block text-xs font-semibold text-slate-600">验证码<input value={phoneOtp} onChange={(event) => setPhoneOtp(event.target.value)} inputMode="numeric" autoComplete="one-time-code" className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm" /></label> : null}<div className="mt-3 flex gap-2"><button type="button" disabled={!isConfigured || phoneStage === 'sending' || phoneStage === 'verifying'} onClick={() => void (phoneStage === 'code' ? handlePhoneVerify() : handlePhoneRequest())} className="rounded-full bg-slate-950 px-4 py-2 text-xs font-semibold text-white disabled:opacity-40">{phoneStage === 'sending' ? '发送中…' : phoneStage === 'verifying' ? '验证中…' : phoneStage === 'code' ? '验证验证码' : '发送验证码'}</button>{phoneStage === 'code' ? <button type="button" disabled={!isConfigured} onClick={() => void handlePhoneRequest()} className="rounded-full bg-white px-4 py-2 text-xs font-semibold text-slate-600 ring-1 ring-slate-200">重新发送</button> : null}</div></div> : null}
+                {featureFlags.phone ? <div className="mt-3 rounded-2xl bg-slate-50 p-3"><label className="block text-xs font-semibold text-slate-600">手机号（E.164）<input value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="+8613812345678" disabled={phoneStage === 'sending' || phoneStage === 'verifying'} className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm" /></label>{phoneStage === 'code' || phoneStage === 'verifying' ? <label className="mt-2 block text-xs font-semibold text-slate-600">验证码<input value={phoneOtp} onChange={(event) => setPhoneOtp(event.target.value)} inputMode="numeric" autoComplete="one-time-code" className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm" /></label> : null}<div className="mt-3 flex gap-2"><button type="button" disabled={!isConfigured || phoneStage === 'sending' || phoneStage === 'verifying'} onClick={() => void (phoneStage === 'code' ? handlePhoneVerify() : handlePhoneRequest())} className="rounded-full bg-slate-950 px-4 py-2 text-xs font-semibold text-white disabled:opacity-40">{phoneStage === 'sending' ? '发送中…' : phoneStage === 'verifying' ? '验证中…' : phoneStage === 'code' ? '验证验证码' : '发送验证码'}</button>{phoneStage === 'code' ? <button type="button" disabled={!isConfigured || phoneResendRemainingMs > 0} onClick={() => void handlePhoneRequest()} className="rounded-full bg-white px-4 py-2 text-xs font-semibold text-slate-600 ring-1 ring-slate-200 disabled:opacity-40">{phoneResendRemainingMs > 0 ? `${Math.ceil(phoneResendRemainingMs / 1000)} 秒后可重发` : '重新发送'}</button> : null}</div></div> : null}
               </section>
             ) : null}
           </>

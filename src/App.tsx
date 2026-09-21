@@ -43,7 +43,7 @@ import { deleteCloudLifeEvent, loadCloudData, loadCloudLifeEvents, saveCloudGoal
 import { browserStorageAdapter, hasValue, loadValue, savePressure, saveTasks, saveValue, storageKeys } from './storage';
 import { createDefaultLifePreferences, createLifeEvent, deriveLifeState, getLifeEventsForOwner, mergeLifeEvents, planLifeController, setLifeEventsForOwner, undoLatestLifeEvent as removeLatestLifeEvent } from './domain/life-controller';
 import { buildHomeRecommendationComparison } from './domain/execution/homeProjection';
-import { assertGuestCloudImportRuntimeEnabled, createGuestImportPreview, validateGuestImportConfirmation, type GuestImportPreview } from './domain/v2/guestImport';
+import { advanceGuestImportState, assertGuestCloudImportRuntimeEnabled, captureGuestImportSource, createGuestImportPreviewFromPending, readPendingGuestImport, validatePendingGuestImportConfirmation, type GuestImportPreview, type PendingGuestImportSnapshot } from './domain/v2/guestImport';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const WELCOME_BACK_GAP_MS = 2 * 60 * 60 * 1000;
@@ -380,7 +380,7 @@ function createAchievement(id: string): Achievement | undefined {
 
 function App() {
   const [publicPath, setPublicPath] = useState(() => window.location.pathname);
-  const { session, isLoading: isAuthLoading, error: authError, status: authStatus, authDebugInfo, isConfigured: isSupabaseConfigured, featureFlags: authFeatureFlags, signIn, signUp, resendVerificationEmail, signOut, signInWithOAuth, requestPhoneOtp, verifyPhoneOtp } = useSupabaseAuth();
+  const { session, isLoading: isAuthLoading, error: authError, status: authStatus, authDebugInfo, isConfigured: isSupabaseConfigured, featureFlags: authFeatureFlags, signIn, signUp, resendVerificationEmail, signOut, signInWithOAuth, requestPhoneOtp, verifyPhoneOtp, phoneResendRemainingMs } = useSupabaseAuth();
   const [hasChosenGuestMode, setHasChosenGuestMode] = useState(false);
   const [cloudStatus, setCloudStatus] = useState<string | undefined>();
   const [cloudToast, setCloudToast] = useState<string | undefined>();
@@ -392,6 +392,7 @@ function App() {
   const isApplyingCloudData = useRef(false);
   const guestImportPreviewRef = useRef<GuestImportPreview | undefined>(undefined);
   const [guestImportPreview, setGuestImportPreview] = useState<GuestImportPreview | undefined>();
+  const [pendingGuestImport, setPendingGuestImport] = useState<PendingGuestImportSnapshot | null>(() => readPendingGuestImport(browserStorageAdapter));
   const [tasks, setTasks] = useLocalStorage<Task[]>(storageKeys.tasks, []);
   const [goals, setGoals] = useLocalStorage<Goal[]>(storageKeys.goals, []);
   const [achievements, setAchievements] = useLocalStorage<Achievement[]>(storageKeys.achievements, []);
@@ -478,16 +479,25 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!session) {
+    if (!session || !pendingGuestImport) {
       guestImportPreviewRef.current = undefined;
       setGuestImportPreview(undefined);
       return;
     }
-    if (normalizedTasks.length === 0 && normalizedGoals.length === 0) return;
-    const preview = createGuestImportPreview(browserStorageAdapter, session.user.id);
+    if (!authFeatureFlags.guestImport) {
+      if (pendingGuestImport.state !== 'GUEST_IMPORT_DISABLED') setPendingGuestImport(advanceGuestImportState(browserStorageAdapter, pendingGuestImport, 'GUEST_IMPORT_DISABLED'));
+      guestImportPreviewRef.current = undefined;
+      setGuestImportPreview(undefined);
+      return;
+    }
+    if (pendingGuestImport.state !== 'preview_ready') {
+      setPendingGuestImport(advanceGuestImportState(browserStorageAdapter, pendingGuestImport, 'preview_ready'));
+      return;
+    }
+    const preview = createGuestImportPreviewFromPending(pendingGuestImport, session.user.id);
     guestImportPreviewRef.current = preview;
     setGuestImportPreview(preview);
-  }, [session?.user.id]);
+  }, [authFeatureFlags.guestImport, pendingGuestImport, session?.user.id]);
 
   useEffect(() => {
     if (!session) {
@@ -499,10 +509,12 @@ function App() {
       return;
     }
 
-    if (guestImportPreviewRef.current?.destinationUserId === session.user.id) {
+    if (pendingGuestImport) {
       setIsCloudReady(false);
       setIsLifeEventCloudReady(false);
-      setCloudStatus('已检测到访客数据。请先查看并确认导入预览；登录本身不会同步或重写云端数据。');
+      setCloudStatus(authFeatureFlags.guestImport
+        ? '已检测到认证前保存的访客快照。请先查看并确认导入预览；登录本身不会同步或重写云端数据。'
+        : '已保留认证前访客快照，但访客导入功能尚未启用；不会自动合并或删除本机数据。');
       return;
     }
 
@@ -574,7 +586,8 @@ function App() {
   function confirmGuestImport(): void {
     if (!session || !guestImportPreview) return;
     try {
-      validateGuestImportConfirmation(guestImportPreview, {
+      if (!pendingGuestImport) return;
+      validatePendingGuestImportConfirmation(browserStorageAdapter, pendingGuestImport, guestImportPreview, {
         snapshotId: guestImportPreview.snapshotId,
         snapshotChecksum: guestImportPreview.snapshotChecksum,
         destinationUserId: session.user.id,
@@ -586,6 +599,12 @@ function App() {
         ? '导入确认已校验；生产 v2 表与服务端执行闸门尚未获准，未写入任何云端记录。'
         : '导入确认失败：本机快照或登录身份已变化。请重新生成预览。');
     }
+  }
+
+  function capturePreAuthGuestSource(): void {
+    if (session || isAuthLoading) return;
+    const snapshot = captureGuestImportSource(browserStorageAdapter);
+    if (snapshot) setPendingGuestImport(snapshot);
   }
 
   async function recordLifeEvent(type: BuiltInLifeEventType): Promise<void> {
@@ -1178,7 +1197,7 @@ function App() {
   }
 
   if (!session && !hasChosenGuestMode) {
-    return <AuthPanel isConfigured={isSupabaseConfigured} isLoading={isAuthLoading} error={authError} status={authStatus} authDebugInfo={authDebugInfo} featureFlags={authFeatureFlags} onSignIn={signIn} onSignUp={signUp} onResendVerification={resendVerificationEmail} onOAuth={signInWithOAuth} onRequestPhoneOtp={requestPhoneOtp} onVerifyPhoneOtp={verifyPhoneOtp} onContinueAsGuest={() => setHasChosenGuestMode(true)} />;
+    return <AuthPanel isConfigured={isSupabaseConfigured} isLoading={isAuthLoading} error={authError} status={authStatus} authDebugInfo={authDebugInfo} featureFlags={authFeatureFlags} onSignIn={(email, password) => { capturePreAuthGuestSource(); return signIn(email, password); }} onSignUp={(email, password) => { capturePreAuthGuestSource(); return signUp(email, password); }} onResendVerification={resendVerificationEmail} onOAuth={(provider) => { capturePreAuthGuestSource(); return signInWithOAuth(provider); }} onRequestPhoneOtp={(phone) => { capturePreAuthGuestSource(); return requestPhoneOtp(phone); }} onVerifyPhoneOtp={(phone, token) => { capturePreAuthGuestSource(); return verifyPhoneOtp(phone, token); }} phoneResendRemainingMs={phoneResendRemainingMs} onContinueAsGuest={() => { capturePreAuthGuestSource(); setHasChosenGuestMode(true); }} />;
   }
 
   return (

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-const { assertGuestCloudImportRuntimeEnabled, createGuestImportPreview, planV2Backfill, readWithV2Shadow, resolveV2ReadMode, validateGuestImportConfirmation, compareVisualDeadlineShadow } = await import('./.compiled/src/domain/v2/index.js');
+const { assertGuestCloudImportRuntimeEnabled, captureGuestImportSource, createGuestImportPreview, createGuestImportPreviewFromPending, planV2Backfill, readWithV2Shadow, resolveV2ReadMode, validateGuestImportConfirmation, validatePendingGuestImportConfirmation, compareVisualDeadlineShadow } = await import('./.compiled/src/domain/v2/index.js');
 
 const goal = (overrides = {}) => ({
   id: 'goal-1', title: 'Beta goal', category: 'work', priority: 8, linkedTaskIds: ['task-1'],
@@ -77,6 +77,20 @@ test('guest import preview is snapshot-bound, zero-write, and owner-bound', () =
   validateGuestImportConfirmation(preview, { snapshotId: preview.snapshotId, snapshotChecksum: preview.snapshotChecksum, destinationUserId: 'owner-1', clientRequestId: 'request-1' }, 'owner-1');
   assert.throws(() => validateGuestImportConfirmation(preview, { snapshotId: preview.snapshotId, snapshotChecksum: preview.snapshotChecksum, destinationUserId: 'owner-2', clientRequestId: 'request-1' }, 'owner-1'), /GUEST_IMPORT_OWNER_MISMATCH/);
   assert.throws(() => assertGuestCloudImportRuntimeEnabled(), /GUEST_IMPORT_RUNTIME_DISABLED_UNTIL_V2_SCHEMA_DEPLOYMENT/);
+});
+
+test('only an explicit pre-auth guest snapshot is importable and local source changes invalidate confirmation', () => {
+  const values = new Map([
+    ['visualized-deadline.tasks', JSON.stringify([task()])],
+    ['visualized-deadline.goals', JSON.stringify([goal()])],
+  ]);
+  const storage = { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: (key) => values.delete(key) };
+  const snapshot = captureGuestImportSource(storage, '2026-09-02T00:00:00.000Z');
+  assert.ok(snapshot);
+  const preview = createGuestImportPreviewFromPending(snapshot, 'owner-1');
+  values.set('visualized-deadline.tasks', JSON.stringify([task({ title: 'changed after review' })]));
+  assert.throws(() => validatePendingGuestImportConfirmation(storage, snapshot, preview, { snapshotId: preview.snapshotId, snapshotChecksum: preview.snapshotChecksum, destinationUserId: 'owner-1', clientRequestId: 'request-1' }, 'owner-1'), /GUEST_IMPORT_SOURCE_CHANGED/);
+  assert.equal(snapshot.backup.domains.tasks.payload[0].title, 'Beta task');
 });
 
 test('planner accepts only explicit valid parent evidence for goals and tasks', () => {

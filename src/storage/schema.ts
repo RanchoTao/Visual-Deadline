@@ -51,6 +51,7 @@ export const storageKeys = {
   backup2: 'vd_backup_2',
   backup3: 'vd_backup_3',
   restoreRollback: 'vd_backup_restore_rollback',
+  guestImportPending: 'vd.guest-import.pending.v1',
 } as const;
 
 export interface PressureExportData {
