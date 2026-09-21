@@ -22,6 +22,7 @@
     "../src/storage/inventory.ts",
     "../src/storage/dataSafety.ts",
     "../src/lib/authFeatures.ts",
+    "../src/lib/authPortalState.ts",
     "../src/lib/identityClientConfig.ts",
     "../src/lib/authCallback.ts",
     "../src/lib/legacySessionTransition.ts",

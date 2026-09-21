@@ -9,6 +9,7 @@ export interface SupabaseSession { access_token: string; refresh_token: string; 
 export interface IdentityProvider { provider: SupportedIdentityProvider; }
 export interface PhoneOtpRequest { phone: string; }
 export interface PhoneOtpVerification { phone: string; token: string; }
+export interface EmailOtpVerification { email: string; token: string; }
 
 /** Application-facing Auth boundary. Components never receive Supabase's raw client. */
 export interface IdentityClient {
@@ -27,6 +28,7 @@ export interface IdentityClient {
   signInWithOAuth(provider: IdentityProvider['provider'], redirectTo: string): Promise<void>;
   requestPhoneOtp(input: PhoneOtpRequest): Promise<void>;
   verifyPhoneOtp(input: PhoneOtpVerification): Promise<SupabaseSession | null>;
+  verifyEmailOtp(input: EmailOtpVerification): Promise<SupabaseSession | null>;
   getIdentities(): Promise<readonly unknown[]>;
   setSession(input: { access_token: string; refresh_token: string; expires_in?: number }): Promise<SupabaseSession>;
 }
@@ -148,6 +150,11 @@ class VisualDeadlineIdentityClient implements IdentityClient {
   async signInWithOAuth(provider: IdentityProvider['provider'], redirectTo: string): Promise<void> { assertOAuthProviderEnabled(this.flags, provider); const { error } = await this.requireClient().auth.signInWithOAuth({ provider: provider as Provider, options: { redirectTo } }); if (error) throw error; }
   async requestPhoneOtp(input: PhoneOtpRequest): Promise<void> { assertPhoneEnabled(this.flags); const { error } = await this.requireClient().auth.signInWithOtp({ phone: input.phone }); if (error) throw error; }
   async verifyPhoneOtp(input: PhoneOtpVerification): Promise<SupabaseSession | null> { assertPhoneEnabled(this.flags); const { data, error } = await this.requireClient().auth.verifyOtp({ phone: input.phone, token: input.token, type: 'sms' }); if (error) throw error; return normalizeSession(data.session); }
+  async verifyEmailOtp(input: EmailOtpVerification): Promise<SupabaseSession | null> {
+    const { data, error } = await this.requireClient().auth.verifyOtp({ email: input.email, token: input.token, type: 'email' });
+    if (error) throw error;
+    return normalizeSession(data.session);
+  }
   async getIdentities(): Promise<readonly unknown[]> { return (await this.getUser())?.identities ?? []; }
   async setSession(input: { access_token: string; refresh_token: string; expires_in?: number }): Promise<SupabaseSession> {
     const { data, error } = await this.requireClient().auth.setSession(input); if (error) throw error;
