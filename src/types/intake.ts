@@ -29,6 +29,7 @@ export interface MultimodalIntake {
   intakeId: string;
   text: string;
   assets: IntakeAssetReference[];
+  links?: string[];
 }
 
 export interface TaskDraft {

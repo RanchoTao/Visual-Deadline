@@ -76,15 +76,16 @@ export function PublicSite({ path, onNavigate }: { path: string; onNavigate: (pa
   const [locale, setLocale] = useState<PublicLocale>(initialLocale);
   const [showMobileNotice, setShowMobileNotice] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authenticatedUserId, setAuthenticatedUserId] = useState<string | undefined>();
   useEffect(() => { try { window.localStorage.setItem('vd.locale', locale); } catch { /* Preference is optional. */ } }, [locale]);
   useEffect(() => {
     let isMounted = true;
     if (!supabase.isConfigured) return () => { isMounted = false; };
-    void supabase.auth.getSession().then((session) => { if (isMounted) setIsAuthenticated(Boolean(session)); }).catch(() => { if (isMounted) setIsAuthenticated(false); });
+    void supabase.auth.getSession().then((session) => { if (isMounted) { setIsAuthenticated(Boolean(session)); setAuthenticatedUserId(session?.user?.id); } }).catch(() => { if (isMounted) { setIsAuthenticated(false); setAuthenticatedUserId(undefined); } });
     return () => { isMounted = false; };
   }, []);
   const page = pageForPath[path];
-  const submit = (draft: CaptureDraft) => { stashPendingCaptureDraft(draft); onNavigate(publicCaptureTarget(isAuthenticated)); };
+  const submit = (draft: CaptureDraft) => { stashPendingCaptureDraft(draft, authenticatedUserId); onNavigate(publicCaptureTarget(isAuthenticated)); };
   const mobileNotice = showMobileNotice ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/20 p-5 backdrop-blur-sm"><section className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl"><h2 className="text-xl font-semibold">{locale === 'zh-CN' ? '移动端即将推出' : 'Mobile is coming soon'}</h2><p className="mt-2 text-sm leading-6 text-zinc-500">{locale === 'zh-CN' ? '目前可以使用 Visual Deadline 网页版。' : 'Visual Deadline is currently available on the web.'}</p><button type="button" onClick={() => setShowMobileNotice(false)} className="mt-5 rounded-lg bg-zinc-950 px-4 py-2 text-sm font-semibold text-white">{locale === 'zh-CN' ? '知道了' : 'Got it'}</button></section></div> : null;
   if (path === '/privacy' || path === '/privacy.html') return <PrivacyPolicyPage onBack={() => onNavigate('/')} />;
   if (path === '/terms') return <TermsPage onBack={() => onNavigate('/')} />;

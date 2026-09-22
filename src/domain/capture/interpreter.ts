@@ -1,0 +1,13 @@
+import type { Goal, Task } from '../../types/task.js';
+import { requestChatCompletion, type AISettings } from '../../services/aiClient.js';
+import { parseCaptureInterpretation } from './parser.js';
+import type { CaptureInput, CaptureInterpretation } from './types.js';
+
+export const captureInterpretSystemPrompt = `Return JSON only in this exact shape: {"goals":[{"id":"goal-1","title":"...","targetDate":null,"category":"research","priority":8,"confidence":0.9,"sourceRefs":["capture:text"]}],"tasks":[{"id":"task-1","title":"...","description":null,"importance":8,"deadline":null,"estimatedDuration":60,"category":"research","goalDraftId":"goal-1","dependencyDraftIds":[],"confidence":0.9,"sourceRefs":["capture:text"]}],"commitments":[],"context":[],"ambiguities":[],"notes":[]}. Allowed categories: task,schedule,entertainment,recovery,study,research,fitness,exercise,work,life,social,other. importance is not urgency; deadlines require evidence; estimatedDuration is minutes and must be null when uncertain. One capture may contain multiple unrelated goals and standalone tasks; never create a synthetic root goal. Dependencies are true prerequisites only. Completed facts belong in context, not tasks; fixed external events belong in commitments. Do not fabricate tasks from metadata-only assets, microtasks, or motivation prose. Return bounded, stable IDs and valid sourceRefs.`;
+export function buildCaptureInterpretUserPrompt(capture: CaptureInput, tasks: Task[], goals: Goal[], now: Date, timezone: string): string {
+  return JSON.stringify({ capture: { text: capture.text, links: capture.links, assets: capture.assets.map(({ id, kind, name, mimeType, size, durationSeconds, availability, semanticCoverage }) => ({ id, kind, name, mimeType, size, durationSeconds, availability, semanticCoverage })) }, activeTasks: tasks.slice(0, 40).map(({ id, title, deadline }) => ({ id, title, deadline })), activeGoals: goals.slice(0, 30).map(({ id, title }) => ({ id, title })), currentDateTime: now.toISOString(), timezone }, null, 2);
+}
+export async function interpretCapture(settings: AISettings, capture: CaptureInput, tasks: Task[], goals: Goal[], now: Date, timezone: string): Promise<{ interpretation: CaptureInterpretation; model?: string }> {
+  const content = await requestChatCompletion(settings, captureInterpretSystemPrompt, buildCaptureInterpretUserPrompt(capture, tasks, goals, now, timezone), { mode: 'capture_interpret', context: { tasks: tasks.slice(0, 40), goals: goals.slice(0, 30) } });
+  return { interpretation: parseCaptureInterpretation(content, capture), model: settings.model };
+}
