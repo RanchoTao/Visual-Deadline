@@ -1,7 +1,7 @@
 import { type CSSProperties, useEffect, useMemo, useState } from 'react';
 import type { Task } from '../types/task';
 import { formatCountdown, formatDeadline } from '../utils/date';
-import { getActivityTypeLabel, getDisplayProgress, getTaskProgress, getImportancePosition, getLegacyPriorityMapTopTasks, getPulseDuration, getRecommendationReason, getUrgencyPosition, getUrgencyScore, getTimeProgress, isProgressAuto, isTaskActive, isTaskComplete } from '../utils/taskScoring';
+import { getActivityTypeLabel, getDisplayProgress, getTaskProgress, getImportancePosition, getLegacyPriorityMapTopTasks, getPulseDuration, getUrgencyPosition, getUrgencyScore, getTimeProgress, isProgressAuto, isTaskActive, isTaskComplete } from '../utils/taskScoring';
 import { ProgressBar } from './ProgressBar';
 
 interface PriorityMapProps {
@@ -130,7 +130,6 @@ function TaskDetailContent({ task }: { task: Task }) {
         <p>紧急程度 {getUrgencyScore(task.deadline)}</p>
         <p>{formatCountdown(task.deadline)}</p>
         <p className="text-xs text-slate-400">截止 {formatDeadline(task.deadline)}</p>
-        <p className="rounded-2xl bg-sky-50 px-3 py-2 text-sky-700">{getRecommendationReason(task)}</p>
       </div>
       <div className="mt-4">
         <ProgressBar progress={displayProgress} />
@@ -243,7 +242,6 @@ export function PriorityMap({ tasks, onEditTask, onCompleteTask, onDeleteTask }:
             <div className="pointer-events-none absolute z-20 hidden w-64 md:block rounded-2xl bg-white/90 p-3 shadow-xl shadow-slate-200/60 ring-1 ring-white/80 backdrop-blur" style={getHoverCardStyle(hoverPositionedTask)}>
               <p className="truncate text-sm font-bold text-slate-950">{hoverPositionedTask.task.title}</p>
               <p className="mt-2 text-xs text-slate-600">{formatCountdown(hoverPositionedTask.task.deadline)}</p>
-              <p className="mt-2 rounded-xl bg-sky-50 px-2.5 py-1.5 text-xs text-sky-700">{getRecommendationReason(hoverPositionedTask.task)}</p>
               <div className="mt-2">
                 <ProgressBar progress={getDisplayProgress(hoverPositionedTask.task)} compact />
                 <p className="mt-1 text-xs text-slate-400">任务进度 {getTaskProgress(hoverPositionedTask.task)}% · 时间进度 {getTimeProgress(hoverPositionedTask.task)}%{isProgressAuto(hoverPositionedTask.task) ? ' · 自动估算' : ''}</p>
@@ -276,7 +274,7 @@ export function PriorityMap({ tasks, onEditTask, onCompleteTask, onDeleteTask }:
           ) : null}
         </div>
       </div>
-      <div className="mt-5 pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:hidden"><h3 className="text-sm font-semibold text-slate-700">当前最值得关注的任务 Top 5</h3>{topTasks.length ? <ol className="mt-3 space-y-2">{topTasks.map((task, index) => <li key={task.id}><button type="button" onClick={() => setSelectedTaskId(task.id)} className="flex w-full items-center justify-between gap-3 rounded-2xl bg-slate-50 px-3 py-2 text-left ring-1 ring-slate-100"><span className="min-w-0 truncate text-sm font-medium text-slate-700">{index + 1}. {task.title}</span><span className="shrink-0 text-xs text-slate-400">重要性 {task.importance} · 紧急 {getUrgencyScore(task.deadline)}</span></button></li>)}</ol> : <p className="mt-3 rounded-2xl border border-dashed border-slate-200 p-4 text-center text-sm text-slate-400">暂无进行中的任务。</p>}</div>
+      <div className="mt-5 pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:hidden"><h3 className="text-sm font-semibold text-slate-700">矩阵中的任务</h3>{topTasks.length ? <ol className="mt-3 space-y-2">{topTasks.map((task) => <li key={task.id}><button type="button" onClick={() => setSelectedTaskId(task.id)} className="flex w-full items-center justify-between gap-3 rounded-2xl bg-slate-50 px-3 py-2 text-left ring-1 ring-slate-100"><span className="min-w-0 truncate text-sm font-medium text-slate-700">{task.title}</span><span className="shrink-0 text-xs text-slate-400">重要性 {task.importance} · 紧急 {getUrgencyScore(task.deadline)}</span></button></li>)}</ol> : <p className="mt-3 rounded-2xl border border-dashed border-slate-200 p-4 text-center text-sm text-slate-400">暂无进行中的任务。</p>}</div>
     </section>
   );
 }

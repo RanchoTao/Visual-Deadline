@@ -47,6 +47,7 @@ import { createOwnerScopedUiState, transitionOwnerScopedUiState } from './domain
 import { abortCaptureMaterialization, beginCaptureMaterialization, claimCaptureTransfer, clearCaptureTransfer, consumeCaptureTransfer } from './domain/capture/transfer';
 import { buildCaptureMaterializationPlan } from './domain/capture/materializer';
 import type { CaptureInput, CaptureInterpretation } from './domain/capture/types';
+import { deleteTaskWithReferences, reconcileTaskGoalLinks, transitionTaskLifecycle } from './domain/tasks/operations';
 import { defaultAISettings } from './services/aiClient';
 import { isAuthenticatedPath, isKnownAuthenticatedEntryPath, legacyRouteRedirect, safeAuthenticatedNext } from './lib/appRoutes';
 
@@ -926,24 +927,17 @@ function AuthenticatedApp() {
     const now = new Date().toISOString();
 
     if (editingTask) {
-      const nextTasks = normalizedTasks.map((task) => {
-        if (task.id !== editingTask.id) return task;
-        const lifecycleChanged = task.lifecycleStatus !== normalizedInput.lifecycleStatus;
-        return {
-          ...task,
-          ...normalizedInput,
-          completedAt: normalizedInput.lifecycleStatus === 'completed' ? normalizedInput.completedAt || task.completedAt || now : undefined,
-          abandonedAt: normalizedInput.lifecycleStatus === 'abandoned' ? task.abandonedAt ?? now : lifecycleChanged ? undefined : task.abandonedAt,
-          updatedAt: now,
-        };
-      });
-      setTasks(nextTasks);
-      recalculateTaskDerivedPressureHistory(nextTasks, `修改任务后重算压力曲线：${normalizedInput.title}`);
+      const previousTask = normalizedTasks.find((task) => task.id === editingTask.id);
+      if (!previousTask) return;
+      const nextTask = { ...previousTask, ...normalizedInput, completedAt: normalizedInput.lifecycleStatus === 'completed' ? normalizedInput.completedAt || previousTask.completedAt || now : undefined, abandonedAt: normalizedInput.lifecycleStatus === 'abandoned' ? previousTask.abandonedAt ?? now : previousTask.lifecycleStatus !== normalizedInput.lifecycleStatus ? undefined : previousTask.abandonedAt, updatedAt: now };
+      const reconciled = reconcileTaskGoalLinks(normalizedTasks, normalizedGoals, nextTask, previousTask.linkedGoalIds);
+      setTasks(reconciled.tasks); setGoals(reconciled.goals);
+      recalculateTaskDerivedPressureHistory(reconciled.tasks, `修改任务后重算压力曲线：${normalizedInput.title}`);
     } else {
       const newTask = createTask(normalizedInput);
-      const nextTasks = [newTask, ...normalizedTasks];
-      setTasks(nextTasks);
-      recordPressureSnapshot('task_created', nextTasks, `新建任务：${newTask.title}`);
+      const reconciled = reconcileTaskGoalLinks(normalizedTasks, normalizedGoals, newTask);
+      setTasks(reconciled.tasks); setGoals(reconciled.goals);
+      recordPressureSnapshot('task_created', reconciled.tasks, `新建任务：${newTask.title}`);
     }
     closeForm();
   }
@@ -960,35 +954,22 @@ function AuthenticatedApp() {
 
   function archiveTask(task: Task, lifecycleStatus: Exclude<LifecycleStatus, 'active'>) {
     const now = new Date().toISOString();
-    const nextTasks = normalizedTasks.map((item) =>
-      item.id === task.id
-        ? {
-            ...item,
-            lifecycleStatus,
-            progress: lifecycleStatus === 'completed' ? 100 : item.progress,
-            taskProgress: lifecycleStatus === 'completed' ? 100 : item.taskProgress,
-            progressMode: lifecycleStatus === 'completed' ? 'manual' : item.progressMode,
-            completedAt: lifecycleStatus === 'completed' ? now : item.completedAt,
-            abandonedAt: lifecycleStatus === 'abandoned' ? now : item.abandonedAt,
-            updatedAt: now,
-          }
-        : item,
-    );
+    const nextTasks = normalizedTasks.map((item) => item.id === task.id ? transitionTaskLifecycle(item, lifecycleStatus, now) : item);
     setTasks(nextTasks);
     recalculateTaskDerivedPressureHistory(nextTasks, `${lifecycleStatus === 'completed' ? '完成' : '放弃'}任务后重算压力曲线：${task.title}`);
   }
 
   function deleteTask(taskId: string) {
     const deletedTask = normalizedTasks.find((task) => task.id === taskId);
-    const nextTasks = normalizedTasks.filter((task) => task.id !== taskId);
-    setTasks(nextTasks);
-    recalculateTaskDerivedPressureHistory(nextTasks, deletedTask ? `删除任务后重算压力曲线：${deletedTask.title}` : '删除任务后重算压力曲线');
+    if (!deletedTask || !window.confirm(`永久删除“${deletedTask.title}”？此操作会移除相关目标和前置任务引用。`)) return;
+    const cleaned = deleteTaskWithReferences(normalizedTasks, normalizedGoals, taskId);
+    setTasks(cleaned.tasks); setGoals(cleaned.goals);
+    recalculateTaskDerivedPressureHistory(cleaned.tasks, `删除任务后重算压力曲线：${deletedTask.title}`);
   }
 
 
   function restoreTask(task: Task) {
-    const now = new Date().toISOString();
-    const nextTasks = normalizedTasks.map((item) => item.id === task.id ? { ...item, lifecycleStatus: 'active' as const, progress: item.progress >= 100 ? 0 : item.progress, taskProgress: (item.taskProgress ?? item.progress) >= 100 ? 0 : item.taskProgress, completedAt: undefined, abandonedAt: undefined, updatedAt: now } : item);
+    const nextTasks = normalizedTasks.map((item) => item.id === task.id ? transitionTaskLifecycle(item, 'active') : item);
     setTasks(nextTasks);
     recalculateTaskDerivedPressureHistory(nextTasks, `恢复任务后重算压力曲线：${task.title}`);
   }
@@ -1020,14 +1001,14 @@ function AuthenticatedApp() {
       <section className="max-h-[calc(100vh-3rem)] w-full max-w-5xl overflow-y-auto rounded-[2rem] border border-white/80 bg-white/90 p-5 shadow-2xl shadow-slate-300/60">
         <div className="mb-4 flex items-center justify-between gap-4">
           <div>
-            <p className="text-sm font-semibold tracking-[0.22em] text-slate-400">项目表单</p>
-            <h2 className="mt-1 text-3xl font-semibold tracking-tight text-slate-950">{editingTask ? '编辑项目' : '新建项目'}</h2>
+            <p className="text-sm font-semibold tracking-[0.22em] text-slate-400">任务表单</p>
+            <h2 className="mt-1 text-3xl font-semibold tracking-tight text-slate-950">{editingTask ? '编辑任务' : '新建任务'}</h2>
           </div>
           <button type="button" onClick={closeForm} className="rounded-full bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-200">
             关闭
           </button>
         </div>
-        <TaskForm task={editingTask} onCancel={closeForm} onSubmit={handleSubmit} />
+        <TaskForm task={editingTask} tasks={normalizedTasks} goals={normalizedGoals} onCancel={closeForm} onSubmit={handleSubmit} />
       </section>
     </div>
   ) : null;
@@ -1115,9 +1096,11 @@ function AuthenticatedApp() {
 
   const taskModule = (
     <TaskPage
-      activeTasks={activeTasks}
+      tasks={normalizedTasks}
+      goals={normalizedGoals}
       onAddTask={() => setIsFormOpen(true)}
       onArchiveTask={archiveTask}
+      onRestoreTask={restoreTask}
       onDeleteTask={deleteTask}
       onEditTask={startEditing}
     />

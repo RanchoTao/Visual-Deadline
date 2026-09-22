@@ -1,31 +1,18 @@
-import type { LifecycleStatus, Task } from '../types/task';
+import { useMemo, useState } from 'react';
+import { defaultTaskFilters, filterTasks, sortTasks, type DeadlineFilter, type TaskFilters, type TaskSort } from '../domain/tasks/operations';
+import type { ActivityType, Goal, LifecycleStatus, Task } from '../types/task';
+import { getActivityTypeLabel } from '../utils/taskScoring';
 import { PriorityMap } from './PriorityMap';
 import { TaskList } from './TaskList';
 
-interface TaskPageProps {
-  activeTasks: Task[];
-  onAddTask: () => void;
-  onArchiveTask: (task: Task, lifecycleStatus: Exclude<LifecycleStatus, 'active'>) => void;
-  onDeleteTask: (taskId: string) => void;
-  onEditTask: (task: Task) => void;
-}
+interface TaskPageProps { tasks: Task[]; goals: Goal[]; onAddTask: () => void; onArchiveTask: (task: Task, lifecycleStatus: Exclude<LifecycleStatus, 'active'>) => void; onRestoreTask: (task: Task) => void; onDeleteTask: (taskId: string) => void; onEditTask: (task: Task) => void; }
+const activityTypes: ActivityType[] = ['task', 'schedule', 'study', 'research', 'fitness', 'exercise', 'work', 'life', 'social', 'recovery', 'entertainment', 'other'];
 
-export function TaskPage({ activeTasks, onAddTask, onArchiveTask, onDeleteTask, onEditTask }: TaskPageProps) {
-  return (
-    <section className="space-y-6">
-      <header className="flex flex-wrap items-center justify-between gap-4 rounded-[2rem] border border-white/70 bg-white/75 p-6 shadow-xl shadow-slate-200/60 backdrop-blur">
-        <div>
-          <p className="text-sm font-semibold tracking-[0.24em] text-slate-500">任务系统</p>
-          <h1 className="mt-2 text-4xl font-semibold tracking-tight text-slate-950 md:text-5xl">任务</h1>
-          <p className="mt-3 max-w-2xl text-slate-600">完整任务操作中心：先看紧急重要矩阵，再处理进行中的项目。</p>
-        </div>
-        <button type="button" onClick={onAddTask} className="rounded-full bg-white/85 px-6 py-3 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">
-          添加项目
-        </button>
-      </header>
-
-      <PriorityMap tasks={activeTasks} onEditTask={onEditTask} onCompleteTask={(task) => onArchiveTask(task, 'completed')} onDeleteTask={onDeleteTask} />
-      <TaskList tasks={activeTasks} onArchive={onArchiveTask} onDelete={onDeleteTask} onEdit={onEditTask} />
-    </section>
-  );
+export function TaskPage({ tasks, goals, onAddTask, onArchiveTask, onRestoreTask, onDeleteTask, onEditTask }: TaskPageProps) {
+  const [filters, setFilters] = useState<TaskFilters>(defaultTaskFilters); const [sort, setSort] = useState<TaskSort>('priority');
+  const listedTasks = useMemo(() => sortTasks(filterTasks(tasks, filters), sort), [tasks, filters, sort]);
+  const matrixTasks = useMemo(() => filters.lifecycle === 'completed' || filters.lifecycle === 'abandoned' ? [] : filterTasks(tasks, { ...filters, lifecycle: 'active' }), [tasks, filters]);
+  const count = (status: LifecycleStatus) => tasks.filter((task) => task.lifecycleStatus === status).length;
+  const update = <K extends keyof TaskFilters>(key: K, value: TaskFilters[K]) => setFilters((current) => ({ ...current, [key]: value }));
+  return <section className="space-y-6"><header className="flex flex-wrap items-center justify-between gap-4 rounded-[2rem] border border-white/70 bg-white/75 p-6 shadow-xl shadow-slate-200/60"><div><p className="text-sm font-semibold tracking-[0.24em] text-slate-500">TASKS</p><h1 className="mt-2 text-4xl font-semibold tracking-tight text-slate-950">任务</h1><p className="mt-3 text-slate-600">管理所有任务及其状态。</p></div><button type="button" onClick={onAddTask} className="rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white">＋ 新建任务</button></header><div className="flex flex-wrap gap-2 text-sm"><span className="rounded-full bg-sky-50 px-3 py-1 text-sky-700">进行中 {count('active')}</span><span className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-700">已完成 {count('completed')}</span><span className="rounded-full bg-slate-100 px-3 py-1 text-slate-600">已放弃 {count('abandoned')}</span></div><section className="rounded-[2rem] border border-slate-200 bg-white p-4"><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5"><input aria-label="搜索任务" value={filters.query} onChange={(event) => update('query', event.target.value)} placeholder="搜索标题、描述、下一步" className="rounded-xl border border-slate-200 px-3 py-2" /><select aria-label="生命周期筛选" value={filters.lifecycle} onChange={(event) => update('lifecycle', event.target.value as TaskFilters['lifecycle'])} className="rounded-xl border border-slate-200 px-3 py-2"><option value="active">进行中</option><option value="completed">已完成</option><option value="abandoned">已放弃</option><option value="all">全部</option></select><select aria-label="分类筛选" value={filters.activityType} onChange={(event) => update('activityType', event.target.value as ActivityType | 'all')} className="rounded-xl border border-slate-200 px-3 py-2"><option value="all">全部分类</option>{activityTypes.map((type) => <option key={type} value={type}>{getActivityTypeLabel(type)}</option>)}</select><select aria-label="目标筛选" value={filters.goalId} onChange={(event) => update('goalId', event.target.value)} className="rounded-xl border border-slate-200 px-3 py-2"><option value="all">全部目标</option>{goals.map((goal) => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select><select aria-label="截止时间筛选" value={filters.deadline} onChange={(event) => update('deadline', event.target.value as DeadlineFilter)} className="rounded-xl border border-slate-200 px-3 py-2"><option value="all">全部截止状态</option><option value="overdue">已逾期</option><option value="today">今天到期</option><option value="soon">即将到期</option><option value="has_deadline">有截止时间</option><option value="no_deadline">无截止时间</option></select></div><div className="mt-3 flex justify-end"><label className="text-sm text-slate-600">排序 <select value={sort} onChange={(event) => setSort(event.target.value as TaskSort)} className="ml-2 rounded-xl border border-slate-200 px-3 py-2"><option value="priority">VD 优先级</option><option value="deadline">截止时间</option><option value="importance">重要性</option><option value="updated">最近更新</option></select></label></div></section><PriorityMap tasks={matrixTasks} onEditTask={onEditTask} onCompleteTask={(task) => onArchiveTask(task, 'completed')} onDeleteTask={onDeleteTask} /><TaskList tasks={listedTasks} allTasks={tasks} goals={goals} onArchive={onArchiveTask} onRestore={onRestoreTask} onDelete={onDeleteTask} onEdit={onEditTask} /></section>;
 }
