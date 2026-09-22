@@ -1,42 +1,22 @@
 import type { CaptureDraft } from '../public/captureDraft.js';
 import type { CaptureInput, CaptureOwnerKey } from './types.js';
 
-interface StoredPendingCapture {
-  id: string;
-  ownerKey: CaptureOwnerKey;
-  text: string;
-  links: string[];
-  attachments: Array<{ id: string; kind: 'image' | 'document'; name: string; type: string; size: number }>;
-  audioDurationSeconds?: number;
-}
-
-const KEY = 'vd.pending-capture-draft';
+interface StoredPendingCapture { id: string; ownerKey: CaptureOwnerKey; text: string; links: string[]; attachments: Array<{ id: string; kind: 'image' | 'document'; name: string; type: string; size: number }>; audioDurationSeconds?: number; materializing?: boolean; consumed?: boolean; }
+const prefix = 'vd.pending-capture-draft.v2.';
 const memory = new Map<string, CaptureDraft>();
+const consumed = new Set<string>();
+const materializing = new Set<string>();
 const owner = (userId?: string): CaptureOwnerKey => userId ? `user:${userId}` : 'guest';
-function read(): StoredPendingCapture | undefined { try { const value = JSON.parse(window.sessionStorage.getItem(KEY) ?? 'null') as unknown; return value && typeof value === 'object' ? value as StoredPendingCapture : undefined; } catch { return undefined; } }
-function write(value: StoredPendingCapture): void { try { window.sessionStorage.setItem(KEY, JSON.stringify(value)); } catch { /* safe handoff is best effort */ } }
+const key = (ownerKey: CaptureOwnerKey) => `${prefix}${encodeURIComponent(ownerKey)}`;
+const token = (ownerKey: CaptureOwnerKey, id: string) => `${ownerKey}:${id}`;
+function read(ownerKey: CaptureOwnerKey): StoredPendingCapture | undefined { try { const value = JSON.parse(window.sessionStorage.getItem(key(ownerKey)) ?? 'null') as unknown; return value && typeof value === 'object' ? value as StoredPendingCapture : undefined; } catch { return undefined; } }
+function write(value: StoredPendingCapture): void { try { window.sessionStorage.setItem(key(value.ownerKey), JSON.stringify(value)); } catch { /* best effort */ } }
+function remove(ownerKey: CaptureOwnerKey): void { try { window.sessionStorage.removeItem(key(ownerKey)); } catch { /* best effort */ } }
 
-/** File/Blob stay only in module memory; session storage holds reattach-safe metadata. */
-export function stageCaptureTransfer(draft: CaptureDraft, userId?: string): string {
-  const id = crypto.randomUUID(); memory.set(id, draft);
-  write({ id, ownerKey: owner(userId), text: draft.text, links: draft.links, attachments: draft.attachments.map(({ id: attachmentId, kind, file }) => ({ id: attachmentId, kind: kind === 'image' ? 'image' : 'document', name: file.name, type: file.type, size: file.size })), audioDurationSeconds: draft.audio?.durationSeconds });
-  return id;
-}
-
-/** Guest drafts may be claimed once by the next authenticated capture flow; another user cannot read user-bound drafts. */
-export function claimCaptureTransfer(userId: string): CaptureInput | undefined {
-  const pending = read(); if (!pending) return undefined;
-  const destination = owner(userId);
-  if (pending.ownerKey !== 'guest' && pending.ownerKey !== destination) return undefined;
-  if (pending.ownerKey === 'guest') { pending.ownerKey = destination; write(pending); }
-  const draft = memory.get(pending.id);
-  const files = new Map(draft?.attachments.map((attachment) => [attachment.id, attachment]) ?? []);
-  const assets: CaptureInput['assets'] = pending.attachments.map((attachment) => { const source = files.get(attachment.id); return { id: attachment.id, kind: attachment.kind, name: attachment.name, mimeType: attachment.type, size: attachment.size, status: source ? 'ready' as const : 'needs_reattach' as const, file: source?.file }; });
-  if (draft?.audio) assets.push({ id: 'audio', kind: 'audio', name: '录音', mimeType: draft.audio.blob.type, size: draft.audio.blob.size, durationSeconds: draft.audio.durationSeconds, status: 'ready', file: new File([draft.audio.blob], '录音.webm', { type: draft.audio.blob.type || 'audio/webm' }) });
-  return { id: pending.id, ownerKey: destination, text: pending.text, links: pending.links, assets };
-}
-
-export function clearCaptureTransfer(userId: string, captureId: string): void {
-  const pending = read(); if (!pending || pending.id !== captureId || pending.ownerKey !== owner(userId)) return;
-  memory.delete(captureId); try { window.sessionStorage.removeItem(KEY); } catch { /* optional */ }
-}
+export function stageCaptureTransfer(draft: CaptureDraft, userId?: string): string { const id = crypto.randomUUID(); const ownerKey = owner(userId); memory.set(token(ownerKey, id), draft); write({ id, ownerKey, text: draft.text, links: draft.links, attachments: draft.attachments.map(({ id: attachmentId, kind, file }) => ({ id: attachmentId, kind: kind === 'image' ? 'image' : 'document', name: file.name, type: file.type, size: file.size })), audioDurationSeconds: draft.audio?.durationSeconds }); return id; }
+/** Atomically moves one guest record into the authenticated owner's independent slot. */
+export function claimCaptureTransfer(userId: string): CaptureInput | undefined { const destination = owner(userId); const own = read(destination); const guest = own ? undefined : read('guest'); const pending = own ?? guest; if (!pending || pending.consumed || consumed.has(token(pending.ownerKey, pending.id))) return undefined; if (pending.ownerKey === 'guest') { remove('guest'); const draft = memory.get(token('guest', pending.id)); memory.delete(token('guest', pending.id)); if (draft) memory.set(token(destination, pending.id), draft); pending.ownerKey = destination; write(pending); } return hydrate(pending); }
+function hydrate(pending: StoredPendingCapture): CaptureInput { const draft = memory.get(token(pending.ownerKey, pending.id)); const files = new Map(draft?.attachments.map((attachment) => [attachment.id, attachment]) ?? []); const assets: CaptureInput['assets'] = pending.attachments.map((attachment) => { const source = files.get(attachment.id); return { id: attachment.id, kind: attachment.kind, name: attachment.name, mimeType: attachment.type, size: attachment.size, availability: source ? 'available' : 'needs_reattach', semanticCoverage: 'metadata_only', file: source?.file }; }); if (draft?.audio) assets.push({ id: 'audio', kind: 'audio', name: '录音', mimeType: draft.audio.blob.type, size: draft.audio.blob.size, durationSeconds: draft.audio.durationSeconds, availability: 'available', semanticCoverage: 'metadata_only', file: new File([draft.audio.blob], '录音.webm', { type: draft.audio.blob.type || 'audio/webm' }) }); return { id: pending.id, ownerKey: pending.ownerKey, text: pending.text, links: pending.links, assets }; }
+export function consumeCaptureTransfer(userId: string, captureId: string): boolean { const ownerKey = owner(userId); const pending = read(ownerKey); const guard = token(ownerKey, captureId); if (consumed.has(guard)) return false; consumed.add(guard); materializing.delete(guard); memory.delete(guard); if (pending?.id === captureId) remove(ownerKey); return true; }
+export function clearCaptureTransfer(userId: string, captureId: string): void { const ownerKey = owner(userId); const pending = read(ownerKey); if (!pending || pending.id !== captureId) return; memory.delete(token(ownerKey, captureId)); remove(ownerKey); }
+export function beginCaptureMaterialization(userId: string, captureId: string): boolean { const ownerKey = owner(userId); const pending = read(ownerKey); const guard = token(ownerKey, captureId); if (materializing.has(guard) || consumed.has(guard) || (pending && pending.id !== captureId)) return false; materializing.add(guard); if (pending?.id === captureId) { pending.materializing = true; write(pending); } return true; }

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { isHttpUrl } from '../domain/public/captureDraft';
 import { ACCEPTED_INTAKE_TYPES, classifyIntakeFile, MAX_INTAKE_FILE_SIZE, removeIntakeFile, uploadIntakeFile } from '../services/intakeStorage';
 import type { IntakeAsset, MultimodalIntake } from '../types/intake';
 import type { CaptureInput } from '../domain/capture/types';
@@ -20,6 +21,8 @@ const statusLabels: Record<IntakeAsset['status'], string> = { queued: '排队中
 
 export function MultimodalComposer({ disabled = false, onSubmit, placeholder, initialCapture }: MultimodalComposerProps) {
   const [text, setText] = useState('');
+  const [links, setLinks] = useState<string[]>([]);
+  const [linkInput, setLinkInput] = useState('');
   const [intakeId, setIntakeId] = useState<string>(() => crypto.randomUUID());
   const [assets, setAssets] = useState<IntakeAsset[]>([]);
   const [dragging, setDragging] = useState(false);
@@ -48,6 +51,7 @@ export function MultimodalComposer({ disabled = false, onSubmit, placeholder, in
     initialCaptureRef.current = initialCapture.id;
     setIntakeId(initialCapture.id);
     setText(initialCapture.text);
+    setLinks(initialCapture.links);
     const files = initialCapture.assets.flatMap((asset) => asset.file ? [asset.file] : []);
     if (files.length) void queueFiles(files, initialCapture.id);
   }, [initialCapture]);
@@ -130,15 +134,18 @@ export function MultimodalComposer({ disabled = false, onSubmit, placeholder, in
 
   async function submit() {
     if (!canSubmit) return;
-    await onSubmit({ intakeId, text: text.trim(), links: initialCapture?.id === intakeId ? initialCapture.links : [], assets: readyAssets.map(({ storagePath, kind, mimeType, fileName, size }) => ({ storagePath: storagePath!, kind, mimeType, fileName, size })) });
+    await onSubmit({ intakeId, text: text.trim(), links, assets: readyAssets.map(({ storagePath, kind, mimeType, fileName, size }) => ({ storagePath: storagePath!, kind, mimeType, fileName, size })) });
     setText('');
     setAssets([]);
-    setIntakeId(crypto.randomUUID());
+    setIntakeId(crypto.randomUUID()); setLinks([]);
   }
+
+  function addLink() { const value = linkInput.trim(); if (!isHttpUrl(value) || links.includes(value) || links.length >= 10) return; setLinks((current) => [...current, value]); setLinkInput(''); }
 
   return <div className={`relative rounded-[1.5rem] border bg-white/90 transition ${dragging ? 'border-sky-400 ring-4 ring-sky-100' : 'border-slate-200/80'}`}
     onDragOver={(event) => { event.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={(event) => { event.preventDefault(); setDragging(false); void queueFiles(Array.from(event.dataTransfer.files)); }}
     onPaste={(event) => { const images = Array.from(event.clipboardData.files).filter((file) => file.type.startsWith('image/')); if (images.length) { event.preventDefault(); void queueFiles(images); } }}>
+    {links.length ? <div className="flex flex-wrap gap-2 border-b border-slate-100 p-3">{links.map((link) => <span key={link} className="inline-flex max-w-full items-center gap-1 rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600"><span className="max-w-[18rem] truncate">{link}</span><button type="button" onClick={() => setLinks((current) => current.filter((item) => item !== link))}>×</button></span>)}</div> : null}
     {assets.length ? <div className="grid gap-2 border-b border-slate-100 p-3 sm:grid-cols-2">
       {assets.map((asset) => <div key={asset.id} className="flex min-w-0 items-center gap-3 rounded-xl bg-slate-50 p-2 ring-1 ring-slate-100">
         {asset.previewUrl ? <img src={asset.previewUrl} alt="" className="h-12 w-12 shrink-0 rounded-lg object-cover" /> : <span className="grid h-12 w-12 shrink-0 place-items-center rounded-lg bg-white text-xl">{asset.kind === 'audio' ? '🎙' : '📄'}</span>}
@@ -151,7 +158,7 @@ export function MultimodalComposer({ disabled = false, onSubmit, placeholder, in
     {dragging ? <div className="pointer-events-none absolute inset-0 grid place-items-center rounded-[1.5rem] bg-sky-50/90 text-sm font-semibold text-sky-700">松开以添加附件</div> : null}
     <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between">
       <div className="relative"><button type="button" aria-label="添加附件" onClick={() => setMenuOpen((value) => !value)} disabled={disabled} className="grid h-9 w-9 place-items-center rounded-full bg-slate-100 text-xl text-slate-600 hover:bg-slate-200">+</button>
-        {menuOpen ? <div className="absolute bottom-11 left-0 z-10 w-44 rounded-xl bg-white p-1 text-sm shadow-xl ring-1 ring-slate-200"><button type="button" className="w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50" onClick={() => { inputRef.current?.click(); setMenuOpen(false); }}>上传图片或文件</button></div> : null}
+        {menuOpen ? <div className="absolute bottom-11 left-0 z-10 w-64 rounded-xl bg-white p-2 text-sm shadow-xl ring-1 ring-slate-200"><button type="button" className="w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50" onClick={() => { inputRef.current?.click(); setMenuOpen(false); }}>上传图片或文件</button><div className="mt-1 flex gap-1"><input value={linkInput} onChange={(event) => setLinkInput(event.target.value)} placeholder="https://…" className="min-w-0 flex-1 rounded-lg bg-slate-50 px-2 py-1 text-xs" /><button type="button" onClick={addLink} className="rounded-lg bg-slate-900 px-2 py-1 text-xs text-white">添加链接</button></div></div> : null}
         <input ref={inputRef} hidden multiple type="file" accept={ACCEPTED_INTAKE_TYPES} onChange={(event) => { void queueFiles(Array.from(event.target.files ?? [])); event.target.value = ''; }} />
       </div>
       {recording ? <div className="flex items-center gap-2 text-xs font-semibold text-rose-600"><span className="animate-pulse">● {String(Math.floor(recordingSeconds / 60)).padStart(2, '0')}:{String(recordingSeconds % 60).padStart(2, '0')}</span><button type="button" onClick={() => stopRecording(false)} className="rounded-full bg-rose-50 px-3 py-2">停止</button><button type="button" onClick={() => stopRecording(true)} className="px-2 py-2 text-slate-500">取消</button></div> : <div className="flex gap-2"><button type="button" aria-label="开始录音" onClick={() => void startRecording()} disabled={disabled || busy} className="grid h-9 w-9 place-items-center rounded-full text-slate-500 hover:bg-slate-100 disabled:opacity-40">🎙</button><button type="button" aria-label="提交" onClick={() => void submit()} disabled={!canSubmit} className="grid h-9 w-9 place-items-center rounded-full bg-slate-900 text-white disabled:bg-slate-200">↑</button></div>}

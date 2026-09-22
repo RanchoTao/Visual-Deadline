@@ -44,7 +44,7 @@ import { createDefaultLifePreferences, createLifeEvent, deriveLifeState, getLife
 import { buildHomeRecommendationComparison } from './domain/execution/homeProjection';
 import { advanceGuestImportState, assertGuestCloudImportRuntimeEnabled, captureGuestImportSource, createGuestImportPreviewFromPending, readPendingGuestImport, validatePendingGuestImportConfirmation, type GuestImportPreview, type PendingGuestImportSnapshot } from './domain/v2/guestImport';
 import { createOwnerScopedUiState, transitionOwnerScopedUiState } from './domain/v2/workspaceUiTransition';
-import { claimCaptureTransfer, clearCaptureTransfer } from './domain/capture/transfer';
+import { beginCaptureMaterialization, claimCaptureTransfer, clearCaptureTransfer, consumeCaptureTransfer } from './domain/capture/transfer';
 import { buildCaptureMaterializationPlan } from './domain/capture/materializer';
 import type { CaptureInput, CaptureInterpretation } from './domain/capture/types';
 import { defaultAISettings } from './services/aiClient';
@@ -1071,6 +1071,7 @@ function AuthenticatedApp() {
 
   async function materializeCapture(capture: CaptureInput, interpretation: CaptureInterpretation, model?: string): Promise<void> {
     if (!session?.user.id || capture.ownerKey !== `user:${session.user.id}` || currentAuthoritativeOwnerKey.current !== capture.ownerKey) throw new Error('工作区已切换，请重新开始本次整理。');
+    if (!beginCaptureMaterialization(session.user.id, capture.id)) throw new Error('这次 Capture 已经确认或正在保存。');
     const plan = buildCaptureMaterializationPlan(interpretation, normalizedTasks, normalizedGoals);
     const goalIds = new Map<string, string>();
     const createdGoals = plan.goals.map((entry) => { const goal = createGoal(entry.input); goalIds.set(entry.draftId, goal.id); return goal; });
@@ -1083,7 +1084,7 @@ function AuthenticatedApp() {
     setTasks([...finalizedTasks, ...normalizedTasks]);
     if (finalizedTasks.length) recordPressureSnapshot('task_created', [...finalizedTasks, ...normalizedTasks], `Capture 整理新增 ${finalizedTasks.length} 个任务。`);
     saveAIArtifact({ kind: 'task-intake', title: 'Capture 整理已确认', content: `已确认 ${finalizedGoals.length} 个目标和 ${finalizedTasks.length} 个任务。`, relatedTaskIds: finalizedTasks.map((task) => task.id), relatedGoalIds: finalizedGoals.map((goal) => goal.id), model, metadata: { captureId: capture.id, goalCount: finalizedGoals.length, taskCount: finalizedTasks.length, commitmentCount: plan.skippedCommitments.length, duplicateWarnings: plan.duplicateWarnings } });
-    clearCaptureTransfer(session.user.id, capture.id); setPendingCapture(undefined);
+    consumeCaptureTransfer(session.user.id, capture.id); setPendingCapture(undefined);
   }
 
   const navigateHome = () => navigate('/');
