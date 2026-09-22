@@ -6,7 +6,7 @@ import type { CaptureInput } from '../domain/capture/types';
 
 interface MultimodalComposerProps {
   disabled?: boolean;
-  onSubmit: (intake: MultimodalIntake) => Promise<void> | void;
+  onSubmit: (intake: MultimodalIntake) => Promise<boolean> | boolean;
   placeholder?: string;
   initialCapture?: CaptureInput;
 }
@@ -130,11 +130,12 @@ export function MultimodalComposer({ disabled = false, onSubmit, placeholder, in
 
   const busy = assets.some((asset) => ['queued', 'uploading', 'processing'].includes(asset.status));
   const readyAssets = assets.filter((asset) => asset.status === 'ready' && asset.storagePath);
-  const canSubmit = !disabled && !busy && !recording && Boolean(text.trim() || readyAssets.length);
+  const canSubmit = !disabled && !busy && !recording && Boolean(text.trim() || readyAssets.length || links.length);
 
   async function submit() {
     if (!canSubmit) return;
-    await onSubmit({ intakeId, text: text.trim(), links, assets: readyAssets.map(({ storagePath, kind, mimeType, fileName, size }) => ({ storagePath: storagePath!, kind, mimeType, fileName, size })) });
+    const accepted = await onSubmit({ intakeId, text: text.trim(), links, assets: readyAssets.map(({ storagePath, kind, mimeType, fileName, size }) => ({ storagePath: storagePath!, kind, mimeType, fileName, size })) });
+    if (!accepted) return;
     setText('');
     setAssets([]);
     setIntakeId(crypto.randomUUID()); setLinks([]);

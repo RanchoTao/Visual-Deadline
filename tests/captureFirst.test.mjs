@@ -15,7 +15,7 @@ test('capture parser preserves independent streams and refuses fabricated depend
 test('capture materialization is confirm-only, duplicate-aware, and maps only selected valid relationships', () => {
   const review = parseCaptureInterpretation(JSON.stringify({ goals: [{ id: 'g', title: '完成毕业论文', category: 'study', priority: 9 }], tasks: [{ id: 'a', title: '写大纲', importance: 8, category: 'study', goalDraftId: 'g' }, { id: 'b', title: '撰写第一章', importance: 8, category: 'study', goalDraftId: 'g', dependencyDraftIds: ['a'] }, { id: 'duplicate', title: '已有任务', importance: 5, category: 'task' }], commitments: [{ id: 'c', title: '周五答辩' }], context: [] }));
   const plan = buildCaptureMaterializationPlan(review, [{ id: 'existing', title: '已有任务' }], []);
-  assert.equal(plan.goals.length, 1); assert.equal(plan.tasks.length, 2); assert.deepEqual(plan.tasks[1].dependencyDraftIds, ['a']); assert.equal(plan.skippedCommitments.length, 1); assert.match(plan.duplicateWarnings[0], /已有任务/);
+  assert.equal(plan.goals.length, 1); assert.equal(plan.tasks.length, 3); assert.deepEqual(plan.tasks[1].dependencyDraftIds, ['a']); assert.equal(plan.skippedCommitments.length, 1); assert.match(plan.duplicateWarnings[0], /已有任务/);
 });
 
 test('owner transition contract clears capture-bearing ephemeral UI before the next owner renders', () => {

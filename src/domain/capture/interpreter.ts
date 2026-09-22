@@ -9,5 +9,5 @@ export function buildCaptureInterpretUserPrompt(capture: CaptureInput, tasks: Ta
 }
 export async function interpretCapture(settings: AISettings, capture: CaptureInput, tasks: Task[], goals: Goal[], now: Date, timezone: string): Promise<{ interpretation: CaptureInterpretation; model?: string }> {
   const content = await requestChatCompletion(settings, captureInterpretSystemPrompt, buildCaptureInterpretUserPrompt(capture, tasks, goals, now, timezone), { mode: 'capture_interpret', context: { tasks: tasks.slice(0, 40), goals: goals.slice(0, 30) } });
-  return { interpretation: parseCaptureInterpretation(content), model: settings.model };
+  return { interpretation: parseCaptureInterpretation(content, capture), model: settings.model };
 }
