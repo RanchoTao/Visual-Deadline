@@ -41,10 +41,11 @@ export function filterTasks(tasks: readonly Task[], filters: TaskFilters, now = 
     if (filters.activityType !== 'all' && task.activityType !== filters.activityType) return false;
     if (filters.goalId !== 'all' && !task.linkedGoalIds?.includes(filters.goalId)) return false;
     if (query && ![task.title, task.description, task.nextAction].some((value) => value?.toLocaleLowerCase().includes(query))) return false;
-    const state = getDeadlineState(task, now);
     if (filters.deadline === 'all') return true;
-    if (filters.deadline === 'has_deadline') return state !== 'no_deadline';
-    if (filters.deadline === 'no_deadline') return state === 'no_deadline';
+    const hasDeadline = Number.isFinite(toTime(task.deadline));
+    if (filters.deadline === 'has_deadline') return hasDeadline;
+    if (filters.deadline === 'no_deadline') return !hasDeadline;
+    const state = getDeadlineState(task, now);
     return state === filters.deadline;
   });
 }
@@ -107,10 +108,10 @@ export function reconcileTaskGoalLinks(tasks: readonly Task[], goals: readonly G
   return { tasks: nextTasks, goals: nextGoals };
 }
 
-export function deleteTaskWithReferences(tasks: readonly Task[], goals: readonly Goal[], taskId: string): { tasks: Task[]; goals: Goal[] } {
+export function deleteTaskWithReferences(tasks: readonly Task[], goals: readonly Goal[], taskId: string, updatedAt: string): { tasks: Task[]; goals: Goal[] } {
   return {
-    tasks: tasks.filter((task) => task.id !== taskId).map((task) => task.dependencyIds?.includes(taskId) ? { ...task, dependencyIds: task.dependencyIds.filter((id) => id !== taskId) } : task),
-    goals: goals.map((goal) => goal.linkedTaskIds.includes(taskId) ? { ...goal, linkedTaskIds: goal.linkedTaskIds.filter((id) => id !== taskId) } : goal),
+    tasks: tasks.filter((task) => task.id !== taskId).map((task) => task.dependencyIds?.includes(taskId) ? { ...task, dependencyIds: task.dependencyIds.filter((id) => id !== taskId), updatedAt } : task),
+    goals: goals.map((goal) => goal.linkedTaskIds.includes(taskId) ? { ...goal, linkedTaskIds: goal.linkedTaskIds.filter((id) => id !== taskId), updatedAt } : goal),
   };
 }
 
@@ -118,4 +119,9 @@ export function transitionTaskLifecycle(task: Task, lifecycleStatus: LifecycleSt
   if (lifecycleStatus === 'completed') return { ...task, lifecycleStatus, progress: 100, taskProgress: 100, progressMode: 'manual', completedAt: now, abandonedAt: undefined, updatedAt: now };
   if (lifecycleStatus === 'abandoned') return { ...task, lifecycleStatus, completedAt: undefined, abandonedAt: now, updatedAt: now };
   return { ...task, lifecycleStatus: 'active', progress: task.progress >= 100 ? 0 : task.progress, taskProgress: (task.taskProgress ?? task.progress) >= 100 ? 0 : task.taskProgress, completedAt: undefined, abandonedAt: undefined, updatedAt: now };
+}
+
+/** Explicit status selection wins when editing an existing task. */
+export function applyTaskEditLifecycle(task: Task, input: TaskInput, now = new Date().toISOString()): Task {
+  return transitionTaskLifecycle({ ...task, ...input, completedAt: undefined, abandonedAt: undefined, updatedAt: now }, input.lifecycleStatus, now);
 }

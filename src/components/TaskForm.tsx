@@ -20,8 +20,7 @@ export function TaskForm({ task, tasks, goals, onCancel, onSubmit }: TaskFormPro
     event.preventDefault();
     const validation = validateTaskDraft(values, tasks, goals, task?.id);
     if (validation.errors.length) { setError(validation.errors[0]); return; }
-    const lifecycleStatus: LifecycleStatus = values.progress >= 100 ? 'completed' : values.lifecycleStatus;
-    onSubmit({ ...values, title: values.title.trim(), description: values.description?.trim() || undefined, deadline: values.deadline || undefined, estimatedDuration: values.estimatedDuration === undefined || values.estimatedDuration === null ? undefined : Math.round(values.estimatedDuration), nextAction: values.nextAction?.trim() || undefined, dependencyIds: validation.dependencyIds, linkedGoalIds: validation.linkedGoalIds, lifecycleStatus, completedAt: lifecycleStatus === 'completed' ? values.completedAt || new Date().toISOString() : undefined, importance: clampImportance(values.importance), progress: clampProgress(values.progress) });
+    onSubmit({ ...values, title: values.title.trim(), description: values.description?.trim() || undefined, deadline: values.deadline || undefined, estimatedDuration: values.estimatedDuration === undefined || values.estimatedDuration === null ? undefined : Math.round(values.estimatedDuration), nextAction: values.nextAction?.trim() || undefined, dependencyIds: validation.dependencyIds, linkedGoalIds: validation.linkedGoalIds, completedAt: values.lifecycleStatus === 'completed' ? values.completedAt || new Date().toISOString() : undefined, importance: clampImportance(values.importance), progress: clampProgress(values.progress) });
   }
 
   return <form onSubmit={handleSubmit} className="space-y-4 rounded-[2rem] border border-white/70 bg-white/80 p-5 shadow-xl shadow-slate-200/60 backdrop-blur">

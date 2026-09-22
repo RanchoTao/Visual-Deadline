@@ -47,7 +47,7 @@ import { createOwnerScopedUiState, transitionOwnerScopedUiState } from './domain
 import { abortCaptureMaterialization, beginCaptureMaterialization, claimCaptureTransfer, clearCaptureTransfer, consumeCaptureTransfer } from './domain/capture/transfer';
 import { buildCaptureMaterializationPlan } from './domain/capture/materializer';
 import type { CaptureInput, CaptureInterpretation } from './domain/capture/types';
-import { deleteTaskWithReferences, reconcileTaskGoalLinks, transitionTaskLifecycle } from './domain/tasks/operations';
+import { applyTaskEditLifecycle, deleteTaskWithReferences, reconcileTaskGoalLinks, transitionTaskLifecycle } from './domain/tasks/operations';
 import { defaultAISettings } from './services/aiClient';
 import { isAuthenticatedPath, isKnownAuthenticatedEntryPath, legacyRouteRedirect, safeAuthenticatedNext } from './lib/appRoutes';
 
@@ -116,8 +116,6 @@ function isDeadlinePressureTask(task: Task): boolean {
 
 
 function normalizeTaskInput(input: TaskInput): TaskInput {
-  const lifecycleStatus = input.progress >= 100 ? 'completed' : input.lifecycleStatus;
-
   return {
     title: input.title,
     description: input.description,
@@ -139,8 +137,8 @@ function normalizeTaskInput(input: TaskInput): TaskInput {
     plannerTaskId: input.plannerTaskId,
     plannerLocked: input.plannerLocked,
     activityType: normalizeActivityType(input.activityType),
-    lifecycleStatus,
-    completedAt: lifecycleStatus === 'completed' ? input.completedAt : undefined,
+    lifecycleStatus: input.lifecycleStatus,
+    completedAt: input.lifecycleStatus === 'completed' ? input.completedAt : undefined,
   };
 }
 
@@ -154,7 +152,7 @@ function normalizeStoredTask(task: LegacyTask): Task {
 
   return {
     id: task.id || crypto.randomUUID(),
-    title: task.title || '未命名项目',
+    title: task.title || '未命名任务',
     description: task.description || undefined,
     importance: isCurrentSchema ? clampImportance(task.importance) : migrateLegacyImportance(task.importance),
     deadline: task.deadline || undefined,
@@ -329,17 +327,18 @@ function createGoal(input: GoalInput): Goal {
 function createTask(input: TaskInput): Task {
   const now = new Date().toISOString();
   const normalizedInput = normalizeTaskInput(input);
-
-  return {
+  const lifecycleStatus = normalizedInput.lifecycleStatus === 'active' && normalizedInput.progress >= 100 ? 'completed' : normalizedInput.lifecycleStatus;
+  const task: Task = {
     ...normalizedInput,
     id: crypto.randomUUID(),
-    completedAt: normalizedInput.lifecycleStatus === 'completed' ? now : undefined,
-    abandonedAt: normalizedInput.lifecycleStatus === 'abandoned' ? now : undefined,
+    completedAt: undefined,
+    abandonedAt: undefined,
     reviewNote: undefined,
     schemaVersion: 3,
     createdAt: now,
     updatedAt: now,
   };
+  return transitionTaskLifecycle(task, lifecycleStatus, now);
 }
 
 
@@ -929,7 +928,7 @@ function AuthenticatedApp() {
     if (editingTask) {
       const previousTask = normalizedTasks.find((task) => task.id === editingTask.id);
       if (!previousTask) return;
-      const nextTask = { ...previousTask, ...normalizedInput, completedAt: normalizedInput.lifecycleStatus === 'completed' ? normalizedInput.completedAt || previousTask.completedAt || now : undefined, abandonedAt: normalizedInput.lifecycleStatus === 'abandoned' ? previousTask.abandonedAt ?? now : previousTask.lifecycleStatus !== normalizedInput.lifecycleStatus ? undefined : previousTask.abandonedAt, updatedAt: now };
+      const nextTask = applyTaskEditLifecycle(previousTask, normalizedInput, now);
       const reconciled = reconcileTaskGoalLinks(normalizedTasks, normalizedGoals, nextTask, previousTask.linkedGoalIds);
       setTasks(reconciled.tasks); setGoals(reconciled.goals);
       recalculateTaskDerivedPressureHistory(reconciled.tasks, `修改任务后重算压力曲线：${normalizedInput.title}`);
@@ -962,7 +961,8 @@ function AuthenticatedApp() {
   function deleteTask(taskId: string) {
     const deletedTask = normalizedTasks.find((task) => task.id === taskId);
     if (!deletedTask || !window.confirm(`永久删除“${deletedTask.title}”？此操作会移除相关目标和前置任务引用。`)) return;
-    const cleaned = deleteTaskWithReferences(normalizedTasks, normalizedGoals, taskId);
+    const now = new Date().toISOString();
+    const cleaned = deleteTaskWithReferences(normalizedTasks, normalizedGoals, taskId, now);
     setTasks(cleaned.tasks); setGoals(cleaned.goals);
     recalculateTaskDerivedPressureHistory(cleaned.tasks, `删除任务后重算压力曲线：${deletedTask.title}`);
   }
