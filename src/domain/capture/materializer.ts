@@ -1,7 +1,9 @@
 import type { Goal, Task } from '../../types/task.js';
 import type { CaptureInterpretation, CaptureMaterializationPlan } from './types.js';
+import { validateCaptureReview } from './review.js';
 
 export function buildCaptureMaterializationPlan(interpretation: CaptureInterpretation, existingTasks: Task[], existingGoals: Goal[], _now = new Date()): CaptureMaterializationPlan {
+  const errors = validateCaptureReview(interpretation); if (errors.length) throw new Error(errors.join(' '));
   const goalTitles = new Set(existingGoals.map((goal) => goal.title.trim().toLocaleLowerCase()));
   const taskTitles = new Set(existingTasks.map((task) => task.title.trim().toLocaleLowerCase()));
   const duplicateWarnings: string[] = [];

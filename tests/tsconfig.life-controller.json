@@ -32,6 +32,7 @@
     "../src/domain/capture/types.ts",
     "../src/domain/capture/parser.ts",
     "../src/domain/capture/materializer.ts",
+    "../src/domain/capture/review.ts",
     "../src/domain/capture/transfer.ts",
     "../src/domain/public/publicRouteTargets.ts",
     "../src/lib/legacySessionTransition.ts",
