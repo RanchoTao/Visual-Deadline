@@ -1,26 +1,25 @@
-import { type ReactElement, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AchievementToast } from './components/AchievementToast';
 import { AuthPanel } from './components/AuthPanel';
 import { GuestImportPanel } from './components/GuestImportPanel';
-import { DesktopShell } from './components/DesktopShell';
 import { HomePage } from './components/HomePage';
 import { LifeMapPage } from './components/LifeMapPage';
-import { MobileShell } from './components/MobileShell';
 import { LogPage } from './components/LogPage';
 import { OnboardingFlow } from './components/OnboardingFlow';
 import { ProfilePage } from './components/ProfilePage';
 import { PrivacyPolicyPage } from './components/PrivacyPolicyPage';
 import { TaskForm } from './components/TaskForm';
-import { SocialPage } from './components/SocialPage';
 import { TaskPage } from './components/TaskPage';
 import { TermsPage } from './components/TermsPage';
+import { PublicHome } from './components/PublicHome';
+import { V2AppShell } from './components/V2AppShell';
 import { useWorkspaceLocalStorage, WorkspaceOwnerProvider } from './hooks/useLocalStorage';
 import { useWorkspaceOwner } from './hooks/useWorkspaceOwner';
 import { useSupabaseAuth } from './hooks/useSupabaseAuth';
 import type { Roadmap } from './types/roadmap';
 import type { VDNotification } from './types/notification';
 import type { BuiltInLifeEventType, LifeEventStore } from './types/lifeController';
-import type { Achievement, AIArtifact, AIArtifactInput, ActivityType, DailyQuest, DailyReview, Goal, GoalInput, LifecycleStatus, LifeOSModule, MobileTab, PressureBreakdown, PressureCalibrationSnapshot, PressureHistoryEventType, PressureHistoryRecord, ReminderSettings, Task, TaskInput, UserProfile } from './types/task';
+import type { Achievement, AIArtifact, AIArtifactInput, ActivityType, DailyQuest, DailyReview, Goal, GoalInput, LifecycleStatus, PressureBreakdown, PressureCalibrationSnapshot, PressureHistoryEventType, PressureHistoryRecord, ReminderSettings, Task, TaskInput, UserProfile } from './types/task';
 import {
   achievementCatalog,
   calculatePressureIndex,
@@ -39,13 +38,14 @@ import {
 } from './utils/taskScoring';
 import { appendPressureHistoryRecord, createPressureHistoryRecord, normalizePressureHistory, replaceTaskDerivedPressureHistory } from './utils/pressureHistory';
 import { sortActiveTasksByProgress } from './utils/taskDerivedState';
-import { createDailyReviewFromQuest, generateDailyQuest } from './utils/dailyQuest';
+import { generateDailyQuest } from './utils/dailyQuest';
 import { deleteCloudLifeEvent, loadCloudData, loadCloudLifeEvents, saveCloudGoals, saveCloudPressureHistory, saveCloudProfile, saveCloudTasks, upsertCloudLifeEvents } from './lib/cloudSync';
 import { assertWorkspaceSessionOwner, browserStorageAdapter, loadValue, mergeAuthenticatedWorkspaceRecords, saveValue, storageKeys, workspaceOnboardingFallback, workspaceOwnerKey } from './storage';
 import { createDefaultLifePreferences, createLifeEvent, deriveLifeState, getLifeEventsForOwner, mergeLifeEvents, planLifeController, setLifeEventsForOwner, undoLatestLifeEvent as removeLatestLifeEvent } from './domain/life-controller';
 import { buildHomeRecommendationComparison } from './domain/execution/homeProjection';
 import { advanceGuestImportState, assertGuestCloudImportRuntimeEnabled, captureGuestImportSource, createGuestImportPreviewFromPending, readPendingGuestImport, validatePendingGuestImportConfirmation, type GuestImportPreview, type PendingGuestImportSnapshot } from './domain/v2/guestImport';
 import { createOwnerScopedUiState, transitionOwnerScopedUiState } from './domain/v2/workspaceUiTransition';
+import { isAuthenticatedPath, legacyRouteRedirect, safeAuthenticatedNext } from './lib/appRoutes';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const WELCOME_BACK_GAP_MS = 2 * 60 * 60 * 1000;
@@ -359,12 +359,11 @@ function App() {
   const authoritativeOwnerKey = workspaceOwner ? workspaceOwnerKey(workspaceOwner) : undefined;
   const currentAuthoritativeOwnerKey = useRef<string | undefined>(authoritativeOwnerKey);
   currentAuthoritativeOwnerKey.current = authoritativeOwnerKey;
-  const [hasChosenGuestMode, setHasChosenGuestMode] = useState(false);
-  const [cloudStatus, setCloudStatus] = useState<string | undefined>();
+  const [, setCloudStatus] = useState<string | undefined>();
   const [cloudToast, setCloudToast] = useState<string | undefined>();
-  const [cloudError, setCloudError] = useState<string | undefined>();
+  const [, setCloudError] = useState<string | undefined>();
   const [lifeEventCloudError, setLifeEventCloudError] = useState<string | undefined>();
-  const [isCloudLoading, setIsCloudLoading] = useState(false);
+  const [, setIsCloudLoading] = useState(false);
   const [isCloudReady, setIsCloudReady] = useState(false);
   const [isLifeEventCloudReady, setIsLifeEventCloudReady] = useState(false);
   const isApplyingCloudData = useRef(false);
@@ -376,7 +375,7 @@ function App() {
   const [achievements, setAchievements, achievementsReady] = useWorkspaceLocalStorage<Achievement[]>(workspaceOwner, storageKeys.achievements, []);
   const [aiArtifacts, setAIArtifacts, aiArtifactsReady] = useWorkspaceLocalStorage<AIArtifact[]>(workspaceOwner, storageKeys.aiArtifacts, []);
   const [roadmaps, setRoadmaps, roadmapsReady] = useWorkspaceLocalStorage<Roadmap[]>(workspaceOwner, storageKeys.roadmaps, []);
-  const [notifications, setNotifications, notificationsReady] = useWorkspaceLocalStorage<VDNotification[]>(workspaceOwner, storageKeys.notifications, [{ id: 'notification-ia', type: 'SYSTEM', title: '消息中心已启用', summary: '周报、风险提醒与系统建议将统一在这里送达。', content: 'VD 的后台分析结果会写入消息中心，不再占用首页的行动空间。', isRead: false, createdAt: new Date().toISOString() }]);
+  const [, , notificationsReady] = useWorkspaceLocalStorage<VDNotification[]>(workspaceOwner, storageKeys.notifications, [{ id: 'notification-ia', type: 'SYSTEM', title: '消息中心已启用', summary: '周报、风险提醒与系统建议将统一在这里送达。', content: 'VD 的后台分析结果会写入消息中心，不再占用首页的行动空间。', isRead: false, createdAt: new Date().toISOString() }]);
   const [profile, setProfile, profileReady] = useWorkspaceLocalStorage<UserProfile>(workspaceOwner, storageKeys.profile, defaultProfile);
   const [socialNodes, setSocialNodes, socialNodesReady] = useWorkspaceLocalStorage<unknown[]>(workspaceOwner, storageKeys.socialNodes, []);
   const [socialLayoutVersion, setSocialLayoutVersion, socialLayoutReady] = useWorkspaceLocalStorage<number>(workspaceOwner, storageKeys.socialLayoutVersion, 0);
@@ -386,13 +385,11 @@ function App() {
   const [pressureCalibration, setPressureCalibration, pressureCalibrationReady] = useWorkspaceLocalStorage<PressureCalibrationSnapshot | null>(workspaceOwner, storageKeys.pressureCalibration, null);
   const [pressureHistory, setPressureHistory, pressureHistoryReady] = useWorkspaceLocalStorage<PressureHistoryRecord[]>(workspaceOwner, storageKeys.pressureHistory, []);
   const [storedDailyQuest, setStoredDailyQuest, dailyQuestReady] = useWorkspaceLocalStorage<DailyQuest | null>(workspaceOwner, storageKeys.dailyQuest, null);
-  const [dailyReview, setDailyReview, dailyReviewReady] = useWorkspaceLocalStorage<DailyReview | null>(workspaceOwner, storageKeys.dailyReview, null);
-  const [reminderSettings, setReminderSettings, reminderSettingsReady] = useWorkspaceLocalStorage<ReminderSettings>(workspaceOwner, storageKeys.reminderSettings, defaultReminderSettings);
+  const [dailyReview, , dailyReviewReady] = useWorkspaceLocalStorage<DailyReview | null>(workspaceOwner, storageKeys.dailyReview, null);
+  const [, , reminderSettingsReady] = useWorkspaceLocalStorage<ReminderSettings>(workspaceOwner, storageKeys.reminderSettings, defaultReminderSettings);
   const [lifeEventsByOwner, setLifeEventsByOwner, lifeEventsReady] = useWorkspaceLocalStorage<LifeEventStore>(workspaceOwner, storageKeys.lifeEventsByOwner, {});
   const isWorkspaceReady = isWorkspaceOwnerReady && [tasksReady, goalsReady, achievementsReady, aiArtifactsReady, roadmapsReady, notificationsReady, profileReady, socialNodesReady, socialLayoutReady, onboardingReady, baselinePressureReady, pressureCalibrationReady, pressureHistoryReady, dailyQuestReady, dailyReviewReady, reminderSettingsReady, lifeEventsReady].every(Boolean);
-  const [activeModule, setActiveModule] = useState<LifeOSModule>('home');
-  const [activeMobileTab, setActiveMobileTab] = useState<MobileTab>('today');
-  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
+  const [, setViewportWidth] = useState(() => window.innerWidth);
   const [isRecalibrationOpen, setIsRecalibrationOpen] = useState(false);
   const [recalibrationPressure, setRecalibrationPressure] = useState(legacyReferencePressure);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -459,11 +456,9 @@ function App() {
   const lifeState = useMemo(() => deriveLifeState(lifeEvents, new Date(pressureClock), lifePreferences.timezone), [lifeEvents, lifePreferences.timezone, pressureClock]);
   const lifePlan = useMemo(() => planLifeController({ currentTime: new Date(pressureClock), lifeState, lifePreferences, availableTasks: [] }), [lifePreferences, lifeState, pressureClock]);
 
-  const syncStateLabel = cloudError || cloudStatus || (session ? (isCloudReady ? '云端已连接，数据在后台同步。' : '正在建立云端连接…') : '本地模式运行，登录后可启用云同步。');
   const lifeEventSyncStatus = session
     ? (lifeEventCloudError || (isLifeEventCloudReady ? '生活记录已启用用户隔离云同步。' : '生活记录保存在本机，正在检查云端 migration。'))
     : '访客记录仅保存在当前浏览器。';
-  const isMobileViewport = viewportWidth < 768;
 
   useEffect(() => {
     if (!isWorkspaceReady || !authoritativeOwnerKey || recalibrationOwnerKey.current === authoritativeOwnerKey) return;
@@ -894,13 +889,6 @@ function App() {
     if (hasConsecutiveDateRun(over100Dates, 3)) unlockAchievement('pressure-cooker');
   }, [isWorkspaceReady, normalizedPressureHistory, onboardingComplete]);
 
-  useEffect(() => {
-    if (!isWorkspaceReady) return;
-    if (!onboardingComplete) return;
-    if (activeModule === 'social') unlockAchievement('social-graph-opened');
-    if (activeModule === 'map') unlockAchievement('life-tree-opened');
-  }, [activeModule, isWorkspaceReady, onboardingComplete]);
-
   function savePressureCalibration(referencePressure: number, sourceTasks = normalizedTasks) {
     if (!isWorkspaceReady) return;
     const calibration = createPressureCalibration(referencePressure, sourceTasks, 0, new Date().toISOString());
@@ -1057,45 +1045,6 @@ function App() {
     setIsFormOpen(true);
   }
 
-  function completeDailyQuestItem(itemId: string) {
-    const nextQuest: DailyQuest = {
-      ...dailyQuest,
-      items: dailyQuest.items.map((item) => item.id === itemId ? { ...item, currentValue: item.targetValue, status: 'done' } : item),
-    };
-    const completedCount = nextQuest.items.filter((item) => item.status === 'done').length;
-    nextQuest.completionRate = nextQuest.items.length === 0 ? 0 : Math.round((completedCount / nextQuest.items.length) * 100);
-    nextQuest.systemCorrection = {
-      ...nextQuest.systemCorrection,
-      nextDayAdjustment: nextQuest.items.filter((item) => item.status !== 'done'),
-      message: nextQuest.completionRate >= 80 ? '连续完成良好，任务等级可适度提升。' : nextQuest.systemCorrection.message,
-    };
-    setStoredDailyQuest(nextQuest);
-  }
-
-  function openDailyReview() {
-    const review = createDailyReviewFromQuest(dailyQuest);
-    setDailyReview(review);
-    setCloudToast(`今日总结已生成：完成 ${review.completedCount}/${review.totalCount}。`);
-  }
-
-  async function requestReminderPermission() {
-    if (typeof window === 'undefined' || !('Notification' in window)) {
-      setReminderSettings({ ...defaultReminderSettings, ...reminderSettings, reminderEnabled: false, notificationPermission: 'unsupported' });
-      setCloudToast('当前环境不支持浏览器通知，已降级为站内提醒。');
-      return;
-    }
-
-    const permission = await Notification.requestPermission();
-    if (permission === 'granted') {
-      setReminderSettings({ ...defaultReminderSettings, ...reminderSettings, reminderEnabled: true, notificationPermission: 'granted' });
-      setCloudToast('提醒已开启');
-      return;
-    }
-
-    setReminderSettings({ ...defaultReminderSettings, ...reminderSettings, reminderEnabled: false, notificationPermission: 'denied' });
-    setCloudToast('提醒权限未开启，你仍然可以使用站内提醒。');
-  }
-
   const taskFormOverlay = isFormOpen ? (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/20 px-4 py-6 backdrop-blur-sm">
       <section className="max-h-[calc(100vh-3rem)] w-full max-w-5xl overflow-y-auto rounded-[2rem] border border-white/80 bg-white/90 p-5 shadow-2xl shadow-slate-300/60">
@@ -1140,10 +1089,31 @@ function App() {
     return () => window.removeEventListener('popstate', syncPublicPath);
   }, []);
 
-  function navigateHome() {
-    window.history.pushState({}, '', '/');
-    setPublicPath('/');
+  function navigate(path: string) {
+    window.history.pushState({}, '', path);
+    setPublicPath(window.location.pathname);
   }
+
+  const navigateHome = () => navigate('/');
+
+  useEffect(() => {
+    const legacyPath = legacyRouteRedirect(publicPath);
+    if (legacyPath) {
+      navigate(legacyPath);
+      return;
+    }
+    if (publicPath === '/auth/callback') {
+      if (!isAuthLoading) navigate(session ? '/app' : '/login');
+      return;
+    }
+    if (isAuthenticatedPath(publicPath) && !isAuthLoading && !session) {
+      navigate(`/login?next=${encodeURIComponent(`${publicPath}${window.location.search}`)}`);
+      return;
+    }
+    if (publicPath === '/login' && session) {
+      navigate(safeAuthenticatedNext(new URLSearchParams(window.location.search).get('next')));
+    }
+  }, [isAuthLoading, publicPath, session]);
 
   const taskModule = (
     <TaskPage
@@ -1160,16 +1130,6 @@ function App() {
 
   const profileModule = <ProfilePage profile={normalizedProfile} onProfileChange={setProfile} isEmailVerified={Boolean(session?.user.email_confirmed_at)} />;
 
-  const moduleContent: Record<LifeOSModule, ReactElement> = {
-    home: <HomePage recommendedTasks={recommendedTasks} recommendationComparison={homeRecommendationComparison} activeTasks={activeTasks} onOpenTasks={() => setActiveModule('task')} lifeState={lifeState} lifePlan={lifePlan} lifeEvents={lifeEvents} lifePreferences={lifePreferences} onRecordLifeEvent={recordLifeEvent} onUndoLifeEvent={undoLatestLifeEvent} lifeEventSyncStatus={lifeEventSyncStatus} />,
-    task: taskModule,
-    map: <LifeMapPage goals={normalizedGoals} tasks={normalizedTasks} roadmaps={roadmaps} onSaveRoadmap={(roadmap) => setRoadmaps((current) => [roadmap, ...current])} onSaveGoal={saveGoal} onDeleteGoal={deleteGoal} onAddTasks={addTaskDrafts} onCompleteTask={(task) => archiveTask(task, 'completed')} onRoadmapGenerated={(artifact) => { saveAIArtifact(artifact); unlockAchievement('roadmap-generated'); }} />,
-    social: <SocialPage storedNodes={socialNodes} setStoredNodes={setSocialNodes} layoutVersion={socialLayoutVersion} setLayoutVersion={setSocialLayoutVersion} />,
-    log: <LogPage tasks={normalizedTasks} goals={normalizedGoals} profile={normalizedProfile} pressure={pressure} pressureHistory={normalizedPressureHistory} achievements={normalizedAchievements} aiArtifacts={normalizedAIArtifacts} onRecalculatePressureHistory={() => recalculateTaskDerivedPressureHistory()} onRecalibrate={openRecalibration} onAIReportGenerated={(artifact) => { saveAIArtifact(artifact); unlockAchievement('ai-report-generated'); }} onDelete={deleteTask} onEdit={startEditing} onRestore={restoreTask} onReviewNoteChange={updateReviewNote} />,
-    me: profileModule,
-  };
-
-
   if (publicPath === '/privacy' || publicPath === '/privacy.html') {
     return <PrivacyPolicyPage onBack={navigateHome} />;
   }
@@ -1178,17 +1138,43 @@ function App() {
     return <TermsPage onBack={navigateHome} />;
   }
 
-  if (!session && !hasChosenGuestMode) {
-    return <AuthPanel isConfigured={isSupabaseConfigured} isLoading={isAuthLoading} error={authError} status={authStatus} authDebugInfo={authDebugInfo} featureFlags={authFeatureFlags} onSignIn={(email, password) => { capturePreAuthGuestSource(); return signIn(email, password); }} onSignUp={(email, password) => { capturePreAuthGuestSource(); return signUp(email, password); }} onResendVerification={resendVerificationEmail} onVerifyEmailOtp={verifyEmailOtp} onOAuth={(provider) => { capturePreAuthGuestSource(); return signInWithOAuth(provider); }} onRequestPhoneOtp={(phone) => { capturePreAuthGuestSource(); return requestPhoneOtp(phone); }} onVerifyPhoneOtp={(phone, token) => { capturePreAuthGuestSource(); return verifyPhoneOtp(phone, token); }} phoneResendRemainingMs={phoneResendRemainingMs} emailResendRemainingMs={emailResendRemainingMs} onContinueAsGuest={() => { capturePreAuthGuestSource(); setHasChosenGuestMode(true); }} />;
+  if (publicPath === '/') {
+    return <PublicHome isAuthenticated={Boolean(session)} onLogin={() => navigate('/login')} onEnter={() => navigate(session ? '/app' : '/login?next=%2Fapp')} />;
+  }
+
+  if (publicPath === '/auth/callback') {
+    return <main className="flex min-h-screen items-center justify-center bg-[#fbfbfa] px-6 text-center text-sm font-medium text-zinc-500">正在完成安全登录…</main>;
+  }
+
+  if (publicPath === '/login') {
+    return <AuthPanel isConfigured={isSupabaseConfigured} isLoading={isAuthLoading} error={authError} status={authStatus} authDebugInfo={authDebugInfo} featureFlags={authFeatureFlags} onSignIn={(email, password) => { capturePreAuthGuestSource(); return signIn(email, password); }} onSignUp={(email, password) => { capturePreAuthGuestSource(); return signUp(email, password); }} onResendVerification={resendVerificationEmail} onVerifyEmailOtp={verifyEmailOtp} onOAuth={(provider) => { capturePreAuthGuestSource(); return signInWithOAuth(provider); }} onRequestPhoneOtp={(phone) => { capturePreAuthGuestSource(); return requestPhoneOtp(phone); }} onVerifyPhoneOtp={(phone, token) => { capturePreAuthGuestSource(); return verifyPhoneOtp(phone, token); }} phoneResendRemainingMs={phoneResendRemainingMs} emailResendRemainingMs={emailResendRemainingMs} />;
+  }
+
+  if (isAuthenticatedPath(publicPath) && !session) {
+    return <main className="flex min-h-screen items-center justify-center bg-[#fbfbfa] px-6 text-center text-sm font-medium text-zinc-500">正在前往登录…</main>;
   }
 
   if (!isWorkspaceReady) {
     return <main className="flex min-h-screen items-center justify-center bg-slate-50 px-6 text-center text-sm font-medium text-slate-500">正在打开隔离工作区…</main>;
   }
 
+  const appContent = publicPath === '/app'
+    ? <HomePage recommendedTasks={recommendedTasks} recommendationComparison={homeRecommendationComparison} activeTasks={activeTasks} onOpenTasks={() => navigate('/app/tasks')} lifeState={lifeState} lifePlan={lifePlan} lifeEvents={lifeEvents} lifePreferences={lifePreferences} onRecordLifeEvent={recordLifeEvent} onUndoLifeEvent={undoLatestLifeEvent} lifeEventSyncStatus={lifeEventSyncStatus} />
+    : publicPath === '/app/tasks'
+      ? taskModule
+      : publicPath === '/app/plan'
+        ? <LifeMapPage goals={normalizedGoals} tasks={normalizedTasks} roadmaps={roadmaps} onSaveRoadmap={(roadmap) => setRoadmaps((current) => [roadmap, ...current])} onSaveGoal={saveGoal} onDeleteGoal={deleteGoal} onAddTasks={addTaskDrafts} onCompleteTask={(task) => archiveTask(task, 'completed')} onRoadmapGenerated={(artifact) => { saveAIArtifact(artifact); unlockAchievement('roadmap-generated'); }} />
+        : publicPath === '/app/review'
+          ? <LogPage tasks={normalizedTasks} goals={normalizedGoals} profile={normalizedProfile} pressure={pressure} pressureHistory={normalizedPressureHistory} achievements={normalizedAchievements} aiArtifacts={normalizedAIArtifacts} onRecalculatePressureHistory={() => recalculateTaskDerivedPressureHistory()} onRecalibrate={openRecalibration} onAIReportGenerated={(artifact) => { saveAIArtifact(artifact); unlockAchievement('ai-report-generated'); }} onDelete={deleteTask} onEdit={startEditing} onRestore={restoreTask} onReviewNoteChange={updateReviewNote} />
+          : publicPath === '/settings'
+            ? profileModule
+            : publicPath === '/billing'
+              ? <section className="max-w-2xl rounded-2xl border border-zinc-200 bg-white p-6"><p className="text-xs font-semibold tracking-[.16em] text-zinc-400">ACCOUNT</p><h1 className="mt-2 text-2xl font-semibold tracking-tight">Subscription & billing</h1><p className="mt-3 text-sm leading-6 text-zinc-500">Billing is not enabled in this environment. Your account and workspace are unchanged.</p></section>
+              : <section className="max-w-2xl rounded-2xl border border-zinc-200 bg-white p-6"><p className="text-xs font-semibold tracking-[.16em] text-zinc-400">OPS</p><h1 className="mt-2 text-2xl font-semibold tracking-tight">Operate competing work.</h1><p className="mt-3 text-sm leading-6 text-zinc-500">Capacity, time, attention, energy, conflicts, and rolling replanning will arrive here as the OPS migration becomes available.</p></section>;
+
   return (
     <WorkspaceOwnerProvider owner={workspaceOwner}>
-    <div className={isMobileViewport ? "min-h-screen overflow-x-hidden bg-slate-950" : "min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top_left,#dbeafe,transparent_36%),radial-gradient(circle_at_bottom_right,#e2e8f0,transparent_34%),linear-gradient(180deg,#f8fafc,#eef2f7)] px-3 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-3 text-slate-900 md:px-8 md:py-8"}>
+    <div className="min-h-screen bg-[#fafafa] text-zinc-900">
       {!onboardingComplete ? <OnboardingFlow onComplete={completeOnboarding} /> : null}
       {taskFormOverlay}
       {isRecalibrationOpen ? (
@@ -1240,41 +1226,9 @@ function App() {
         </aside>
       ) : null}
 
-      {isMobileViewport ? (
-        <MobileShell
-          activeTab={activeMobileTab}
-          quest={dailyQuest}
-          reminderSettings={{ ...defaultReminderSettings, ...reminderSettings }}
-          taskModule={taskModule}
-          profileModule={profileModule}
-          onTabChange={setActiveMobileTab}
-          onDesktopModuleChange={setActiveModule}
-          onCompleteQuestItem={completeDailyQuestItem}
-          onOpenReview={openDailyReview}
-          onRequestReminder={requestReminderPermission}
-          lifeState={lifeState}
-          lifePlan={lifePlan}
-          lifeEvents={lifeEvents}
-          lifePreferences={lifePreferences}
-          onRecordLifeEvent={recordLifeEvent}
-          onUndoLifeEvent={undoLatestLifeEvent}
-          lifeEventSyncStatus={lifeEventSyncStatus}
-        />
-      ) : (
-        <DesktopShell
-          activeModule={activeModule}
-          profile={normalizedProfile}
-          isSignedIn={Boolean(session)}
-          isCloudLoading={isCloudLoading}
-          syncStateLabel={syncStateLabel}
-          content={moduleContent[activeModule]}
-          onModuleChange={setActiveModule}
-          onSignIn={() => setHasChosenGuestMode(false)}
-          onSignOut={signOut}
-          notifications={notifications}
-          onMarkNotificationRead={(id) => setNotifications((current) => current.map((item) => item.id === id ? { ...item, isRead: true } : item))}
-        />
-      )}
+      <V2AppShell path={publicPath} onNavigate={navigate} onSignOut={() => { void signOut(); navigate('/'); }} onNotifications={() => setCloudToast('Notifications will appear here when they are ready.')}>
+        {appContent}
+      </V2AppShell>
     </div>
     </WorkspaceOwnerProvider>
   );

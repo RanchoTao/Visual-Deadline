@@ -27,6 +27,7 @@
     "../src/lib/authPortalState.ts",
     "../src/lib/identityClientConfig.ts",
     "../src/lib/authCallback.ts",
+    "../src/lib/appRoutes.ts",
     "../src/lib/legacySessionTransition.ts",
     "./v2RepositoryContracts.compile.ts"
   ]
