@@ -4,6 +4,7 @@ import test from 'node:test';
 
 const routes = await import('./.compiled/src/lib/appRoutes.js');
 const capture = await import('./.compiled/src/domain/public/captureDraft.js');
+const publicRouteTargets = await import('./.compiled/src/domain/public/publicRouteTargets.js');
 const source = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 
 test('the app route contract protects only private workspace and account surfaces', () => {
@@ -13,6 +14,8 @@ test('the app route contract protects only private workspace and account surface
   assert.equal(routes.safeAuthenticatedNext('//attacker.invalid'), '/app');
   assert.equal(routes.safeAuthenticatedNext('/privacy'), '/app');
   assert.equal(routes.legacyRouteRedirect('/map'), '/app/plan');
+  assert.equal(routes.isKnownAuthenticatedEntryPath('/login'), true);
+  assert.equal(routes.isKnownAuthenticatedEntryPath('/definitely-not-a-route'), false);
 });
 
 test('the public entry is a localized multimodal composer, not a planning or marketing demo', () => {
@@ -24,6 +27,8 @@ test('the public entry is a localized multimodal composer, not a planning or mar
   assert.match(home, /Find direction\./);
   assert.match(home, /Move with clarity\./);
   assert.match(home, /min-h-\[clamp\(34rem,64vh,44rem\)\]/);
+  assert.match(home, /onClick=\{onLogin\}/);
+  assert.equal(home.includes("onSubmit({ text: '', attachments: [], links: [] })"), false);
   assert.equal(home.includes('min-h-[calc(100vh'), false);
   assert.match(composer, /type="file"/);
   assert.match(composer, /MediaRecorder/);
@@ -47,9 +52,53 @@ test('public pages bypass authenticated initialization and expose complete local
   assert.match(publicSite, /<Mail/);
   assert.match(publicSite, /Coming Soon/);
   assert.match(publicSite, /stashPendingCaptureDraft/);
+  assert.match(publicSite, /footerLinkTypography = 'whitespace-nowrap text-left text-sm font-normal leading-\[1\.75\] tracking-normal/);
+  assert.match(publicSite, /footerHeadingTypography = 'text-sm font-semibold leading-\[1\.5\] tracking-normal/);
+  assert.match(publicSite, /Visual Deadline 移动端/);
+  assert.equal(publicSite.includes('Visual Deadline 移动端 · 即将推出'), false);
+  assert.match(publicSite, /text-xs font-normal leading-5 tracking-normal text-zinc-400/);
   assert.equal(publicSite.includes('SOC2'), false);
   assert.equal(publicSite.includes('ISO'), false);
   assert.equal(publicSite.includes('ICP备'), false);
+});
+
+test('public routing preserves canonical legal documents and never sends unknown paths into OPS', () => {
+  const app = source('src/App.tsx');
+  const publicSite = source('src/components/PublicSite.tsx');
+  assert.match(publicSite, /import \{ PrivacyPolicyPage \} from '.\/PrivacyPolicyPage';/);
+  assert.match(publicSite, /import \{ TermsPage \} from '.\/TermsPage';/);
+  assert.match(publicSite, /path === '\/privacy' \|\| path === '\/privacy\.html'.*<PrivacyPolicyPage/s);
+  assert.match(publicSite, /path === '\/terms'.*<TermsPage/s);
+  assert.match(app, /if \(!isKnownAuthenticatedEntryPath\(path\)\) return <PublicNotFound onNavigate=\{navigate\} \/>;/);
+  assert.equal(app.indexOf('if (!isKnownAuthenticatedEntryPath(path))') < app.indexOf('return <AuthenticatedApp />'), true);
+  assert.equal(app.includes("publicPath === '/definitely-not-a-route'"), false);
+});
+
+test('public auth awareness is lazy, safe without configuration, and preserves the correct capture destination', () => {
+  const publicSite = source('src/components/PublicSite.tsx');
+  assert.match(publicSite, /if \(!supabase\.isConfigured\) return/);
+  assert.match(publicSite, /supabase\.auth\.getSession\(\)/);
+  assert.match(publicSite, /isAuthenticated=\{isAuthenticated\}/);
+  assert.equal(publicRouteTargets.publicAccountTarget(true), '/app');
+  assert.equal(publicRouteTargets.publicAccountTarget(false), '/login');
+  assert.equal(publicRouteTargets.publicCaptureTarget(true), '/app');
+  assert.equal(publicRouteTargets.publicCaptureTarget(false), '/login?next=%2Fapp');
+});
+
+test('public recorder cleanup releases the active stream and suppresses teardown drafts', () => {
+  const composer = source('src/components/CaptureComposer.tsx');
+  assert.match(composer, /const mediaStream = useRef<MediaStream/);
+  assert.match(composer, /discardActiveRecording\(\);/);
+  assert.match(composer, /activeRecorder\.onstop = null/);
+  assert.match(composer, /stream\?\.getTracks\(\)\.forEach\(\(track\) => track\.stop\(\)\)/);
+  assert.match(composer, /if \(isUnmounted\.current\) return;/);
+  assert.match(composer, /requestId !== recordingRequestId\.current/);
+});
+
+test('public branding links to the active Visual Deadline repository', () => {
+  const branding = source('src/constants/branding.ts');
+  assert.match(branding, /githubRepo: 'RanchoTao\/Visual-Deadline'/);
+  assert.match(branding, /githubUrl: 'https:\/\/github\.com\/RanchoTao\/Visual-Deadline'/);
 });
 
 test('the app shell has the frozen five-page primary navigation and global account controls', () => {

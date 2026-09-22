@@ -12,7 +12,7 @@ import { TaskForm } from './components/TaskForm';
 import { TaskPage } from './components/TaskPage';
 import { TermsPage } from './components/TermsPage';
 import { V2AppShell } from './components/V2AppShell';
-import { PublicSite, isPublicSurface } from './components/PublicSite';
+import { PublicNotFound, PublicSite, isPublicSurface } from './components/PublicSite';
 import { useWorkspaceLocalStorage, WorkspaceOwnerProvider } from './hooks/useLocalStorage';
 import { useWorkspaceOwner } from './hooks/useWorkspaceOwner';
 import { useSupabaseAuth } from './hooks/useSupabaseAuth';
@@ -45,7 +45,7 @@ import { createDefaultLifePreferences, createLifeEvent, deriveLifeState, getLife
 import { buildHomeRecommendationComparison } from './domain/execution/homeProjection';
 import { advanceGuestImportState, assertGuestCloudImportRuntimeEnabled, captureGuestImportSource, createGuestImportPreviewFromPending, readPendingGuestImport, validatePendingGuestImportConfirmation, type GuestImportPreview, type PendingGuestImportSnapshot } from './domain/v2/guestImport';
 import { createOwnerScopedUiState, transitionOwnerScopedUiState } from './domain/v2/workspaceUiTransition';
-import { isAuthenticatedPath, legacyRouteRedirect, safeAuthenticatedNext } from './lib/appRoutes';
+import { isAuthenticatedPath, isKnownAuthenticatedEntryPath, legacyRouteRedirect, safeAuthenticatedNext } from './lib/appRoutes';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const WELCOME_BACK_GAP_MS = 2 * 60 * 60 * 1000;
@@ -1176,6 +1176,7 @@ function AuthenticatedApp() {
   return (
     <WorkspaceOwnerProvider owner={workspaceOwner}>
     <div className="min-h-screen bg-[#fafafa] text-zinc-900">
+      {/* Temporary compatibility only; PR I replaces this with Capture-first onboarding. */}
       {!onboardingComplete ? <OnboardingFlow onComplete={completeOnboarding} /> : null}
       {taskFormOverlay}
       {isRecalibrationOpen ? (
@@ -1255,6 +1256,7 @@ function App() {
   }
 
   if (isPublicSurface(path)) return <PublicSite path={path} onNavigate={navigate} />;
+  if (!isKnownAuthenticatedEntryPath(path)) return <PublicNotFound onNavigate={navigate} />;
   return <AuthenticatedApp />;
 }
 

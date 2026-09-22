@@ -213,8 +213,8 @@ A fuller structure proposal is available in [`docs/REPOSITORY_STRUCTURE.md`](./d
 ### Clone and install
 
 ```bash
-git clone https://github.com/<your-org-or-username>/Visualized-Deadline.git
-cd Visualized-Deadline
+git clone https://github.com/RanchoTao/Visual-Deadline.git
+cd Visual-Deadline
 npm install
 ```
 

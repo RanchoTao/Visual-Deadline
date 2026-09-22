@@ -4,8 +4,8 @@ export const branding = {
   tagline: '可视：人生操作系统',
   version: '2.0.0',
   author: 'Rancho Tao',
-  githubRepo: 'RanchoTao/Visualized-Deadline',
-  githubUrl: 'https://github.com/RanchoTao/Visualized-Deadline',
+  githubRepo: 'RanchoTao/Visual-Deadline',
+  githubUrl: 'https://github.com/RanchoTao/Visual-Deadline',
   githubButtonLabel: 'GitHub',
 } as const;
 

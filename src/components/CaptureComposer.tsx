@@ -18,12 +18,20 @@ export function CaptureComposer({ placeholder, submitLabel, labels, onSubmit }: 
   const imageInput = useRef<HTMLInputElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const recorder = useRef<MediaRecorder | undefined>(undefined);
+  const mediaStream = useRef<MediaStream | undefined>(undefined);
+  const recordingRequestId = useRef(0);
   const recordingStartedAt = useRef(0);
   const currentAttachments = useRef<CaptureAttachment[]>([]);
+  const isUnmounted = useRef(false);
 
   useEffect(() => {
+    isUnmounted.current = false;
     setVoiceSupported(typeof window !== 'undefined' && Boolean(navigator.mediaDevices?.getUserMedia) && typeof MediaRecorder !== 'undefined');
-    return () => currentAttachments.current.forEach((attachment) => { if (attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl); });
+    return () => {
+      isUnmounted.current = true;
+      discardActiveRecording();
+      currentAttachments.current.forEach((attachment) => { if (attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl); });
+    };
   }, []);
 
   useEffect(() => { currentAttachments.current = draft.attachments; }, [draft.attachments]);
@@ -54,25 +62,63 @@ export function CaptureComposer({ placeholder, submitLabel, labels, onSubmit }: 
     setUrlInput(''); setNotice(undefined);
   }
 
+  function releaseStream(stream = mediaStream.current) {
+    stream?.getTracks().forEach((track) => track.stop());
+    if (mediaStream.current === stream) mediaStream.current = undefined;
+  }
+
+  function discardActiveRecording() {
+    recordingRequestId.current += 1;
+    const activeRecorder = recorder.current;
+    if (activeRecorder) {
+      activeRecorder.onstop = null;
+      if (activeRecorder.state !== 'inactive') {
+        try { activeRecorder.stop(); } catch { /* Recorder has already stopped. */ }
+      }
+    }
+    recorder.current = undefined;
+    releaseStream();
+    if (!isUnmounted.current) setIsRecording(false);
+  }
+
   async function startVoiceRecording() {
+    discardActiveRecording();
+    const requestId = recordingRequestId.current + 1;
+    recordingRequestId.current = requestId;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (isUnmounted.current || requestId !== recordingRequestId.current) {
+        releaseStream(stream);
+        return;
+      }
       const chunks: BlobPart[] = [];
       const nextRecorder = new MediaRecorder(stream);
+      mediaStream.current = stream;
       recorder.current = nextRecorder;
       recordingStartedAt.current = Date.now();
       nextRecorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
       nextRecorder.onstop = () => {
-        stream.getTracks().forEach((track) => track.stop());
+        if (recorder.current === nextRecorder) recorder.current = undefined;
+        releaseStream(stream);
+        if (isUnmounted.current) return;
         const blob = new Blob(chunks, { type: nextRecorder.mimeType || 'audio/webm' });
         setDraft((current) => ({ ...current, audio: { blob, durationSeconds: Math.max(1, Math.round((Date.now() - recordingStartedAt.current) / 1000)) } }));
         setIsRecording(false);
       };
       nextRecorder.start(); setIsRecording(true); setNotice(undefined);
-    } catch { setNotice(labels.microphoneUnavailable); }
+    } catch { if (!isUnmounted.current) setNotice(labels.microphoneUnavailable); }
   }
 
-  function stopVoiceRecording() { recorder.current?.stop(); }
+  function stopVoiceRecording() {
+    const activeRecorder = recorder.current;
+    if (!activeRecorder) return;
+    if (activeRecorder.state === 'inactive') {
+      releaseStream();
+      recorder.current = undefined;
+      return;
+    }
+    try { activeRecorder.stop(); } catch { releaseStream(); recorder.current = undefined; }
+  }
   const hasDraft = Boolean(draft.text.trim() || draft.attachments.length || draft.links.length || draft.audio);
 
   return <form className="mt-10 w-full text-left sm:mt-12" onSubmit={(event) => { event.preventDefault(); if (hasDraft) onSubmit({ ...draft, text: draft.text.trim() }); }}>
