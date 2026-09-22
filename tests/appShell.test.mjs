@@ -19,6 +19,12 @@ test('the public entry is a localized multimodal composer, not a planning or mar
   const home = source('src/components/PublicHome.tsx');
   const composer = source('src/components/CaptureComposer.tsx');
   assert.match(home, /CaptureComposer/);
+  assert.match(home, /明确方向，/);
+  assert.match(home, /有序前行。/);
+  assert.match(home, /Find direction\./);
+  assert.match(home, /Move with clarity\./);
+  assert.match(home, /min-h-\[clamp\(34rem,64vh,44rem\)\]/);
+  assert.equal(home.includes('min-h-[calc(100vh'), false);
   assert.match(composer, /type="file"/);
   assert.match(composer, /MediaRecorder/);
   assert.match(composer, /URL\.createObjectURL/);
@@ -36,6 +42,9 @@ test('public pages bypass authenticated initialization and expose complete local
   assert.match(publicSite, /navigator\.language/);
   for (const path of ['/research', '/security', '/report-security', '/transparency', '/careers', '/contact', '/docs', '/pricing']) assert.match(publicSite, new RegExp(`'${path}'`));
   for (const footerGroup of ['PRODUCT', 'RESEARCH', 'LEGAL & SECURITY', 'JOIN US']) assert.match(publicSite, new RegExp(footerGroup));
+  assert.match(publicSite, /max-w-\[1280px\]/);
+  assert.match(publicSite, /<FaGithub/);
+  assert.match(publicSite, /<Mail/);
   assert.match(publicSite, /Coming Soon/);
   assert.match(publicSite, /stashPendingCaptureDraft/);
   assert.equal(publicSite.includes('SOC2'), false);

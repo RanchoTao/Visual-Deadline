@@ -19,8 +19,10 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
     "@xyflow/react": "file:src/vendor/xyflow-react",
+    "lucide-react": "^1.47.0",
     "react": "latest",
-    "react-dom": "latest"
+    "react-dom": "latest",
+    "react-icons": "^5.7.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "latest",
