@@ -54,9 +54,11 @@ test('public pages bypass authenticated initialization and expose complete local
   assert.match(publicSite, /stashPendingCaptureDraft/);
   assert.match(publicSite, /footerLinkTypography = 'whitespace-nowrap text-left text-sm font-normal leading-\[1\.75\] tracking-normal/);
   assert.match(publicSite, /footerHeadingTypography = 'text-sm font-semibold leading-\[1\.5\] tracking-normal/);
+  assert.match(publicSite, /footerProductRow = 'inline-flex items-baseline gap-1\.5 whitespace-nowrap'/);
+  assert.match(publicSite, /className=\{`border-0 bg-transparent p-0 \$\{footerLinkTypography\}`\}/);
+  assert.match(publicSite, /text-xs font-normal leading-\[1\.5\] tracking-normal text-zinc-400/);
   assert.match(publicSite, /Visual Deadline 移动端/);
   assert.equal(publicSite.includes('Visual Deadline 移动端 · 即将推出'), false);
-  assert.match(publicSite, /text-xs font-normal leading-5 tracking-normal text-zinc-400/);
   assert.equal(publicSite.includes('SOC2'), false);
   assert.equal(publicSite.includes('ISO'), false);
   assert.equal(publicSite.includes('ICP备'), false);
