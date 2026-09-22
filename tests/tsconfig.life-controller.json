@@ -34,6 +34,7 @@
     "../src/domain/capture/materializer.ts",
     "../src/domain/capture/review.ts",
     "../src/domain/capture/transfer.ts",
+    "../src/domain/tasks/**/*.ts",
     "../src/domain/public/publicRouteTargets.ts",
     "../src/lib/legacySessionTransition.ts",
     "./v2RepositoryContracts.compile.ts"

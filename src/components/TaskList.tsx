@@ -1,117 +1,21 @@
-import { memo, useMemo, useState } from 'react';
-import type { LifecycleStatus, Task } from '../types/task';
-import { formatCountdown, formatDeadline } from '../utils/date';
-import { getActivityTypeLabel, getDisplayProgress, getTaskProgress, getTimeProgress, isProgressAuto } from '../utils/taskScoring';
-import { calculatePressureLevel, getDerivedTaskStatus } from '../utils/taskDerivedState';
-import { ProgressBar } from './ProgressBar';
+import { useState } from 'react';
+import { getBlockedState, getDeadlineState } from '../domain/tasks/operations';
+import type { Goal, LifecycleStatus, Task } from '../types/task';
+import { formatDeadline } from '../utils/date';
+import { getActivityTypeLabel, getLifecycleStatusLabel } from '../utils/taskScoring';
 
-interface TaskListProps {
-  tasks: Task[];
-  onArchive: (task: Task, status: Exclude<LifecycleStatus, 'active'>) => void;
-  onDelete: (taskId: string) => void;
-  onEdit: (task: Task) => void;
+interface TaskListProps { tasks: Task[]; allTasks: Task[]; goals: Goal[]; onArchive: (task: Task, status: Exclude<LifecycleStatus, 'active'>) => void; onRestore: (task: Task) => void; onDelete: (taskId: string) => void; onEdit: (task: Task) => void; }
+const statusTone: Record<LifecycleStatus, string> = { active: 'bg-sky-50 text-sky-700', completed: 'bg-emerald-50 text-emerald-700', abandoned: 'bg-slate-100 text-slate-600' };
+
+export function TaskList({ tasks, allTasks, goals, onArchive, onRestore, onDelete, onEdit }: TaskListProps) {
+  const [detailId, setDetailId] = useState<string>();
+  const detail = tasks.find((task) => task.id === detailId);
+  const goalNames = (task: Task) => (task.linkedGoalIds ?? []).flatMap((id) => goals.find((goal) => goal.id === id)?.title ?? []);
+  const actions = (task: Task) => <div className="flex flex-wrap gap-2"><button type="button" onClick={() => onEdit(task)} className="rounded-lg px-2 py-1 text-xs text-slate-700 ring-1 ring-slate-200">编辑</button>{task.lifecycleStatus === 'active' ? <><button type="button" onClick={() => onArchive(task, 'completed')} className="rounded-lg px-2 py-1 text-xs text-emerald-700 ring-1 ring-emerald-200">完成</button><button type="button" onClick={() => onArchive(task, 'abandoned')} className="rounded-lg px-2 py-1 text-xs text-slate-600 ring-1 ring-slate-200">放弃</button></> : <button type="button" onClick={() => onRestore(task)} className="rounded-lg px-2 py-1 text-xs text-sky-700 ring-1 ring-sky-200">恢复</button>}<button type="button" onClick={() => onDelete(task.id)} className="rounded-lg px-2 py-1 text-xs text-rose-700 ring-1 ring-rose-200">永久删除</button></div>;
+  if (!tasks.length) return <section className="rounded-[2rem] border border-slate-200 bg-white p-8 text-center"><p className="text-lg font-semibold text-slate-800">还没有符合条件的任务。</p><p className="mt-2 text-sm text-slate-500">调整筛选条件，或新建一个任务开始管理。</p></section>;
+  return <section className="rounded-[2rem] border border-slate-200 bg-white p-4 md:p-5">
+    <div className="flex items-center justify-between"><div><p className="text-sm font-semibold text-slate-500">任务工作区</p><h2 className="text-2xl font-semibold text-slate-950">任务列表</h2></div><span className="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-600">{tasks.length} 项</span></div>
+    <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[880px] text-left text-sm"><thead className="border-b border-slate-200 text-xs text-slate-500"><tr><th className="px-2 py-3">任务</th><th className="px-2 py-3">状态</th><th className="px-2 py-3">重要性</th><th className="px-2 py-3">截止</th><th className="px-2 py-3">分类</th><th className="px-2 py-3">进度</th><th className="px-2 py-3">目标 / 依赖</th><th className="px-2 py-3">操作</th></tr></thead><tbody>{tasks.map((task) => { const blocked = getBlockedState(task, allTasks); return <tr key={task.id} className="border-b border-slate-100 align-top"><td className="px-2 py-3"><button type="button" onClick={() => setDetailId(task.id)} className="text-left font-semibold text-slate-900 hover:text-sky-700">{task.title}</button>{task.nextAction ? <p className="mt-1 max-w-xs truncate text-xs text-slate-500">下一步：{task.nextAction}</p> : null}</td><td className="px-2 py-3"><span className={`rounded-full px-2 py-1 text-xs ${statusTone[task.lifecycleStatus]}`}>{getLifecycleStatusLabel(task.lifecycleStatus)}</span></td><td className="px-2 py-3">{task.importance}/10</td><td className="px-2 py-3"><span>{formatDeadline(task.deadline)}</span><p className="mt-1 text-xs text-slate-400">{getDeadlineState(task) === 'no_deadline' ? '无截止时间' : getDeadlineState(task)}</p></td><td className="px-2 py-3">{getActivityTypeLabel(task.activityType)}</td><td className="px-2 py-3">{task.progress}%</td><td className="px-2 py-3 text-xs text-slate-600">{goalNames(task).join('、') || '独立任务'}{blocked.blocked ? <p className="mt-1 text-amber-700">被 {blocked.blockingTaskIds.length} 个前置任务阻塞</p> : null}{blocked.missingDependencyIds.length ? <p className="mt-1 text-rose-600">前置任务数据缺失</p> : null}</td><td className="px-2 py-3">{actions(task)}</td></tr>; })}</tbody></table></div>
+    {detail ? <div className="fixed inset-0 z-[90] flex items-end bg-slate-950/25 p-4 md:items-center md:justify-end" role="dialog" aria-modal="true" aria-label="任务详情"><section className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-[2rem] bg-white p-6 shadow-2xl"><div className="flex justify-between"><div><p className="text-sm text-slate-500">任务详情</p><h3 className="text-2xl font-semibold">{detail.title}</h3></div><button type="button" onClick={() => setDetailId(undefined)} className="rounded-full px-3 py-1 text-sm ring-1 ring-slate-200">关闭</button></div>{detail.description ? <p className="mt-4 text-slate-700">{detail.description}</p> : null}<dl className="mt-5 grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-slate-400">状态</dt><dd>{getLifecycleStatusLabel(detail.lifecycleStatus)}</dd></div><div><dt className="text-slate-400">重要性</dt><dd>{detail.importance}/10</dd></div><div><dt className="text-slate-400">分类</dt><dd>{getActivityTypeLabel(detail.activityType)}</dd></div><div><dt className="text-slate-400">截止</dt><dd>{formatDeadline(detail.deadline)}</dd></div><div><dt className="text-slate-400">进度</dt><dd>{detail.progress}% · {detail.progressMode === 'auto' ? '按时间估算' : '手动'}</dd></div><div><dt className="text-slate-400">预计时长</dt><dd>{detail.estimatedDuration ? `${detail.estimatedDuration} 分钟` : '未设置'}</dd></div><div><dt className="text-slate-400">下一步</dt><dd>{detail.nextAction || '未设置'}</dd></div><div><dt className="text-slate-400">目标</dt><dd>{goalNames(detail).join('、') || '独立任务'}</dd></div><div><dt className="text-slate-400">前置任务</dt><dd>{(detail.dependencyIds ?? []).flatMap((id) => allTasks.find((task) => task.id === id)?.title ?? [`缺失：${id}`]).join('、') || '无'}</dd></div><div className="sm:col-span-2"><dt className="text-slate-400">依赖此任务</dt><dd>{allTasks.filter((task) => task.dependencyIds?.includes(detail.id)).map((task) => task.title).join('、') || '无'}</dd></div></dl><div className="mt-6">{actions(detail)}</div></section></div> : null}
+  </section>;
 }
-
-export const TaskList = memo(function TaskList({ tasks, onArchive, onDelete, onEdit }: TaskListProps) {
-  const [openMenuTaskId, setOpenMenuTaskId] = useState<string | undefined>();
-
-  const pressureLabelMap = {
-    normal: '正常',
-    light_delay: '轻微延迟',
-    accumulated: '已堆积',
-    severe_delay: '严重堆积',
-  } as const;
-
-  function runAction(action: () => void) {
-    action();
-    setOpenMenuTaskId(undefined);
-  }
-
-  const orderedTasks = useMemo(() => tasks, [tasks]);
-
-  return (
-    <section className={`relative overflow-visible rounded-[2rem] border border-white/70 bg-white/80 p-5 shadow-[0_20px_45px_-28px_rgba(15,23,42,0.35)] backdrop-blur-xl ${openMenuTaskId ? 'z-40' : 'z-10'}`}>
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <p className="text-sm font-semibold text-slate-500">活动列表</p>
-          <h2 className="text-2xl font-semibold text-slate-950">进行中的项目</h2>
-        </div>
-        <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-600">{orderedTasks.length} 个</span>
-      </div>
-
-      {orderedTasks.length === 0 ? (
-        <div className="empty-state-panel mt-6 p-9 text-center">
-          <div className="empty-state-orb" aria-hidden="true">✦</div>
-          <p className="mt-4 text-base font-medium text-slate-700">Nothing urgent right now.</p>
-          <p className="mt-2 text-sm text-slate-500">Clear mind. Clear system.</p>
-        </div>
-      ) : (
-        <ul className="mt-5 grid overflow-visible gap-3 lg:grid-cols-2">
-          {orderedTasks.map((task, index) => {
-            const isMenuOpen = openMenuTaskId === task.id;
-            const displayProgress = getDisplayProgress(task);
-            const taskProgress = getTaskProgress(task);
-            const timeProgress = getTimeProgress(task);
-            const progressIsAuto = isProgressAuto(task);
-            const derivedStatus = getDerivedTaskStatus(task);
-            const pressureLevel = calculatePressureLevel(task);
-
-            return (
-              <li key={task.id} className={`task-card-flow relative overflow-visible rounded-3xl border border-white/80 bg-slate-50/85 p-4 ${isMenuOpen ? 'z-50' : 'z-0'}`} style={{ animationDelay: `${Math.min(index * 45, 280)}ms` }}>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="font-semibold text-slate-950">{task.title}</h3>
-                      <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-500">{getActivityTypeLabel(task.activityType)}</span>
-                    </div>
-                    {task.description ? <p className="mt-2 line-clamp-2 text-sm text-slate-600">{task.description}</p> : null}
-                    <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
-                      <span className="rounded-full bg-white px-2.5 py-1">重要性 {task.importance}/10</span>
-                      <span className={`rounded-full px-2.5 py-1 ${derivedStatus === 'delayed_observation' ? 'bg-amber-50 text-amber-700' : 'bg-white'}`}>
-                        {derivedStatus === 'delayed_observation' ? '延后观察' : formatCountdown(task.deadline)}
-                      </span>
-                      <span className="rounded-full bg-white px-2.5 py-1">截止 {formatDeadline(task.deadline)}</span>
-                      <span className={`rounded-full px-2.5 py-1 ${pressureLevel === 'severe_delay' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'}`}>{pressureLabelMap[pressureLevel]}</span>
-                    </div>
-                    <div className="mt-3 max-w-sm">
-                      <ProgressBar progress={displayProgress} compact />
-                      <p className="mt-1 text-xs text-slate-400">任务进度 {taskProgress}% · 时间进度 {timeProgress}%{progressIsAuto ? ' · 自动估算' : ''}</p>
-                    </div>
-                  </div>
-
-                  <div className="relative z-50 shrink-0 overflow-visible">
-                    <button
-                      type="button"
-                      onClick={() => setOpenMenuTaskId(isMenuOpen ? undefined : task.id)}
-                      className="interactive-fade flex h-10 w-10 items-center justify-center rounded-full bg-white text-xl font-semibold leading-none text-slate-500 shadow-sm hover:bg-slate-100"
-                      aria-label={`打开 ${task.title} 的操作菜单`}
-                      aria-expanded={isMenuOpen}
-                    >
-                      ⋯
-                    </button>
-                    {isMenuOpen ? (
-                      <div className="animate-fade-surface absolute right-0 top-12 z-[120] w-32 rounded-2xl border border-white/80 bg-white/95 p-1.5 shadow-2xl shadow-slate-300/70 backdrop-blur">
-                        <button type="button" onClick={() => runAction(() => onArchive(task, 'completed'))} className="w-full rounded-xl px-3 py-2 text-left text-sm font-medium text-emerald-600 hover:bg-emerald-50">
-                          完成
-                        </button>
-                        <button type="button" onClick={() => runAction(() => onArchive(task, 'abandoned'))} className="w-full rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-600 hover:bg-slate-50">
-                          放弃
-                        </button>
-                        <button type="button" onClick={() => runAction(() => onEdit(task))} className="w-full rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-600 hover:bg-slate-50">
-                          编辑
-                        </button>
-                        <button type="button" onClick={() => runAction(() => onDelete(task.id))} className="w-full rounded-xl px-3 py-2 text-left text-sm font-medium text-rose-500 hover:bg-rose-50">
-                          删除
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </section>
-  );
-});
