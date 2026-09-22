@@ -11,8 +11,8 @@ import { PrivacyPolicyPage } from './components/PrivacyPolicyPage';
 import { TaskForm } from './components/TaskForm';
 import { TaskPage } from './components/TaskPage';
 import { TermsPage } from './components/TermsPage';
-import { PublicHome } from './components/PublicHome';
 import { V2AppShell } from './components/V2AppShell';
+import { PublicSite, isPublicSurface } from './components/PublicSite';
 import { useWorkspaceLocalStorage, WorkspaceOwnerProvider } from './hooks/useLocalStorage';
 import { useWorkspaceOwner } from './hooks/useWorkspaceOwner';
 import { useSupabaseAuth } from './hooks/useSupabaseAuth';
@@ -352,7 +352,7 @@ function createAchievement(id: string): Achievement | undefined {
   };
 }
 
-function App() {
+function AuthenticatedApp() {
   const [publicPath, setPublicPath] = useState(() => window.location.pathname);
   const { session, isLoading: isAuthLoading, error: authError, status: authStatus, authDebugInfo, isConfigured: isSupabaseConfigured, featureFlags: authFeatureFlags, signIn, signUp, resendVerificationEmail, signOut, signInWithOAuth, requestPhoneOtp, verifyPhoneOtp, verifyEmailOtp, phoneResendRemainingMs, emailResendRemainingMs } = useSupabaseAuth();
   const { owner: workspaceOwner, isReady: isWorkspaceOwnerReady } = useWorkspaceOwner(session?.user.id, !isAuthLoading);
@@ -1086,11 +1086,16 @@ function App() {
     }
 
     window.addEventListener('popstate', syncPublicPath);
-    return () => window.removeEventListener('popstate', syncPublicPath);
+    window.addEventListener('vd:routechange', syncPublicPath);
+    return () => {
+      window.removeEventListener('popstate', syncPublicPath);
+      window.removeEventListener('vd:routechange', syncPublicPath);
+    };
   }, []);
 
   function navigate(path: string) {
     window.history.pushState({}, '', path);
+    window.dispatchEvent(new Event('vd:routechange'));
     setPublicPath(window.location.pathname);
   }
 
@@ -1136,10 +1141,6 @@ function App() {
 
   if (publicPath === '/terms') {
     return <TermsPage onBack={navigateHome} />;
-  }
-
-  if (publicPath === '/') {
-    return <PublicHome isAuthenticated={Boolean(session)} onLogin={() => navigate('/login')} onEnter={() => navigate(session ? '/app' : '/login?next=%2Fapp')} />;
   }
 
   if (publicPath === '/auth/callback') {
@@ -1232,6 +1233,29 @@ function App() {
     </div>
     </WorkspaceOwnerProvider>
   );
+}
+
+function App() {
+  const [path, setPath] = useState(() => window.location.pathname);
+
+  useEffect(() => {
+    const syncPath = () => setPath(window.location.pathname);
+    window.addEventListener('popstate', syncPath);
+    window.addEventListener('vd:routechange', syncPath);
+    return () => {
+      window.removeEventListener('popstate', syncPath);
+      window.removeEventListener('vd:routechange', syncPath);
+    };
+  }, []);
+
+  function navigate(pathname: string) {
+    window.history.pushState({}, '', pathname);
+    window.dispatchEvent(new Event('vd:routechange'));
+    setPath(window.location.pathname);
+  }
+
+  if (isPublicSurface(path)) return <PublicSite path={path} onNavigate={navigate} />;
+  return <AuthenticatedApp />;
 }
 
 export default App;

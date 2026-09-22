@@ -1,49 +1,34 @@
-import { useEffect, useState } from 'react';
+import { CaptureComposer } from './CaptureComposer';
+import type { CaptureDraft } from '../domain/public/captureDraft';
 
-type Locale = 'zh-CN' | 'en';
+export type PublicLocale = 'zh-CN' | 'en';
 
 const copy = {
   'zh-CN': {
-    login: '登录', enter: '进入 VD', headline: '把你脑子里的事，变成下一步。', support: '告诉我你正在处理什么。',
+    getApp: '移动端 · 即将推出', login: '登录', enter: '进入 VD', headline: '把你脑子里的事，变成下一步。', support: '告诉我你正在处理什么。',
     placeholder: '输入目标、任务、想法，或者任何你正在处理的事情……', send: '开始',
-    footer: 'Visual Deadline · 从想法到下一步。', workspace: '工作区', legal: '法律', privacy: '隐私政策', terms: '使用条款',
+    capture: { file: '文件', image: '图片', url: '链接', voice: '语音', stop: '停止', add: '添加', voiceItem: '语音', invalidUrl: '请输入有效的 http 或 https 链接。', microphoneUnavailable: '无法使用麦克风。', fileTooLarge: (name: string) => `${name} 超过 25 MB 本地暂存限制。`, remove: '移除' },
   },
   en: {
-    login: 'Log in', enter: 'Enter VD', headline: "Turn what’s on your mind into what’s next.", support: "Tell me what you're working on.",
+    getApp: 'Mobile · Coming Soon', login: 'Log in', enter: 'Enter VD', headline: 'Turn what’s on your mind into what’s next.', support: "Tell me what you're working on.",
     placeholder: "Enter a goal, task, idea, or anything you're dealing with...", send: 'Start',
-    footer: 'Visual Deadline · From thought to next step.', workspace: 'Workspace', legal: 'Legal', privacy: 'Privacy', terms: 'Terms',
+    capture: { file: 'File', image: 'Image', url: 'URL', voice: 'Voice', stop: 'Stop', add: 'Add', voiceItem: 'Voice', invalidUrl: 'Enter a valid http or https URL.', microphoneUnavailable: 'Microphone access was not available.', fileTooLarge: (name: string) => `${name} exceeds the 25 MB local staging limit.`, remove: 'Remove' },
   },
 } as const;
 
-function initialLocale(): Locale {
-  try {
-    const saved = window.localStorage.getItem('vd.locale');
-    if (saved === 'zh-CN' || saved === 'en') return saved;
-  } catch { /* Public preference is optional. */ }
-  return navigator.language.toLowerCase().startsWith('zh') ? 'zh-CN' : 'en';
-}
-
-export function PublicHome({ isAuthenticated, onLogin, onEnter }: { isAuthenticated: boolean; onLogin: () => void; onEnter: (capture: string) => void }) {
-  const [locale, setLocale] = useState<Locale>(initialLocale);
-  const [capture, setCapture] = useState('');
+export function PublicHome({ locale, onLocaleChange, isAuthenticated, onLogin, onGetApp, onSubmit }: { locale: PublicLocale; onLocaleChange: (locale: PublicLocale) => void; isAuthenticated: boolean; onLogin: () => void; onGetApp: () => void; onSubmit: (draft: CaptureDraft) => void }) {
   const text = copy[locale];
-  useEffect(() => { try { window.localStorage.setItem('vd.locale', locale); } catch { /* no-op */ } }, [locale]);
-  return <main className="vd-public min-h-screen overflow-x-hidden bg-[#fbfbfa] text-[#171717]">
-    <header className="mx-auto flex max-w-[1440px] items-center justify-between px-5 py-5 sm:px-8 lg:px-12">
+  return <main className="vd-public relative min-h-screen overflow-x-hidden bg-[#fbfaf8] text-[#1d1b1a]">
+    <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(104,87,78,.035)_1px,transparent_1px),linear-gradient(90deg,rgba(104,87,78,.035)_1px,transparent_1px)] bg-[size:32px_32px] [mask-image:linear-gradient(to_bottom,black,transparent_72%)]" />
+    <div className="pointer-events-none absolute left-1/2 top-16 h-[38rem] w-[62rem] -translate-x-1/2 rounded-full bg-[radial-gradient(ellipse_at_center,rgba(218,105,88,.14),rgba(243,226,214,.09)_38%,transparent_70%)] blur-3xl" />
+    <header className="relative mx-auto flex max-w-[1440px] items-center justify-between px-5 py-5 sm:px-8 lg:px-12">
       <a href="/" className="flex items-center gap-2.5 text-lg font-semibold tracking-tight"><img src="/logo.png" alt="Visual Deadline" className="h-8 w-8 object-contain" /><span>Visual Deadline</span></a>
-      <div className="flex items-center gap-3 text-sm text-zinc-600 sm:gap-5"><span className="inline-flex rounded-full border border-zinc-200 p-0.5" aria-label="Language"><button type="button" onClick={() => setLocale('zh-CN')} aria-pressed={locale === 'zh-CN'} className={`rounded-full px-2 py-1 text-xs font-medium ${locale === 'zh-CN' ? 'bg-zinc-900 text-white' : 'text-zinc-500'}`}>中文</button><button type="button" onClick={() => setLocale('en')} aria-pressed={locale === 'en'} className={`rounded-full px-2 py-1 text-xs font-medium ${locale === 'en' ? 'bg-zinc-900 text-white' : 'text-zinc-500'}`}>EN</button></span><button type="button" onClick={isAuthenticated ? () => onEnter(capture) : onLogin} className="font-medium text-zinc-900 hover:text-red-600">{isAuthenticated ? text.enter : text.login}</button></div>
+      <div className="flex items-center gap-3 text-sm text-zinc-600 sm:gap-5"><button type="button" onClick={onGetApp} className="hidden font-medium text-zinc-500 hover:text-zinc-900 sm:block">{text.getApp}</button><span className="inline-flex rounded-full border border-zinc-200 bg-white/70 p-0.5" aria-label="Language"><button type="button" onClick={() => onLocaleChange('zh-CN')} aria-pressed={locale === 'zh-CN'} className={`rounded-full px-2 py-1 text-xs font-medium ${locale === 'zh-CN' ? 'bg-zinc-900 text-white' : 'text-zinc-500'}`}>中文</button><button type="button" onClick={() => onLocaleChange('en')} aria-pressed={locale === 'en'} className={`rounded-full px-2 py-1 text-xs font-medium ${locale === 'en' ? 'bg-zinc-900 text-white' : 'text-zinc-500'}`}>EN</button></span><button type="button" onClick={isAuthenticated ? () => onSubmit({ text: '', attachments: [], links: [] }) : onLogin} className="font-medium text-zinc-900 hover:text-[#c43b35]">{isAuthenticated ? text.enter : text.login}</button></div>
     </header>
-    <section className="mx-auto flex min-h-[calc(100vh-160px)] max-w-5xl flex-col items-center px-5 pt-[15vh] text-center sm:px-8 sm:pt-[18vh]">
-      <h1 className="max-w-4xl text-4xl font-semibold tracking-[-0.055em] text-zinc-950 sm:text-6xl lg:text-7xl">{text.headline}</h1>
+    <section className="relative mx-auto flex min-h-[calc(100vh-112px)] max-w-5xl flex-col items-center px-5 pt-[13vh] text-center sm:px-8 sm:pt-[16vh]">
+      <h1 className="max-w-3xl text-4xl font-semibold tracking-[-0.045em] text-zinc-950 sm:text-5xl lg:text-6xl">{text.headline}</h1>
       <p className="mt-5 text-base text-zinc-500 sm:text-lg">{text.support}</p>
-      <form className="mt-12 w-full text-left sm:mt-14" onSubmit={(event) => { event.preventDefault(); onEnter(capture); }}>
-        <label htmlFor="vd-capture" className="sr-only">{text.placeholder}</label>
-        <div className="rounded-2xl border border-zinc-200 bg-white p-3 shadow-[0_16px_50px_-38px_rgba(0,0,0,.45)] transition focus-within:border-zinc-400 focus-within:shadow-[0_18px_55px_-34px_rgba(0,0,0,.38)] sm:rounded-3xl sm:p-4">
-          <textarea id="vd-capture" value={capture} onChange={(event) => setCapture(event.target.value)} rows={4} placeholder={text.placeholder} className="min-h-28 w-full resize-none bg-transparent px-2 py-1 text-base leading-7 outline-none placeholder:text-zinc-400 sm:text-lg" />
-          <div className="flex items-center justify-between gap-3 px-1 pt-3"><span className="text-xs text-zinc-400">{locale === 'zh-CN' ? '支持文本输入' : 'Text input supported'}</span><button type="submit" aria-label={text.send} disabled={!capture.trim()} className="flex h-10 min-w-10 items-center justify-center rounded-xl bg-[#f0443e] px-3 text-lg font-semibold text-white transition hover:bg-[#d93631] disabled:cursor-not-allowed disabled:bg-zinc-200">→</button></div>
-        </div>
-      </form>
+      <CaptureComposer placeholder={text.placeholder} submitLabel={text.send} labels={text.capture} onSubmit={onSubmit} />
     </section>
-    <footer className="mx-auto grid max-w-[1440px] gap-8 border-t border-zinc-100 px-5 py-9 text-xs text-zinc-400 sm:grid-cols-[1fr_auto_auto] sm:px-8 lg:px-12"><span>{text.footer}</span><div><p className="mb-2 font-semibold text-zinc-600">{text.workspace}</p><a href="/app" className="hover:text-zinc-900">VD</a></div><div><p className="mb-2 font-semibold text-zinc-600">{text.legal}</p><span className="flex gap-4"><a href="/privacy" className="hover:text-zinc-900">{text.privacy}</a><a href="/terms" className="hover:text-zinc-900">{text.terms}</a></span></div></footer>
   </main>;
 }

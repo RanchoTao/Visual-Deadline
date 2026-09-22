@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const routes = await import('./.compiled/src/lib/appRoutes.js');
+const capture = await import('./.compiled/src/domain/public/captureDraft.js');
 const source = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 
 test('the app route contract protects only private workspace and account surfaces', () => {
@@ -14,14 +15,32 @@ test('the app route contract protects only private workspace and account surface
   assert.equal(routes.legacyRouteRedirect('/map'), '/app/plan');
 });
 
-test('the public entry is a localized composer, not a planning or marketing demo', () => {
+test('the public entry is a localized multimodal composer, not a planning or marketing demo', () => {
   const home = source('src/components/PublicHome.tsx');
-  assert.match(home, /vd\.locale/);
-  assert.match(home, /navigator\.language/);
-  assert.match(home, /<textarea/);
-  assert.match(home, /Privacy/);
-  assert.match(home, /Terms/);
+  const composer = source('src/components/CaptureComposer.tsx');
+  assert.match(home, /CaptureComposer/);
+  assert.match(composer, /type="file"/);
+  assert.match(composer, /MediaRecorder/);
+  assert.match(composer, /URL\.createObjectURL/);
+  assert.match(composer, /aria-label=\{labels\.remove\}/);
+  assert.equal(capture.isHttpUrl('https://example.com/plan'), true);
+  assert.equal(capture.isHttpUrl('ftp://example.com'), false);
   for (const prohibitedDemoTerm of ['Gantt', 'DAG', 'testimonial', 'fake metric', 'chart-data']) assert.equal(home.includes(prohibitedDemoTerm), false);
+});
+
+test('public pages bypass authenticated initialization and expose complete localized footer groups', () => {
+  const app = source('src/App.tsx');
+  const publicSite = source('src/components/PublicSite.tsx');
+  assert.ok(app.indexOf('if (isPublicSurface(path)) return <PublicSite') < app.indexOf('return <AuthenticatedApp'));
+  assert.match(publicSite, /vd\.locale/);
+  assert.match(publicSite, /navigator\.language/);
+  for (const path of ['/research', '/security', '/report-security', '/transparency', '/careers', '/contact', '/docs', '/pricing']) assert.match(publicSite, new RegExp(`'${path}'`));
+  for (const footerGroup of ['PRODUCT', 'RESEARCH', 'LEGAL & SECURITY', 'JOIN US']) assert.match(publicSite, new RegExp(footerGroup));
+  assert.match(publicSite, /Coming Soon/);
+  assert.match(publicSite, /stashPendingCaptureDraft/);
+  assert.equal(publicSite.includes('SOC2'), false);
+  assert.equal(publicSite.includes('ISO'), false);
+  assert.equal(publicSite.includes('ICP备'), false);
 });
 
 test('the app shell has the frozen five-page primary navigation and global account controls', () => {
