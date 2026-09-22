@@ -4,6 +4,7 @@ import type { Task } from '../types/task';
 import type { BuiltInLifeEventType, LifeControllerPlan, LifeEvent, LifePreferences, LifeState } from '../types/lifeController';
 import { MiniTaskMatrix } from './MiniTaskMatrix';
 import { RecommendationCard } from './RecommendationCard';
+import type { ReactNode } from 'react';
 
 interface HomePageProps {
   recommendedTasks: Task[];
@@ -17,6 +18,7 @@ interface HomePageProps {
   onRecordLifeEvent: (type: BuiltInLifeEventType) => Promise<void>;
   onUndoLifeEvent: () => Promise<void>;
   lifeEventSyncStatus?: string;
+  capture?: ReactNode;
 }
 
 function RecommendationDiagnostics({ comparison }: { comparison: HomeRecommendationComparison }) {
@@ -50,9 +52,10 @@ function RecommendationDiagnostics({ comparison }: { comparison: HomeRecommendat
   );
 }
 
-export function HomePage({ recommendedTasks, recommendationComparison, activeTasks, onOpenTasks }: HomePageProps) {
+export function HomePage({ recommendedTasks, recommendationComparison, activeTasks, onOpenTasks, capture }: HomePageProps) {
   return (
     <section className="space-y-4 md:space-y-8">
+      {capture}
       <MiniTaskMatrix tasks={activeTasks} onOpenTasks={onOpenTasks} />
       <RecommendationCard tasks={recommendedTasks} />
       {import.meta.env.DEV ? <RecommendationDiagnostics comparison={recommendationComparison} /> : null}

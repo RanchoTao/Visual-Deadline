@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { ACCEPTED_INTAKE_TYPES, classifyIntakeFile, MAX_INTAKE_FILE_SIZE, removeIntakeFile, uploadIntakeFile } from '../services/intakeStorage';
 import type { IntakeAsset, MultimodalIntake } from '../types/intake';
+import type { CaptureInput } from '../domain/capture/types';
 
 interface MultimodalComposerProps {
   disabled?: boolean;
   onSubmit: (intake: MultimodalIntake) => Promise<void> | void;
   placeholder?: string;
+  initialCapture?: CaptureInput;
 }
 
 function formatSize(bytes: number) {
@@ -16,9 +18,9 @@ function formatSize(bytes: number) {
 
 const statusLabels: Record<IntakeAsset['status'], string> = { queued: '排队中', uploading: '上传中', uploaded: '已上传', processing: '处理中', ready: '可用', error: '失败' };
 
-export function MultimodalComposer({ disabled = false, onSubmit, placeholder }: MultimodalComposerProps) {
+export function MultimodalComposer({ disabled = false, onSubmit, placeholder, initialCapture }: MultimodalComposerProps) {
   const [text, setText] = useState('');
-  const [intakeId, setIntakeId] = useState(() => crypto.randomUUID());
+  const [intakeId, setIntakeId] = useState<string>(() => crypto.randomUUID());
   const [assets, setAssets] = useState<IntakeAsset[]>([]);
   const [dragging, setDragging] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -28,6 +30,7 @@ export function MultimodalComposer({ disabled = false, onSubmit, placeholder }: 
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
+  const initialCaptureRef = useRef<string | undefined>(undefined);
 
   useEffect(() => () => {
     assets.forEach((asset) => asset.previewUrl && URL.revokeObjectURL(asset.previewUrl));
@@ -40,24 +43,33 @@ export function MultimodalComposer({ disabled = false, onSubmit, placeholder }: 
     return () => window.clearInterval(timer);
   }, [recording]);
 
+  useEffect(() => {
+    if (!initialCapture || initialCaptureRef.current === initialCapture.id) return;
+    initialCaptureRef.current = initialCapture.id;
+    setIntakeId(initialCapture.id);
+    setText(initialCapture.text);
+    const files = initialCapture.assets.flatMap((asset) => asset.file ? [asset.file] : []);
+    if (files.length) void queueFiles(files, initialCapture.id);
+  }, [initialCapture]);
+
   function patchAsset(id: string, patch: Partial<IntakeAsset>) {
     setAssets((current) => current.map((asset) => asset.id === id ? { ...asset, ...patch } : asset));
   }
 
-  async function queueFiles(files: File[]) {
+  async function queueFiles(files: File[], targetIntakeId = intakeId) {
     for (const file of files) {
       const kind = classifyIntakeFile(file);
       const id = crypto.randomUUID();
       if (!kind || file.size > MAX_INTAKE_FILE_SIZE) {
-        setAssets((current) => [...current, { id, intakeId, kind: kind ?? 'document', fileName: file.name, mimeType: file.type || 'unknown', size: file.size, status: 'error', error: !kind ? '不支持此文件类型' : '文件不能超过 20 MB' }]);
+        setAssets((current) => [...current, { id, intakeId: targetIntakeId, kind: kind ?? 'document', fileName: file.name, mimeType: file.type || 'unknown', size: file.size, status: 'error', error: !kind ? '不支持此文件类型' : '文件不能超过 20 MB' }]);
         continue;
       }
       const previewUrl = kind === 'image' ? URL.createObjectURL(file) : undefined;
-      const asset: IntakeAsset = { id, intakeId, kind, fileName: file.name, mimeType: file.type, size: file.size, status: 'queued', previewUrl, file };
+      const asset: IntakeAsset = { id, intakeId: targetIntakeId, kind, fileName: file.name, mimeType: file.type, size: file.size, status: 'queued', previewUrl, file };
       setAssets((current) => [...current, asset]);
       patchAsset(id, { status: 'uploading', progress: 0 });
       try {
-        const storagePath = await uploadIntakeFile(file, intakeId, (progress) => patchAsset(id, { progress }));
+        const storagePath = await uploadIntakeFile(file, targetIntakeId, (progress) => patchAsset(id, { progress }));
         patchAsset(id, { status: 'ready', storagePath, progress: 100, file: undefined });
       } catch (error) {
         patchAsset(id, { status: 'error', error: error instanceof Error ? error.message : '上传失败' });
@@ -118,7 +130,7 @@ export function MultimodalComposer({ disabled = false, onSubmit, placeholder }: 
 
   async function submit() {
     if (!canSubmit) return;
-    await onSubmit({ intakeId, text: text.trim(), assets: readyAssets.map(({ storagePath, kind, mimeType, fileName, size }) => ({ storagePath: storagePath!, kind, mimeType, fileName, size })) });
+    await onSubmit({ intakeId, text: text.trim(), links: initialCapture?.id === intakeId ? initialCapture.links : [], assets: readyAssets.map(({ storagePath, kind, mimeType, fileName, size }) => ({ storagePath: storagePath!, kind, mimeType, fileName, size })) });
     setText('');
     setAssets([]);
     setIntakeId(crypto.randomUUID());

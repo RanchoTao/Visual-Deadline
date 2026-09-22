@@ -1,20 +1,16 @@
-import type { AIArtifactInput, LifecycleStatus, Task, TaskInput } from '../types/task';
-import { AITaskCommandBar } from './AITaskCommandBar';
+import type { LifecycleStatus, Task } from '../types/task';
 import { PriorityMap } from './PriorityMap';
 import { TaskList } from './TaskList';
 
 interface TaskPageProps {
-  tasks: Task[];
   activeTasks: Task[];
   onAddTask: () => void;
-  onConfirmAITasks: (tasks: TaskInput[]) => void;
   onArchiveTask: (task: Task, lifecycleStatus: Exclude<LifecycleStatus, 'active'>) => void;
   onDeleteTask: (taskId: string) => void;
   onEditTask: (task: Task) => void;
-  onAIArtifactGenerated: (artifact: AIArtifactInput) => void;
 }
 
-export function TaskPage({ tasks, activeTasks, onAddTask, onConfirmAITasks, onArchiveTask, onDeleteTask, onEditTask, onAIArtifactGenerated }: TaskPageProps) {
+export function TaskPage({ activeTasks, onAddTask, onArchiveTask, onDeleteTask, onEditTask }: TaskPageProps) {
   return (
     <section className="space-y-6">
       <header className="flex flex-wrap items-center justify-between gap-4 rounded-[2rem] border border-white/70 bg-white/75 p-6 shadow-xl shadow-slate-200/60 backdrop-blur">
@@ -29,7 +25,6 @@ export function TaskPage({ tasks, activeTasks, onAddTask, onConfirmAITasks, onAr
       </header>
 
       <PriorityMap tasks={activeTasks} onEditTask={onEditTask} onCompleteTask={(task) => onArchiveTask(task, 'completed')} onDeleteTask={onDeleteTask} />
-      <AITaskCommandBar tasks={tasks} onConfirmTasks={onConfirmAITasks} onAIArtifactGenerated={onAIArtifactGenerated} />
       <TaskList tasks={activeTasks} onArchive={onArchiveTask} onDelete={onDeleteTask} onEdit={onEditTask} />
     </section>
   );

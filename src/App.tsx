@@ -3,9 +3,9 @@ import { AchievementToast } from './components/AchievementToast';
 import { AuthPanel } from './components/AuthPanel';
 import { GuestImportPanel } from './components/GuestImportPanel';
 import { HomePage } from './components/HomePage';
+import { CaptureIntakePanel } from './components/CaptureIntakePanel';
 import { LifeMapPage } from './components/LifeMapPage';
 import { LogPage } from './components/LogPage';
-import { OnboardingFlow } from './components/OnboardingFlow';
 import { ProfilePage } from './components/ProfilePage';
 import { PrivacyPolicyPage } from './components/PrivacyPolicyPage';
 import { TaskForm } from './components/TaskForm';
@@ -23,7 +23,6 @@ import type { Achievement, AIArtifact, AIArtifactInput, ActivityType, DailyQuest
 import {
   achievementCatalog,
   calculatePressureIndex,
-  calculateTaskLoad,
   createPressureCalibration,
   clampImportance,
   clampPressure,
@@ -45,6 +44,10 @@ import { createDefaultLifePreferences, createLifeEvent, deriveLifeState, getLife
 import { buildHomeRecommendationComparison } from './domain/execution/homeProjection';
 import { advanceGuestImportState, assertGuestCloudImportRuntimeEnabled, captureGuestImportSource, createGuestImportPreviewFromPending, readPendingGuestImport, validatePendingGuestImportConfirmation, type GuestImportPreview, type PendingGuestImportSnapshot } from './domain/v2/guestImport';
 import { createOwnerScopedUiState, transitionOwnerScopedUiState } from './domain/v2/workspaceUiTransition';
+import { claimCaptureTransfer, clearCaptureTransfer } from './domain/capture/transfer';
+import { buildCaptureMaterializationPlan } from './domain/capture/materializer';
+import type { CaptureInput, CaptureInterpretation } from './domain/capture/types';
+import { defaultAISettings } from './services/aiClient';
 import { isAuthenticatedPath, isKnownAuthenticatedEntryPath, legacyRouteRedirect, safeAuthenticatedNext } from './lib/appRoutes';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -396,6 +399,7 @@ function AuthenticatedApp() {
   const [editingTask, setEditingTask] = useState<Task | undefined>();
   const [toastAchievement, setToastAchievement] = useState<Achievement | undefined>();
   const [welcomeBackMessage, setWelcomeBackMessage] = useState<WelcomeBackMessage | undefined>();
+  const [pendingCapture, setPendingCapture] = useState<CaptureInput | undefined>();
   const [pressureClock, setPressureClock] = useState(() => Date.now());
   const hasCheckedWelcomeBack = useRef(false);
   const hasLoggedHydration = useRef(false);
@@ -416,6 +420,7 @@ function AuthenticatedApp() {
     setRecalibrationPressure(reset.recalibrationPressure);
     setToastAchievement(undefined);
     setWelcomeBackMessage(undefined);
+    setPendingCapture(undefined);
     setCloudToast(undefined);
     setCloudStatus(undefined);
     setCloudError(undefined);
@@ -430,6 +435,12 @@ function AuthenticatedApp() {
     hasLoggedHydration.current = false;
     recalibrationOwnerKey.current = undefined;
   }, [authoritativeOwnerKey]);
+
+  useEffect(() => {
+    if (!isWorkspaceReady || !session?.user.id || workspaceOwner?.kind !== 'user') return;
+    const pending = claimCaptureTransfer(session.user.id);
+    if (pending?.ownerKey === authoritativeOwnerKey) setPendingCapture(pending);
+  }, [authoritativeOwnerKey, isWorkspaceReady, session?.user.id, workspaceOwner?.kind]);
 
   const normalizedTasks = useMemo(() => {
     const storedTasks = Array.isArray(tasks) ? tasks : [];
@@ -831,9 +842,8 @@ function AuthenticatedApp() {
 
   useEffect(() => {
     if (!isWorkspaceReady) return;
-    if (!onboardingComplete) return;
     recordPressureSnapshot('auto');
-  }, [activeTasks.length, isWorkspaceReady, onboardingComplete, pressure.rawPressure, pressure.currentTaskLoad, pressure.recoveryRelief]);
+  }, [activeTasks.length, isWorkspaceReady, pressure.rawPressure, pressure.currentTaskLoad, pressure.recoveryRelief]);
 
   function saveAIArtifact(input: AIArtifactInput): AIArtifact {
     const artifact = createAIArtifact(input);
@@ -859,7 +869,6 @@ function AuthenticatedApp() {
 
   useEffect(() => {
     if (!isWorkspaceReady) return;
-    if (!onboardingComplete) return;
 
     unlockAchievement('first-entry');
 
@@ -871,11 +880,10 @@ function AuthenticatedApp() {
     if (getMaxFinalHourCompletionRun(normalizedTasks) >= 10) unlockAchievement('knife-edge-streak');
     if (normalizedTasks.filter((task) => task.lifecycleStatus === 'active' && task.deadline && new Date(task.deadline).getTime() < Date.now()).length > 5) unlockAchievement('rotting');
     if (normalizedTasks.filter((task) => task.activityType === 'entertainment').length >= 5) unlockAchievement('hedonism');
-  }, [isWorkspaceReady, onboardingComplete, normalizedTasks]);
+  }, [isWorkspaceReady, normalizedTasks]);
 
   useEffect(() => {
     if (!isWorkspaceReady) return;
-    if (!onboardingComplete) return;
     const usageDateKeys = normalizedPressureHistory.map((record) => getLocalDateKey(record.timestamp)).filter((value): value is string => Boolean(value));
     if (hasConsecutiveDateRun(usageDateKeys, 7)) unlockAchievement('seven-day-streak');
 
@@ -887,7 +895,7 @@ function AuthenticatedApp() {
     });
     const over100Dates = [...pressureByDate.entries()].filter(([, values]) => values.length > 0 && values.every((value) => value > 100)).map(([dateKey]) => dateKey);
     if (hasConsecutiveDateRun(over100Dates, 3)) unlockAchievement('pressure-cooker');
-  }, [isWorkspaceReady, normalizedPressureHistory, onboardingComplete]);
+  }, [isWorkspaceReady, normalizedPressureHistory]);
 
   function savePressureCalibration(referencePressure: number, sourceTasks = normalizedTasks) {
     if (!isWorkspaceReady) return;
@@ -906,44 +914,6 @@ function AuthenticatedApp() {
   function submitRecalibration() {
     savePressureCalibration(recalibrationPressure);
     setIsRecalibrationOpen(false);
-  }
-
-  function completeOnboarding(importedTasks: TaskInput[], referencePressure: number, _calibration: PressureCalibrationSnapshot): { ok: boolean; error?: string } {
-    console.info('[VD_ONBOARDING] submit reached app pipeline');
-
-    try {
-      if (!isWorkspaceReady) throw new Error('工作区仍在切换，请稍后重试。');
-      const createdTasks = importedTasks.map((task) => createTask(task));
-      const validCreatedTasks = createdTasks.filter((task) => task.lifecycleStatus === 'active' && task.progress < 100 && task.title.trim());
-      if (validCreatedTasks.length === 0) throw new Error('请至少保留一个未完成的有效任务后再进入 VD。');
-
-      const nextTasks = [...createdTasks, ...normalizedTasks];
-      const totalTaskPressure = calculateTaskLoad(nextTasks);
-      console.info('[VD_ONBOARDING] totalTaskPressure', totalTaskPressure);
-      if (totalTaskPressure <= 0) throw new Error('当前任务压力为 0，无法完成校准。请检查任务重要性、截止时间或进度。');
-
-      const calibration = createPressureCalibration(referencePressure, nextTasks, 0, new Date().toISOString());
-      if (!Number.isFinite(calibration.pressureCoefficient) || calibration.pressureCoefficient < 0) throw new Error('压力校准失败，请重新选择主观压力。');
-
-      const realtimePressure = calculatePressureIndex(nextTasks, calibration, legacyReferencePressure).rawPressure;
-      if (!Number.isFinite(realtimePressure)) throw new Error('实时压力计算失败，请检查任务数据。');
-
-      console.info('[VD_ONBOARDING] pressureCoefficient', calibration.pressureCoefficient);
-      console.info('[VD_ONBOARDING] realtimePressure', realtimePressure);
-
-      setTasks(nextTasks);
-      setBaselinePressure(calibration.lastSubjectivePressure);
-      setPressureCalibration(calibration);
-      unlockAchievement('first-manageable-pressure');
-      recordPressureSnapshot('recalibration', nextTasks, `用户将主观压力重新校准为 ${calibration.lastSubjectivePressure}，系统已更新压力映射系数。`, calibration);
-      console.info('[VD_ONBOARDING] redirect started');
-      setOnboardingComplete(true);
-      return { ok: true };
-    } catch (error) {
-      setOnboardingComplete(false);
-      console.error('[VD_ONBOARDING] onboarding pipeline failed', error);
-      return { ok: false, error: error instanceof Error ? error.message : '进入 VD 失败，请稍后重试。' };
-    }
   }
 
   function closeForm() {
@@ -1099,6 +1069,23 @@ function AuthenticatedApp() {
     setPublicPath(window.location.pathname);
   }
 
+  async function materializeCapture(capture: CaptureInput, interpretation: CaptureInterpretation, model?: string): Promise<void> {
+    if (!session?.user.id || capture.ownerKey !== `user:${session.user.id}` || currentAuthoritativeOwnerKey.current !== capture.ownerKey) throw new Error('工作区已切换，请重新开始本次整理。');
+    const plan = buildCaptureMaterializationPlan(interpretation, normalizedTasks, normalizedGoals);
+    const goalIds = new Map<string, string>();
+    const createdGoals = plan.goals.map((entry) => { const goal = createGoal(entry.input); goalIds.set(entry.draftId, goal.id); return goal; });
+    const taskIds = new Map<string, string>();
+    const createdTasks = plan.tasks.map((entry) => { const task = createTask({ ...entry.input, linkedGoalIds: entry.input.linkedGoalIds?.flatMap((goalId) => goalIds.get(goalId) ? [goalIds.get(goalId)!] : []) }); taskIds.set(entry.draftId, task.id); return { entry, task }; });
+    const finalizedTasks = createdTasks.map(({ entry, task }) => ({ ...task, dependencyIds: entry.dependencyDraftIds.flatMap((draftId) => taskIds.get(draftId) ? [taskIds.get(draftId)!] : []) }));
+    const finalizedGoals = createdGoals.map((goal) => ({ ...goal, linkedTaskIds: finalizedTasks.filter((task) => task.linkedGoalIds?.includes(goal.id)).map((task) => task.id) }));
+    // All IDs and edges are validated before the first workspace write.
+    setGoals([...finalizedGoals, ...normalizedGoals]);
+    setTasks([...finalizedTasks, ...normalizedTasks]);
+    if (finalizedTasks.length) recordPressureSnapshot('task_created', [...finalizedTasks, ...normalizedTasks], `Capture 整理新增 ${finalizedTasks.length} 个任务。`);
+    saveAIArtifact({ kind: 'task-intake', title: 'Capture 整理已确认', content: `已确认 ${finalizedGoals.length} 个目标和 ${finalizedTasks.length} 个任务。`, relatedTaskIds: finalizedTasks.map((task) => task.id), relatedGoalIds: finalizedGoals.map((goal) => goal.id), model, metadata: { captureId: capture.id, goalCount: finalizedGoals.length, taskCount: finalizedTasks.length, commitmentCount: plan.skippedCommitments.length, duplicateWarnings: plan.duplicateWarnings } });
+    clearCaptureTransfer(session.user.id, capture.id); setPendingCapture(undefined);
+  }
+
   const navigateHome = () => navigate('/');
 
   useEffect(() => {
@@ -1122,11 +1109,8 @@ function AuthenticatedApp() {
 
   const taskModule = (
     <TaskPage
-      tasks={normalizedTasks}
       activeTasks={activeTasks}
       onAddTask={() => setIsFormOpen(true)}
-      onConfirmAITasks={addTaskDrafts}
-      onAIArtifactGenerated={saveAIArtifact}
       onArchiveTask={archiveTask}
       onDeleteTask={deleteTask}
       onEditTask={startEditing}
@@ -1159,8 +1143,9 @@ function AuthenticatedApp() {
     return <main className="flex min-h-screen items-center justify-center bg-slate-50 px-6 text-center text-sm font-medium text-slate-500">正在打开隔离工作区…</main>;
   }
 
+  const capturePanel = session?.user.id ? <CaptureIntakePanel ownerUserId={session.user.id} settings={defaultAISettings} tasks={normalizedTasks} goals={normalizedGoals} initialCapture={pendingCapture} onConfirm={materializeCapture} onCancelInitial={(captureId) => { clearCaptureTransfer(session.user.id, captureId); setPendingCapture(undefined); }} /> : null;
   const appContent = publicPath === '/app'
-    ? <HomePage recommendedTasks={recommendedTasks} recommendationComparison={homeRecommendationComparison} activeTasks={activeTasks} onOpenTasks={() => navigate('/app/tasks')} lifeState={lifeState} lifePlan={lifePlan} lifeEvents={lifeEvents} lifePreferences={lifePreferences} onRecordLifeEvent={recordLifeEvent} onUndoLifeEvent={undoLatestLifeEvent} lifeEventSyncStatus={lifeEventSyncStatus} />
+    ? <HomePage recommendedTasks={recommendedTasks} recommendationComparison={homeRecommendationComparison} activeTasks={activeTasks} onOpenTasks={() => navigate('/app/tasks')} lifeState={lifeState} lifePlan={lifePlan} lifeEvents={lifeEvents} lifePreferences={lifePreferences} onRecordLifeEvent={recordLifeEvent} onUndoLifeEvent={undoLatestLifeEvent} lifeEventSyncStatus={lifeEventSyncStatus} capture={capturePanel} />
     : publicPath === '/app/tasks'
       ? taskModule
       : publicPath === '/app/plan'
@@ -1176,8 +1161,6 @@ function AuthenticatedApp() {
   return (
     <WorkspaceOwnerProvider owner={workspaceOwner}>
     <div className="min-h-screen bg-[#fafafa] text-zinc-900">
-      {/* Temporary compatibility only; PR I replaces this with Capture-first onboarding. */}
-      {!onboardingComplete ? <OnboardingFlow onComplete={completeOnboarding} /> : null}
       {taskFormOverlay}
       {isRecalibrationOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/15 px-4 backdrop-blur-sm">
