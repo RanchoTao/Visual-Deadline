@@ -3,7 +3,7 @@ const MAX_CONTEXT_LENGTH = 60_000;
 const MAX_REQUESTS_PER_USER_PER_DAY = 20;
 const MAX_AUTH_HEADER_LENGTH = 8_500;
 const DEEPSEEK_PROVIDER = 'deepseek';
-const SUPPORTED_MODES = new Set(['task_advice', 'daily_plan', 'pressure_analysis', 'capture_interpret']);
+const SUPPORTED_MODES = new Set(['task_advice', 'daily_plan', 'pressure_analysis', 'capture_interpret', 'goal_decompose']);
 const dailyRequestCounts = new Map();
 
 function sendJson(response, status, body) {
@@ -88,7 +88,7 @@ function checkRateLimit(userId) {
 
 function validatePayload(payload) {
   if (!payload || typeof payload !== 'object') return '请求体必须是 JSON 对象。';
-  if (!SUPPORTED_MODES.has(payload.mode)) return 'mode 必须是 task_advice、daily_plan、pressure_analysis 或 capture_interpret。';
+  if (!SUPPORTED_MODES.has(payload.mode)) return 'mode 必须是 task_advice、daily_plan、pressure_analysis、capture_interpret 或 goal_decompose。';
   if (typeof payload.message !== 'string' || !payload.message.trim()) return 'message 不能为空。';
   if (payload.message.length > MAX_MESSAGE_LENGTH) return `message 不能超过 ${MAX_MESSAGE_LENGTH} 个字符。`;
 
