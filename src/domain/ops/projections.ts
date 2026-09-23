@@ -10,7 +10,7 @@ export function projectOpsCapacity(state: OpsState, plan: OpsExecutionPlan | und
     const availabilityMinutes = buildExecutorAvailability(state, executor.id, start, end).reduce((total, [windowStart, windowEnd]) => total + (windowEnd - windowStart) / 60_000, 0);
     const allocations = plan.allocations.filter((allocation) => allocation.executorId === executor.id); const commitments = state.commitments.filter((commitment) => commitment.executorId === executor.id && Date.parse(commitment.start) < end && Date.parse(commitment.end) > start);
     const scheduledElapsedMinutes = allocations.reduce((total, allocation) => total + allocation.elapsedMinutes, 0); const commitmentMinutes = commitments.reduce((total, commitment) => total + Math.max(0, Math.min(end, Date.parse(commitment.end)) - Math.max(start, Date.parse(commitment.start))) / 60_000, 0);
-    const assignedUnscheduled = plan.unscheduled.filter((item) => state.taskConfigs.find((config) => config.taskId === item.taskId)?.executorId === executor.id).length;
+    const assignedUnscheduled = plan.unscheduled.filter((item) => (state.taskConfigs.find((config) => config.taskId === item.taskId)?.executorId ?? 'self') === executor.id).length;
     const capacity = availabilityMinutes * executor.maxParallel;
     return { executorId: executor.id, availabilityMinutes, scheduledElapsedMinutes, commitmentMinutes, allocationCount: allocations.length, unscheduledCount: assignedUnscheduled, maxParallel: executor.maxParallel, utilization: capacity ? Math.round(scheduledElapsedMinutes / capacity * 1000) / 10 : 0 };
   });
