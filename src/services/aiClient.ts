@@ -1,7 +1,7 @@
 import { supabase } from '../lib/supabaseClient';
 
 export type AIProvider = 'openai-compatible' | 'deepseek-compatible';
-export type BackendAIMode = 'task_advice' | 'daily_plan' | 'pressure_analysis' | 'capture_interpret';
+export type BackendAIMode = 'task_advice' | 'daily_plan' | 'pressure_analysis' | 'capture_interpret' | 'goal_decompose';
 
 export interface AISettings {
   provider: AIProvider;

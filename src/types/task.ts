@@ -4,6 +4,22 @@ export type ActivityType = 'task' | 'schedule' | 'entertainment' | 'recovery' | 
 
 export type LifecycleStatus = 'active' | 'completed' | 'abandoned';
 
+export type GoalMilestoneStatus = 'planned' | 'ready' | 'in_progress' | 'completed' | 'skipped' | 'blocked' | 'archived';
+
+export interface GoalMilestone {
+  id: string;
+  title: string;
+  description?: string;
+  sequence: number;
+  targetDate?: string;
+  successCriteria?: string;
+  completionEvidence?: string;
+  status: GoalMilestoneStatus;
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string;
+}
+
 export type ProgressMode = 'manual' | 'auto';
 
 export interface Task {
@@ -24,6 +40,7 @@ export interface Task {
   decomposition?: string[];
   stages?: string[];
   milestoneSuggestions?: string[];
+  milestoneId?: string;
   linkedGoalIds?: string[];
   nextAction?: string;
   plannerTaskId?: string;
@@ -154,11 +171,14 @@ export type AIArtifactInput = Omit<AIArtifact, 'id' | 'createdAt'> & { createdAt
 export interface Goal {
   id: string;
   title: string;
+  description?: string;
+  successCriteria?: string;
   targetDate?: string;
   category: ActivityType;
   priority: Importance;
   linkedTaskIds: string[];
   roadmapSuggestions?: string[];
+  milestones?: GoalMilestone[];
   lifeLayer?: import('./lifePlanning.js').GoalLayer;
   planningStatus?: import('./lifePlanning.js').GoalStatus;
   startDate?: string;
@@ -168,11 +188,14 @@ export interface Goal {
 
 export interface GoalInput {
   title: string;
+  description?: string;
+  successCriteria?: string;
   targetDate?: string;
   category: ActivityType;
   priority: Importance;
   linkedTaskIds?: string[];
   roadmapSuggestions?: string[];
+  milestones?: GoalMilestone[];
 }
 
 export type LifeOSModule = 'home' | 'task' | 'map' | 'social' | 'log' | 'me';

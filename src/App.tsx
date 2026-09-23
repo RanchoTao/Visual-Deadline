@@ -4,7 +4,7 @@ import { AuthPanel } from './components/AuthPanel';
 import { GuestImportPanel } from './components/GuestImportPanel';
 import { HomePage } from './components/HomePage';
 import { CaptureIntakePanel } from './components/CaptureIntakePanel';
-import { LifeMapPage } from './components/LifeMapPage';
+import { PlanPage } from './components/PlanPage';
 import { LogPage } from './components/LogPage';
 import { ProfilePage } from './components/ProfilePage';
 import { PrivacyPolicyPage } from './components/PrivacyPolicyPage';
@@ -19,7 +19,7 @@ import { useSupabaseAuth } from './hooks/useSupabaseAuth';
 import type { Roadmap } from './types/roadmap';
 import type { VDNotification } from './types/notification';
 import type { BuiltInLifeEventType, LifeEventStore } from './types/lifeController';
-import type { Achievement, AIArtifact, AIArtifactInput, ActivityType, DailyQuest, DailyReview, Goal, GoalInput, LifecycleStatus, PressureBreakdown, PressureCalibrationSnapshot, PressureHistoryEventType, PressureHistoryRecord, ReminderSettings, Task, TaskInput, UserProfile } from './types/task';
+import type { Achievement, AIArtifact, AIArtifactInput, ActivityType, DailyQuest, DailyReview, Goal, GoalInput, GoalMilestone, LifecycleStatus, PressureBreakdown, PressureCalibrationSnapshot, PressureHistoryEventType, PressureHistoryRecord, ReminderSettings, Task, TaskInput, UserProfile } from './types/task';
 import {
   achievementCatalog,
   calculatePressureIndex,
@@ -48,6 +48,8 @@ import { abortCaptureMaterialization, beginCaptureMaterialization, claimCaptureT
 import { buildCaptureMaterializationPlan } from './domain/capture/materializer';
 import type { CaptureInput, CaptureInterpretation } from './domain/capture/types';
 import { applyTaskEditLifecycle, deleteTaskWithReferences, reconcileTaskGoalLinks, transitionTaskLifecycle } from './domain/tasks/operations';
+import { assignTaskToMilestone, createGoalMilestone, deleteGoalWithPlanCleanup, deleteMilestoneWithTaskCleanup, normalizeGoalMilestones, reorderGoalMilestones, unassignTaskFromMilestone, updateGoalMilestone } from './domain/plan/hierarchy';
+import { buildGoalDecompositionMaterializationPlan, type GoalDecompositionDraft } from './domain/plan/decomposition';
 import { defaultAISettings } from './services/aiClient';
 import { isAuthenticatedPath, isKnownAuthenticatedEntryPath, legacyRouteRedirect, safeAuthenticatedNext } from './lib/appRoutes';
 
@@ -132,6 +134,7 @@ function normalizeTaskInput(input: TaskInput): TaskInput {
     decomposition: input.decomposition?.filter(Boolean),
     stages: input.stages?.filter(Boolean),
     milestoneSuggestions: input.milestoneSuggestions?.filter(Boolean),
+    milestoneId: input.milestoneId,
     linkedGoalIds: input.linkedGoalIds?.filter(Boolean),
     nextAction: input.nextAction?.trim() || undefined,
     plannerTaskId: input.plannerTaskId,
@@ -172,6 +175,7 @@ function normalizeStoredTask(task: LegacyTask): Task {
     decomposition: Array.isArray(task.decomposition) ? task.decomposition.filter((item): item is string => typeof item === 'string' && Boolean(item.trim())) : undefined,
     stages: Array.isArray(task.stages) ? task.stages.filter((item): item is string => typeof item === 'string' && Boolean(item.trim())) : undefined,
     milestoneSuggestions: Array.isArray(task.milestoneSuggestions) ? task.milestoneSuggestions.filter((item): item is string => typeof item === 'string' && Boolean(item.trim())) : undefined,
+    milestoneId: typeof task.milestoneId === 'string' && Boolean(task.milestoneId.trim()) ? task.milestoneId : undefined,
     linkedGoalIds: Array.isArray(task.linkedGoalIds) ? task.linkedGoalIds.filter((item): item is string => typeof item === 'string' && Boolean(item.trim())) : undefined,
     nextAction: typeof task.nextAction === 'string' ? task.nextAction : undefined,
     plannerTaskId: typeof task.plannerTaskId === 'string' ? task.plannerTaskId : undefined,
@@ -291,6 +295,8 @@ function normalizeGoal(goal: Partial<Goal>): Goal {
   return {
     id: goal.id || crypto.randomUUID(),
     title: goal.title?.trim() || '未命名目标',
+    description: typeof goal.description === 'string' && goal.description.trim() ? goal.description.trim() : undefined,
+    successCriteria: typeof goal.successCriteria === 'string' && goal.successCriteria.trim() ? goal.successCriteria.trim() : undefined,
     targetDate: goal.targetDate || undefined,
     startDate: typeof goal.startDate === 'string' ? goal.startDate : undefined,
     lifeLayer: goal.lifeLayer,
@@ -299,6 +305,7 @@ function normalizeGoal(goal: Partial<Goal>): Goal {
     priority: clampImportance(goal.priority),
     linkedTaskIds: Array.isArray(goal.linkedTaskIds) ? goal.linkedTaskIds.filter((id): id is string => typeof id === 'string' && Boolean(id.trim())) : [],
     roadmapSuggestions: Array.isArray(goal.roadmapSuggestions) ? goal.roadmapSuggestions.filter((item): item is string => typeof item === 'string' && Boolean(item.trim())) : undefined,
+    milestones: normalizeGoalMilestones(goal.milestones, now),
     createdAt: goal.createdAt || now,
     updatedAt: goal.updatedAt || now,
   };
@@ -314,11 +321,14 @@ function createGoal(input: GoalInput): Goal {
   return {
     id: crypto.randomUUID(),
     title: input.title.trim() || '未命名目标',
+    description: input.description?.trim() || undefined,
+    successCriteria: input.successCriteria?.trim() || undefined,
     targetDate: input.targetDate || undefined,
     category: normalizeActivityType(input.category),
     priority: clampImportance(input.priority),
     linkedTaskIds: input.linkedTaskIds ?? [],
     roadmapSuggestions: input.roadmapSuggestions?.filter(Boolean),
+    milestones: normalizeGoalMilestones(input.milestones, now),
     createdAt: now,
     updatedAt: now,
   };
@@ -377,7 +387,7 @@ function AuthenticatedApp() {
   const [goals, setGoals, goalsReady] = useWorkspaceLocalStorage<Goal[]>(workspaceOwner, storageKeys.goals, []);
   const [achievements, setAchievements, achievementsReady] = useWorkspaceLocalStorage<Achievement[]>(workspaceOwner, storageKeys.achievements, []);
   const [aiArtifacts, setAIArtifacts, aiArtifactsReady] = useWorkspaceLocalStorage<AIArtifact[]>(workspaceOwner, storageKeys.aiArtifacts, []);
-  const [roadmaps, setRoadmaps, roadmapsReady] = useWorkspaceLocalStorage<Roadmap[]>(workspaceOwner, storageKeys.roadmaps, []);
+  const [roadmaps, , roadmapsReady] = useWorkspaceLocalStorage<Roadmap[]>(workspaceOwner, storageKeys.roadmaps, []);
   const [, , notificationsReady] = useWorkspaceLocalStorage<VDNotification[]>(workspaceOwner, storageKeys.notifications, [{ id: 'notification-ia', type: 'SYSTEM', title: '消息中心已启用', summary: '周报、风险提醒与系统建议将统一在这里送达。', content: 'VD 的后台分析结果会写入消息中心，不再占用首页的行动空间。', isRead: false, createdAt: new Date().toISOString() }]);
   const [profile, setProfile, profileReady] = useWorkspaceLocalStorage<UserProfile>(workspaceOwner, storageKeys.profile, defaultProfile);
   const [socialNodes, setSocialNodes, socialNodesReady] = useWorkspaceLocalStorage<unknown[]>(workspaceOwner, storageKeys.socialNodes, []);
@@ -942,15 +952,6 @@ function AuthenticatedApp() {
   }
 
 
-  function addTaskDrafts(inputs: TaskInput[]) {
-    if (inputs.length === 0) return;
-    const newTasks = inputs.map((input) => createTask(normalizeTaskInput(input)));
-    const nextTasks = [...newTasks, ...normalizedTasks];
-    setTasks(nextTasks);
-    recordPressureSnapshot('task_created', nextTasks, `AI 任务录入新增 ${newTasks.length} 个任务。`);
-  }
-
-
   function archiveTask(task: Task, lifecycleStatus: Exclude<LifecycleStatus, 'active'>) {
     const now = new Date().toISOString();
     const nextTasks = normalizedTasks.map((item) => item.id === task.id ? transitionTaskLifecycle(item, lifecycleStatus, now) : item);
@@ -1017,7 +1018,7 @@ function AuthenticatedApp() {
   function saveGoal(input: GoalInput, goalId?: string) {
     const now = new Date().toISOString();
     if (goalId) {
-      setGoals((currentGoals) => normalizeGoals(currentGoals).map((goal) => (goal.id === goalId ? { ...goal, ...normalizeGoal({ ...input, id: goalId, createdAt: goal.createdAt, updatedAt: now }) } : goal)));
+      setGoals((currentGoals) => normalizeGoals(currentGoals).map((goal) => (goal.id === goalId ? normalizeGoal({ ...goal, ...input, id: goalId, createdAt: goal.createdAt, updatedAt: now }) : goal)));
       return;
     }
     setGoals((currentGoals) => [createGoal(input), ...normalizeGoals(currentGoals)]);
@@ -1025,8 +1026,46 @@ function AuthenticatedApp() {
 
 
   function deleteGoal(goalId: string) {
-    setGoals((currentGoals) => normalizeGoals(currentGoals).filter((goal) => goal.id !== goalId));
-    setTasks((currentTasks) => currentTasks.map((task) => task.linkedGoalIds?.includes(goalId) ? { ...task, linkedGoalIds: task.linkedGoalIds.filter((id) => id !== goalId), updatedAt: new Date().toISOString() } : task));
+    const cleaned = deleteGoalWithPlanCleanup(normalizedGoals, normalizedTasks, goalId);
+    setGoals(cleaned.goals); setTasks(cleaned.tasks);
+  }
+
+  function saveMilestone(goalId: string, input: Partial<GoalMilestone> & { title: string }, milestoneId?: string) {
+    const now = new Date().toISOString();
+    setGoals((currentGoals) => normalizeGoals(currentGoals).map((goal) => {
+      if (goal.id !== goalId) return goal;
+      if (milestoneId) return updateGoalMilestone(goal, milestoneId, input, now);
+      const milestone = createGoalMilestone(input, now);
+      return { ...goal, milestones: [...normalizeGoalMilestones(goal.milestones, now), { ...milestone, sequence: normalizeGoalMilestones(goal.milestones, now).length + 1 }], updatedAt: now };
+    }));
+  }
+
+  function deleteMilestone(goalId: string, milestoneId: string) {
+    const cleaned = deleteMilestoneWithTaskCleanup(normalizedGoals, normalizedTasks, goalId, milestoneId);
+    setGoals(cleaned.goals); setTasks(cleaned.tasks);
+  }
+
+  function reorderMilestones(goalId: string, orderedIds: string[]) {
+    setGoals((currentGoals) => normalizeGoals(currentGoals).map((goal) => goal.id === goalId ? reorderGoalMilestones(goal, orderedIds) : goal));
+  }
+
+  function assignPlanTask(taskId: string, goalId: string, milestoneId: string) {
+    const assigned = assignTaskToMilestone(normalizedGoals, normalizedTasks, taskId, goalId, milestoneId);
+    setGoals(assigned.goals); setTasks(assigned.tasks);
+  }
+
+  function unassignPlanTask(taskId: string) {
+    setTasks(unassignTaskFromMilestone(normalizedTasks, taskId));
+  }
+
+  function materializeGoalDecomposition(goal: Goal, draft: GoalDecompositionDraft): string[] {
+    const plan = buildGoalDecompositionMaterializationPlan(goal, draft);
+    const nextGoal = { ...goal, milestones: [...normalizeGoalMilestones(goal.milestones), ...plan.milestones], linkedTaskIds: [...new Set([...goal.linkedTaskIds, ...plan.tasks.map((task) => task.id)])], updatedAt: new Date().toISOString() };
+    const newTasks = plan.tasks.map((entry) => ({ ...createTask(entry.input), id: entry.id }));
+    setGoals((currentGoals) => normalizeGoals(currentGoals).map((current) => current.id === goal.id ? nextGoal : current));
+    setTasks((currentTasks) => [...newTasks, ...currentTasks]);
+    if (newTasks.length) recordPressureSnapshot('task_created', [...newTasks, ...normalizedTasks], `计划分解新增 ${newTasks.length} 个任务。`);
+    return newTasks.map((task) => task.id);
   }
 
 
@@ -1138,7 +1177,7 @@ function AuthenticatedApp() {
     : publicPath === '/app/tasks'
       ? taskModule
       : publicPath === '/app/plan'
-        ? <LifeMapPage goals={normalizedGoals} tasks={normalizedTasks} roadmaps={roadmaps} onSaveRoadmap={(roadmap) => setRoadmaps((current) => [roadmap, ...current])} onSaveGoal={saveGoal} onDeleteGoal={deleteGoal} onAddTasks={addTaskDrafts} onCompleteTask={(task) => archiveTask(task, 'completed')} onRoadmapGenerated={(artifact) => { saveAIArtifact(artifact); unlockAchievement('roadmap-generated'); }} />
+        ? <PlanPage key={authoritativeOwnerKey} ownerKey={authoritativeOwnerKey} goals={normalizedGoals} tasks={normalizedTasks} roadmaps={roadmaps} onSaveGoal={saveGoal} onDeleteGoal={deleteGoal} onSaveMilestone={saveMilestone} onDeleteMilestone={deleteMilestone} onReorderMilestones={reorderMilestones} onAssignTask={assignPlanTask} onUnassignTask={unassignPlanTask} onMaterializeDecomposition={materializeGoalDecomposition} onRecordArtifact={saveAIArtifact} />
         : publicPath === '/app/review'
           ? <LogPage tasks={normalizedTasks} goals={normalizedGoals} profile={normalizedProfile} pressure={pressure} pressureHistory={normalizedPressureHistory} achievements={normalizedAchievements} aiArtifacts={normalizedAIArtifacts} onRecalculatePressureHistory={() => recalculateTaskDerivedPressureHistory()} onRecalibrate={openRecalibration} onAIReportGenerated={(artifact) => { saveAIArtifact(artifact); unlockAchievement('ai-report-generated'); }} onDelete={deleteTask} onEdit={startEditing} onRestore={restoreTask} onReviewNoteChange={updateReviewNote} />
           : publicPath === '/settings'
