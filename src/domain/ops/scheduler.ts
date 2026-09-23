@@ -1,6 +1,7 @@
 import type { Goal, Task } from '../../types/task.js';
 import { projectTaskDependencyGraph } from './dependencies.js';
 import { normalizeOpsState, resolveTaskExecutionConfig } from './normalization.js';
+import { buildZonedAvailabilityIntervals } from './time.js';
 import type { OpsAllocation, OpsExecutionPlan, OpsScheduleInput, OpsState, OpsUnscheduledTask } from './types.js';
 
 const minute = 60_000;
@@ -9,19 +10,10 @@ const overlaps = (start: number, end: number, otherStart: number, otherEnd: numb
 const iso = (milliseconds: number) => new Date(milliseconds).toISOString();
 const active = (task: Task) => task.lifecycleStatus === 'active';
 
-function availabilityIntervals(state: OpsState, executorId: string, start: number, end: number): Array<[number, number]> {
+export function buildExecutorAvailability(state: OpsState, executorId: string, start: number, end: number): Array<[number, number]> {
   const executor = state.executors.find((entry) => entry.id === executorId);
   if (!executor) return [];
-  const output: Array<[number, number]> = [];
-  for (let day = new Date(Date.UTC(new Date(start).getUTCFullYear(), new Date(start).getUTCMonth(), new Date(start).getUTCDate())).getTime(); day < end; day += 24 * 60 * minute) {
-    const weekday = new Date(day).getUTCDay();
-    executor.availability.filter((window) => window.weekday === weekday).forEach((window) => {
-      const [startHour, startMinute] = window.startTime.split(':').map(Number); const [endHour, endMinute] = window.endTime.split(':').map(Number);
-      const windowStart = day + (startHour * 60 + startMinute) * minute; const windowEnd = day + (endHour * 60 + endMinute) * minute;
-      if (windowEnd > start && windowStart < end) output.push([Math.max(start, windowStart), Math.min(end, windowEnd)]);
-    });
-  }
-  return output.sort((left, right) => left[0] - right[0]);
+  return buildZonedAvailabilityIntervals(state.timezone, executor.availability, start, end).map(([windowStart, windowEnd]): [number, number] => [windowStart, windowEnd]);
 }
 
 function fitsSlot(state: OpsState, executorId: string, start: number, elapsedMinutes: number, allocations: readonly OpsAllocation[]): boolean {
@@ -38,7 +30,7 @@ function fitsSlot(state: OpsState, executorId: string, start: number, elapsedMin
 }
 
 function findSlot(state: OpsState, executorId: string, earliest: number, end: number, elapsedMinutes: number, allocations: readonly OpsAllocation[]): number | undefined {
-  for (const [windowStart, windowEnd] of availabilityIntervals(state, executorId, earliest, end)) {
+  for (const [windowStart, windowEnd] of buildExecutorAvailability(state, executorId, earliest, end)) {
     for (let candidate = Math.max(windowStart, earliest); candidate + elapsedMinutes * minute <= windowEnd; candidate += minute) if (fitsSlot(state, executorId, candidate, elapsedMinutes, allocations)) return candidate;
   }
   return undefined;
@@ -64,7 +56,8 @@ export function buildOpsScheduleProposal(input: OpsScheduleInput): OpsExecutionP
   // Only structurally valid locks are carried into a replan; invalid ones are visible diagnostics.
   for (const allocation of accepted?.allocations ?? []) {
     if (!allocation.locked) continue;
-    if (!byId.has(allocation.taskId) || !state.executors.some((executor) => executor.id === allocation.executorId) || Date.parse(allocation.end) <= Date.parse(allocation.start)) { warnings.push(`LOCKED_CONFLICT:${allocation.taskId}`); continue; }
+    const lockedTask = byId.get(allocation.taskId);
+    if (!lockedTask || !active(lockedTask) || !state.executors.some((executor) => executor.id === allocation.executorId) || Date.parse(allocation.end) <= Date.parse(allocation.start)) { warnings.push(lockedTask && !active(lockedTask) ? `STALE_TERMINAL_ALLOCATION:${allocation.taskId}` : `LOCKED_CONFLICT:${allocation.taskId}`); continue; }
     allocations.push({ ...allocation });
   }
   const alreadyAllocated = new Set(allocations.map((allocation) => allocation.taskId));
@@ -100,7 +93,10 @@ export function buildOpsScheduleProposal(input: OpsScheduleInput): OpsExecutionP
 
 export function detectOpsConflicts(plan: OpsExecutionPlan, tasks: readonly Task[], state: OpsState): string[] {
   const normalized = normalizeOpsState(state); const taskById = new Map(tasks.map((task) => [task.id, task])); const conflicts: string[] = [];
-  plan.allocations.forEach((allocation) => { const executor = normalized.executors.find((entry) => entry.id === allocation.executorId); const task = taskById.get(allocation.taskId); const start = Date.parse(allocation.start); const end = Date.parse(allocation.end); if (!task) conflicts.push(`DELETED_TASK:${allocation.taskId}`); if (!executor) conflicts.push(`MISSING_EXECUTOR:${allocation.taskId}`); if (end <= start) conflicts.push(`INVALID_ALLOCATION:${allocation.taskId}`); if (executor && !availabilityIntervals(normalized, executor.id, start, end).some(([windowStart, windowEnd]) => windowStart <= start && windowEnd >= end)) conflicts.push(`OUTSIDE_AVAILABILITY:${allocation.taskId}`); if (normalized.commitments.some((commitment) => commitment.executorId === allocation.executorId && overlaps(start, end, Date.parse(commitment.start), Date.parse(commitment.end)))) conflicts.push(`COMMITMENT_COLLISION:${allocation.taskId}`); if (task?.deadline && end > Date.parse(task.deadline)) conflicts.push(`DEADLINE_MISS:${allocation.taskId}`); });
-  normalized.executors.forEach((executor) => { const lane = plan.allocations.filter((allocation) => allocation.executorId === executor.id); lane.forEach((allocation) => { const midpoint = (Date.parse(allocation.start) + Date.parse(allocation.end)) / 2; if (lane.filter((other) => Date.parse(other.start) <= midpoint && Date.parse(other.end) > midpoint).length > executor.maxParallel) conflicts.push(`CAPACITY_CONFLICT:${executor.id}`); }); });
-  return conflicts;
+  const graph = new Map(projectTaskDependencyGraph(tasks).map((entry) => [entry.taskId, entry])); const allocationByTask = new Map(plan.allocations.map((allocation) => [allocation.taskId, allocation]));
+  plan.allocations.forEach((allocation) => { const executor = normalized.executors.find((entry) => entry.id === allocation.executorId); const task = taskById.get(allocation.taskId); const start = Date.parse(allocation.start); const end = Date.parse(allocation.end); if (!task) conflicts.push(`DELETED_TASK:${allocation.taskId}`); if (!executor) conflicts.push(`MISSING_EXECUTOR:${allocation.taskId}`); if (end <= start) conflicts.push(`INVALID_ALLOCATION:${allocation.taskId}`); if (executor && !buildExecutorAvailability(normalized, executor.id, start, end).some(([windowStart, windowEnd]) => windowStart <= start && windowEnd >= end)) conflicts.push(`OUTSIDE_AVAILABILITY:${allocation.taskId}`); normalized.commitments.filter((commitment) => commitment.executorId === allocation.executorId && overlaps(start, end, Date.parse(commitment.start), Date.parse(commitment.end))).forEach((commitment) => conflicts.push(`${allocation.locked ? 'LOCKED_' : ''}COMMITMENT_COLLISION:${allocation.taskId}:${commitment.id}`)); if (task?.deadline && end > Date.parse(task.deadline)) conflicts.push(`DEADLINE_MISS:${allocation.taskId}`);
+    for (const predecessor of graph.get(allocation.taskId)?.predecessors ?? []) { if (predecessor.state === 'missing') conflicts.push(`MISSING_PREDECESSOR:${allocation.taskId}:${predecessor.taskId}`); else if (predecessor.state === 'self') conflicts.push(`SELF_DEPENDENCY:${allocation.taskId}`); else if (predecessor.state === 'cycle') conflicts.push(`DEPENDENCY_CYCLE:${allocation.taskId}`); else if (predecessor.state === 'abandoned') conflicts.push(`ABANDONED_PREDECESSOR:${allocation.taskId}:${predecessor.taskId}`); else if (predecessor.state === 'active') { const predecessorAllocation = allocationByTask.get(predecessor.taskId); if (!predecessorAllocation) conflicts.push(`ACTIVE_PREDECESSOR_UNSCHEDULED:${allocation.taskId}:${predecessor.taskId}`); else if (Date.parse(predecessorAllocation.end) > start) conflicts.push(`DEPENDENCY_TIMING:${allocation.taskId}:${predecessor.taskId}`); } }
+  });
+  normalized.executors.forEach((executor) => { const lane = plan.allocations.filter((allocation) => allocation.executorId === executor.id); lane.forEach((allocation) => { const midpoint = (Date.parse(allocation.start) + Date.parse(allocation.end)) / 2; const concurrent = lane.filter((other) => Date.parse(other.start) <= midpoint && Date.parse(other.end) > midpoint); if (concurrent.length > executor.maxParallel) conflicts.push(`${concurrent.every((other) => other.locked) ? 'LOCKED_CAPACITY_CONFLICT' : 'CAPACITY_CONFLICT'}:${executor.id}`); }); });
+  return [...new Set(conflicts)];
 }

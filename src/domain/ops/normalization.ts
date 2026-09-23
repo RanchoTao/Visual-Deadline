@@ -1,5 +1,6 @@
 import type { Task } from '../../types/task.js';
 import { createDefaultOpsState, type OpsAvailabilityWindow, type OpsExecutionPlan, type OpsExecutor, type OpsExecutorKind, type OpsState, type OpsTaskConfig, type ResolvedTaskExecution } from './types.js';
+import { normalizeOpsTimezone } from './time.js';
 
 const kinds = new Set<OpsExecutorKind>(['human', 'agent', 'compute', 'external', 'hybrid']);
 const horizons = new Set([7, 14, 30]);
@@ -62,7 +63,7 @@ export function normalizeOpsState(raw: unknown, fallbackNow = new Date().toISOSt
   const plans = Array.isArray(raw.plans) ? raw.plans.flatMap((value) => { const plan = normalizePlan(value, validExecutorIds, planIds); return plan ? [plan] : []; }) : [];
   const acceptedPlanId = typeof raw.acceptedPlanId === 'string' && plans.some((plan) => plan.id === raw.acceptedPlanId && plan.status === 'accepted') ? raw.acceptedPlanId : undefined;
   const proposedPlanId = typeof raw.proposedPlanId === 'string' && plans.some((plan) => plan.id === raw.proposedPlanId && plan.status === 'proposed') ? raw.proposedPlanId : undefined;
-  return { schemaVersion: 1, timezone: typeof raw.timezone === 'string' && raw.timezone.trim() ? raw.timezone : fallback.timezone, horizonDays: horizons.has(raw.horizonDays as number) ? raw.horizonDays as 7 | 14 | 30 : 7, executors, commitments, taskConfigs, plans, acceptedPlanId, proposedPlanId, updatedAt: iso(raw.updatedAt) ? raw.updatedAt : fallbackNow };
+  return { schemaVersion: 1, timezone: normalizeOpsTimezone(raw.timezone), horizonDays: horizons.has(raw.horizonDays as number) ? raw.horizonDays as 7 | 14 | 30 : 7, executors, commitments, taskConfigs, plans, acceptedPlanId, proposedPlanId, updatedAt: iso(raw.updatedAt) ? raw.updatedAt : fallbackNow };
 }
 
 export function chooseNewerOpsState(local: unknown, cloud: unknown): OpsState {
