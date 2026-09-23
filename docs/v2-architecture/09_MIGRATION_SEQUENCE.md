@@ -46,7 +46,7 @@ The primary navigation is fixed as `NOW / TASKS / PLAN / OPS / REVIEW`. Additive
 ### PR E — minimum additive Beta schema and RLS
 
 - Goal: add only schema required by current Beta functionality and safe migration: canonical Goal/Milestone/Task/dependencies, minimal Capture extensions if needed, complete import/legacy-ID ledger, and enabled notification/billing-continuity adjustments.
-- Explicitly deferred: OPS Resource Budgets/Allocations/Fixed Commitments/Execution Windows, REVIEW Events/Reviews/AI Reports, and recurring-subscription tables unless their owning feature is included in Beta.
+- Explicitly deferred: canonical OPS Resource Budget/Allocation/Fixed Commitment/Execution Window tables, REVIEW Events/Reviews/AI Reports, and recurring-subscription tables. Beta OPS compatibility state may persist only when the OPS feature consumes it.
 - Files/modules: small timestamped `supabase/migrations/*`, RLS SQL tests, schema documentation. Reconstruct a chronological baseline; do not run `supabase-schema.sql`.
 - Data risk: low for additive tables; high if policies expose data.
 - Migration dependency: canonical contracts and complete inventory.
