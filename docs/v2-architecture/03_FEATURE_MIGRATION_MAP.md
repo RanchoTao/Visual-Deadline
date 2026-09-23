@@ -85,7 +85,7 @@ Legend:
 ## Persistence scope
 
 - **Beta-required:** current Profile/Settings data, canonical Goal/Milestone/Task/dependencies or their safe compatibility repository, NOW Capture confirmation/materialization, complete export/import ledger, and any notification/billing continuity actually enabled in Beta.
-- **Later/OPS:** Resource Budgets, Resource Allocations, Fixed Commitments, Operations Plan Versions, and Execution Windows become runtime requirements only when OPS consumes them.
+- **Beta/OPS compatibility state:** OPS now consumes executor, commitment, allocation, and execution-window data through owner-scoped `OpsState` / profile JSON. Canonical OPS tables remain deferred.
 - **Later/REVIEW:** Execution Events, Reviews, and AI Reports become runtime requirements only when REVIEW needs durable history beyond current derived/local data.
 - **Conditional Billing:** recurring Subscription/Entitlement persistence is required only when recurring billing enters release scope; current Billing v1 continuity remains protected meanwhile.
 

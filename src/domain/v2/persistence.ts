@@ -37,9 +37,8 @@ export const V2_PERSISTENCE_STAGING = [
   },
   {
     id: 'ops_resource_model',
-    stage: 'DEFERRED',
-    rationale: 'Resource budgets, allocations and execution windows are not Beta storage requirements.',
-    becomesRequiredWhen: 'OPS consumes durable resource and execution-window data.',
+    stage: 'BETA_REQUIRED',
+    rationale: 'OPS now consumes owner-scoped compatibility OpsState, persisted locally and in profile JSON; canonical OPS tables remain later work.',
   },
   {
     id: 'review_history',

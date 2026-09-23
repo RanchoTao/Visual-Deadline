@@ -46,6 +46,7 @@ export const storageKeys = {
   planningResource: 'vd.vnext.resource',
   planningExecutionEvents: 'vd.vnext.executionEvents',
   planningPlanVersions: 'vd.vnext.planVersions',
+  opsState: 'vd.v2.ops.state',
   backupLatest: 'vd_backup_latest',
   backup1: 'vd_backup_1',
   backup2: 'vd_backup_2',

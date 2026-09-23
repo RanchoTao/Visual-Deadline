@@ -5,6 +5,7 @@ import { GuestImportPanel } from './components/GuestImportPanel';
 import { HomePage } from './components/HomePage';
 import { CaptureIntakePanel } from './components/CaptureIntakePanel';
 import { PlanPage } from './components/PlanPage';
+import { OpsPage } from './components/OpsPage';
 import { LogPage } from './components/LogPage';
 import { ProfilePage } from './components/ProfilePage';
 import { PrivacyPolicyPage } from './components/PrivacyPolicyPage';
@@ -50,6 +51,9 @@ import type { CaptureInput, CaptureInterpretation } from './domain/capture/types
 import { applyTaskEditLifecycle, deleteTaskWithReferences, reconcileTaskGoalLinks, transitionTaskLifecycle } from './domain/tasks/operations';
 import { assignTaskToMilestone, createGoalMilestone, deleteGoalWithPlanCleanup, deleteMilestoneWithTaskCleanup, normalizeGoalMilestones, reorderGoalMilestones, unassignTaskFromMilestone, updateGoalMilestone, type GoalMilestoneUpdate } from './domain/plan/hierarchy';
 import { buildGoalDecompositionMaterializationPlan, type GoalDecompositionDraft } from './domain/plan/decomposition';
+import { chooseNewerOpsState, normalizeOpsState } from './domain/ops/normalization';
+import { createDefaultOpsState, type OpsState } from './domain/ops/types';
+import { deleteTaskFromOpsState } from './domain/ops/plans';
 import { defaultAISettings } from './services/aiClient';
 import { isAuthenticatedPath, isKnownAuthenticatedEntryPath, legacyRouteRedirect, safeAuthenticatedNext } from './lib/appRoutes';
 
@@ -385,6 +389,7 @@ function AuthenticatedApp() {
   const [pendingGuestImport, setPendingGuestImport] = useState<PendingGuestImportSnapshot | null>(() => readPendingGuestImport(browserStorageAdapter));
   const [tasks, setTasks, tasksReady] = useWorkspaceLocalStorage<Task[]>(workspaceOwner, storageKeys.tasks, []);
   const [goals, setGoals, goalsReady] = useWorkspaceLocalStorage<Goal[]>(workspaceOwner, storageKeys.goals, []);
+  const [opsState, setOpsState, opsStateReady] = useWorkspaceLocalStorage<OpsState>(workspaceOwner, storageKeys.opsState, createDefaultOpsState());
   const [achievements, setAchievements, achievementsReady] = useWorkspaceLocalStorage<Achievement[]>(workspaceOwner, storageKeys.achievements, []);
   const [aiArtifacts, setAIArtifacts, aiArtifactsReady] = useWorkspaceLocalStorage<AIArtifact[]>(workspaceOwner, storageKeys.aiArtifacts, []);
   const [roadmaps, , roadmapsReady] = useWorkspaceLocalStorage<Roadmap[]>(workspaceOwner, storageKeys.roadmaps, []);
@@ -401,7 +406,7 @@ function AuthenticatedApp() {
   const [dailyReview, , dailyReviewReady] = useWorkspaceLocalStorage<DailyReview | null>(workspaceOwner, storageKeys.dailyReview, null);
   const [, , reminderSettingsReady] = useWorkspaceLocalStorage<ReminderSettings>(workspaceOwner, storageKeys.reminderSettings, defaultReminderSettings);
   const [lifeEventsByOwner, setLifeEventsByOwner, lifeEventsReady] = useWorkspaceLocalStorage<LifeEventStore>(workspaceOwner, storageKeys.lifeEventsByOwner, {});
-  const isWorkspaceReady = isWorkspaceOwnerReady && [tasksReady, goalsReady, achievementsReady, aiArtifactsReady, roadmapsReady, notificationsReady, profileReady, socialNodesReady, socialLayoutReady, onboardingReady, baselinePressureReady, pressureCalibrationReady, pressureHistoryReady, dailyQuestReady, dailyReviewReady, reminderSettingsReady, lifeEventsReady].every(Boolean);
+  const isWorkspaceReady = isWorkspaceOwnerReady && [tasksReady, goalsReady, opsStateReady, achievementsReady, aiArtifactsReady, roadmapsReady, notificationsReady, profileReady, socialNodesReady, socialLayoutReady, onboardingReady, baselinePressureReady, pressureCalibrationReady, pressureHistoryReady, dailyQuestReady, dailyReviewReady, reminderSettingsReady, lifeEventsReady].every(Boolean);
   const [, setViewportWidth] = useState(() => window.innerWidth);
   const [isRecalibrationOpen, setIsRecalibrationOpen] = useState(false);
   const [recalibrationPressure, setRecalibrationPressure] = useState(legacyReferencePressure);
@@ -457,6 +462,7 @@ function AuthenticatedApp() {
     return storedTasks.map((task) => normalizeStoredTask(task));
   }, [tasks]);
   const normalizedGoals = useMemo(() => normalizeGoals(goals), [goals]);
+  const normalizedOpsState = useMemo(() => normalizeOpsState(opsState), [opsState]);
   const normalizedAchievements = useMemo(() => normalizeStoredAchievements(achievements), [achievements]);
   const normalizedAIArtifacts = useMemo(() => normalizeAIArtifacts(aiArtifacts), [aiArtifacts]);
   const normalizedProfile = useMemo(() => normalizeProfile(profile), [profile]);
@@ -568,6 +574,7 @@ function AuthenticatedApp() {
         setPressureHistory(mergedPressureHistory);
         setSocialNodes(mergedSocialNodes);
         setSocialLayoutVersion(mergedSocialLayoutVersion);
+        if (cloudData.opsState) setOpsState(chooseNewerOpsState(normalizedOpsState, cloudData.opsState));
         if (cloudData.profile) setProfile(cloudData.profile);
         if (cloudData.pressureCalibration) setPressureCalibration(cloudData.pressureCalibration);
         if (cloudData.onboardingComplete !== null) setOnboardingComplete(cloudData.onboardingComplete);
@@ -697,11 +704,11 @@ function AuthenticatedApp() {
   useEffect(() => {
     if (!session || !workspaceOwner || !isWorkspaceReady || !isCloudReady || isApplyingCloudData.current) return;
     let isCurrent = true;
-    saveCloudProfile({ profile: normalizedProfile, pressureCalibration: normalizedPressureCalibration, onboardingComplete, socialNodes, socialLayoutVersion }, session, workspaceOwner)
+    saveCloudProfile({ profile: normalizedProfile, pressureCalibration: normalizedPressureCalibration, onboardingComplete, socialNodes, socialLayoutVersion, opsState: normalizedOpsState }, session, workspaceOwner)
       .then(() => { if (isCurrent) setCloudStatus('已同步到云端'); })
       .catch((error) => { if (isCurrent) setCloudError(error instanceof Error ? error.message : '个人设置云同步失败。'); });
     return () => { isCurrent = false; };
-  }, [isCloudReady, isWorkspaceReady, normalizedPressureCalibration, normalizedProfile, onboardingComplete, session, socialLayoutVersion, socialNodes, workspaceOwner]);
+  }, [isCloudReady, isWorkspaceReady, normalizedOpsState, normalizedPressureCalibration, normalizedProfile, onboardingComplete, session, socialLayoutVersion, socialNodes, workspaceOwner]);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => setPressureClock(Date.now()), 60 * 1000);
@@ -965,6 +972,7 @@ function AuthenticatedApp() {
     const now = new Date().toISOString();
     const cleaned = deleteTaskWithReferences(normalizedTasks, normalizedGoals, taskId, now);
     setTasks(cleaned.tasks); setGoals(cleaned.goals);
+    setOpsState(deleteTaskFromOpsState(normalizedOpsState, taskId, now));
     recalculateTaskDerivedPressureHistory(cleaned.tasks, `删除任务后重算压力曲线：${deletedTask.title}`);
   }
 
@@ -1178,13 +1186,15 @@ function AuthenticatedApp() {
       ? taskModule
       : publicPath === '/app/plan'
         ? <PlanPage key={authoritativeOwnerKey} ownerKey={authoritativeOwnerKey} goals={normalizedGoals} tasks={normalizedTasks} roadmaps={roadmaps} onSaveGoal={saveGoal} onDeleteGoal={deleteGoal} onSaveMilestone={saveMilestone} onDeleteMilestone={deleteMilestone} onReorderMilestones={reorderMilestones} onAssignTask={assignPlanTask} onUnassignTask={unassignPlanTask} onMaterializeDecomposition={materializeGoalDecomposition} onRecordArtifact={saveAIArtifact} />
+        : publicPath === '/app/ops'
+          ? <OpsPage key={authoritativeOwnerKey} ownerKey={authoritativeOwnerKey} tasks={normalizedTasks} goals={normalizedGoals} state={normalizedOpsState} onChange={setOpsState} />
         : publicPath === '/app/review'
           ? <LogPage tasks={normalizedTasks} goals={normalizedGoals} profile={normalizedProfile} pressure={pressure} pressureHistory={normalizedPressureHistory} achievements={normalizedAchievements} aiArtifacts={normalizedAIArtifacts} onRecalculatePressureHistory={() => recalculateTaskDerivedPressureHistory()} onRecalibrate={openRecalibration} onAIReportGenerated={(artifact) => { saveAIArtifact(artifact); unlockAchievement('ai-report-generated'); }} onDelete={deleteTask} onEdit={startEditing} onRestore={restoreTask} onReviewNoteChange={updateReviewNote} />
           : publicPath === '/settings'
             ? profileModule
             : publicPath === '/billing'
               ? <section className="max-w-2xl rounded-2xl border border-zinc-200 bg-white p-6"><p className="text-xs font-semibold tracking-[.16em] text-zinc-400">ACCOUNT</p><h1 className="mt-2 text-2xl font-semibold tracking-tight">Subscription & billing</h1><p className="mt-3 text-sm leading-6 text-zinc-500">Billing is not enabled in this environment. Your account and workspace are unchanged.</p></section>
-              : <section className="max-w-2xl rounded-2xl border border-zinc-200 bg-white p-6"><p className="text-xs font-semibold tracking-[.16em] text-zinc-400">OPS</p><h1 className="mt-2 text-2xl font-semibold tracking-tight">Operate competing work.</h1><p className="mt-3 text-sm leading-6 text-zinc-500">Capacity, time, attention, energy, conflicts, and rolling replanning will arrive here as the OPS migration becomes available.</p></section>;
+              : <section className="max-w-2xl rounded-2xl border border-zinc-200 bg-white p-6"><h1 className="text-2xl font-semibold">页面不存在</h1></section>;
 
   return (
     <WorkspaceOwnerProvider owner={workspaceOwner}>
