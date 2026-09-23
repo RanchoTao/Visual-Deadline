@@ -37,6 +37,7 @@
     "../src/domain/tasks/**/*.ts",
     "../src/domain/plan/**/*.ts",
     "../src/domain/ops/**/*.ts",
+    "../src/domain/review/**/*.ts",
     "../src/domain/public/publicRouteTargets.ts",
     "../src/lib/legacySessionTransition.ts",
     "./v2RepositoryContracts.compile.ts"

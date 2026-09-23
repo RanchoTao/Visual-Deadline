@@ -42,8 +42,7 @@ export const V2_PERSISTENCE_STAGING = [
   },
   {
     id: 'review_history',
-    stage: 'DEFERRED',
-    rationale: 'Execution events, reviews and reports are not Beta storage requirements.',
-    becomesRequiredWhen: 'REVIEW migration requires durable history.',
+    stage: 'BETA_REQUIRED',
+    rationale: 'REVIEW now persists owner-scoped snapshot/report history locally and in profile JSON; canonical review tables remain future work.',
   },
 ] as const satisfies readonly PersistenceCapability[];

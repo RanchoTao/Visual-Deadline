@@ -71,6 +71,7 @@ export const STORAGE_DOMAIN_INVENTORY: readonly StorageDomainInventoryItem[] = [
   userDomain('review.execution-events', storageKeys.planningExecutionEvents, [], { sensitivity: 'personal', betaMigration: 'deferred' }),
   userDomain('planning.plan-versions', storageKeys.planningPlanVersions, [], { sensitivity: 'personal', betaMigration: 'deferred' }),
   userDomain('operations.v2-state', storageKeys.opsState, null, { sensitivity: 'personal', cloudSync: 'synced', betaMigration: 'keep-local', notes: 'Owner-scoped v2 OPS execution state; compatible profile JSON cloud sync, no canonical table.' }),
+  userDomain('review.v2-state', storageKeys.reviewState, null, { sensitivity: 'personal', cloudSync: 'synced', betaMigration: 'keep-local', notes: 'Owner-scoped v2 REVIEW snapshot/report history via profile JSON; no canonical review table.' }),
   {
     id: 'cache.welcome-activity', storageKey: storageKeys.welcomeLastActive, domainVersion: 1, ownership: 'derived-cache', exportPolicy: 'exclude', restorePolicy: 'exclude', sensitivity: 'normal', attachmentPolicy: 'none', cloudSync: 'not-applicable', betaMigration: 'excluded', notes: 'Ephemeral inactivity timestamp; safe to regenerate.',
   },

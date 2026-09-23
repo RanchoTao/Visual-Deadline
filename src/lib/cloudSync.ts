@@ -4,6 +4,7 @@ import { normalizeLifeEvents } from '../domain/life-controller';
 import { SupabaseRestError, supabase, type SupabaseSession } from './supabaseClient';
 import { assertWorkspaceSessionOwner, type WorkspaceOwner } from '../storage/workspace';
 import type { OpsState } from '../domain/ops/types';
+import type { ReviewState } from '../domain/review/types';
 
 interface JsonRow<T> {
   id: string;
@@ -19,6 +20,7 @@ interface ProfileData {
   socialNodes?: unknown[];
   socialLayoutVersion?: number;
   opsState?: OpsState;
+  reviewState?: ReviewState;
 }
 
 interface ProfileRow {
@@ -52,6 +54,7 @@ export interface CloudData {
   socialNodes: unknown[] | null;
   socialLayoutVersion: number | null;
   opsState: OpsState | null;
+  reviewState: ReviewState | null;
 }
 
 const encode = (value: string) => encodeURIComponent(value).replace(/'/g, '%27');
@@ -137,6 +140,7 @@ export async function loadCloudData(session: SupabaseSession, owner: WorkspaceOw
       socialNodes: Array.isArray(profileData?.socialNodes) ? profileData.socialNodes : null,
       socialLayoutVersion: typeof profileData?.socialLayoutVersion === 'number' ? profileData.socialLayoutVersion : null,
       opsState: profileData?.opsState ?? null,
+      reviewState: profileData?.reviewState ?? null,
     };
   })());
 }
@@ -203,7 +207,7 @@ export async function deleteCloudLifeEvent(eventId: string, session: SupabaseSes
   await withCloudSyncErrors(supabase.rest(`life_events?id=eq.${encode(eventId)}&user_id=eq.${encode(session.user.id)}`, { method: 'DELETE' }, session));
 }
 
-export async function saveCloudProfile(input: { profile: UserProfile; pressureCalibration: PressureCalibrationSnapshot; onboardingComplete: boolean; socialNodes: unknown[]; socialLayoutVersion: number; opsState: OpsState }, session: SupabaseSession, owner: WorkspaceOwner): Promise<void> {
+export async function saveCloudProfile(input: { profile: UserProfile; pressureCalibration: PressureCalibrationSnapshot; onboardingComplete: boolean; socialNodes: unknown[]; socialLayoutVersion: number; opsState: OpsState; reviewState: ReviewState }, session: SupabaseSession, owner: WorkspaceOwner): Promise<void> {
   assertWorkspaceSessionOwner(owner, session.user.id);
   await withCloudSyncErrors(supabase.rest('profiles', {
     method: 'POST',
@@ -222,6 +226,7 @@ export async function saveCloudProfile(input: { profile: UserProfile; pressureCa
         socialNodes: input.socialNodes,
         socialLayoutVersion: input.socialLayoutVersion,
         opsState: input.opsState,
+        reviewState: input.reviewState,
       },
       updated_at: new Date().toISOString(),
     }),
