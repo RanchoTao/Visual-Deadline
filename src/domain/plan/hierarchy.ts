@@ -16,6 +16,11 @@ export interface PlanValidationResult {
   warnings: string[];
 }
 
+export type GoalMilestoneUpdate = Omit<Partial<GoalMilestone>, 'targetDate'> & {
+  /** Omitted preserves the existing date; null or undefined as an own property clears it. */
+  targetDate?: string | null;
+};
+
 function validDate(value: unknown): value is string {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const [year, month, day] = value.split('-').map(Number);
@@ -83,7 +88,7 @@ export function createGoalMilestone(input: Partial<GoalMilestone> & { title: str
   };
 }
 
-export function updateGoalMilestone(goal: Goal, milestoneId: string, patch: Partial<GoalMilestone>, now = new Date().toISOString()): Goal {
+export function updateGoalMilestone(goal: Goal, milestoneId: string, patch: GoalMilestoneUpdate, now = new Date().toISOString()): Goal {
   const milestones = normalizeGoalMilestones(goal.milestones, now);
   const index = milestones.findIndex((milestone) => milestone.id === milestoneId);
   if (index < 0) throw new Error('未找到要更新的里程碑。');
@@ -95,7 +100,7 @@ export function updateGoalMilestone(goal: Goal, milestoneId: string, patch: Part
     ...current,
     title: nextTitle,
     description: patch.description === undefined ? current.description : stringOrUndefined(patch.description),
-    targetDate: patch.targetDate === undefined ? current.targetDate : (validDate(patch.targetDate) ? patch.targetDate : undefined),
+    targetDate: Object.prototype.hasOwnProperty.call(patch, 'targetDate') ? (validDate(patch.targetDate) ? patch.targetDate : undefined) : current.targetDate,
     successCriteria: patch.successCriteria === undefined ? current.successCriteria : stringOrUndefined(patch.successCriteria),
     completionEvidence: patch.completionEvidence === undefined ? current.completionEvidence : stringOrUndefined(patch.completionEvidence),
     status: nextStatus,
@@ -123,7 +128,7 @@ export function deleteMilestoneWithTaskCleanup(goals: Goal[], tasks: Task[], goa
   if (!goal || !normalizeGoalMilestones(goal.milestones, now).some((milestone) => milestone.id === milestoneId)) throw new Error('未找到要删除的里程碑。');
   return {
     goals: goals.map((item) => item.id === goalId ? { ...item, milestones: normalizeGoalMilestones(item.milestones, now).filter((milestone) => milestone.id !== milestoneId).map((milestone, index) => ({ ...milestone, sequence: index + 1 })), updatedAt: now } : item),
-    tasks: tasks.map((task) => task.milestoneId === milestoneId ? { ...task, milestoneId: undefined, updatedAt: now } : task),
+    tasks: tasks.map((task) => task.milestoneId === milestoneId && task.linkedGoalIds?.includes(goalId) ? { ...task, milestoneId: undefined, updatedAt: now } : task),
   };
 }
 
@@ -148,17 +153,27 @@ export function deleteGoalWithPlanCleanup(goals: Goal[], tasks: Task[], goalId: 
   return {
     goals: goals.filter((item) => item.id !== goalId),
     tasks: tasks.map((task) => {
+      const wasLinkedToDeletedGoal = task.linkedGoalIds?.includes(goalId) ?? false;
       const linkedGoalIds = task.linkedGoalIds?.filter((id) => id !== goalId);
-      const milestoneId = task.milestoneId && milestoneIds.has(task.milestoneId) ? undefined : task.milestoneId;
+      const milestoneId = wasLinkedToDeletedGoal && task.milestoneId && milestoneIds.has(task.milestoneId) ? undefined : task.milestoneId;
       return linkedGoalIds?.length !== task.linkedGoalIds?.length || milestoneId !== task.milestoneId ? { ...task, linkedGoalIds, milestoneId, updatedAt: now } : task;
     }),
   };
 }
 
+/** Goal membership is explicit. A colliding milestone ID can never imply a goal relation. */
+export function selectGoalTasks(tasks: Task[], goalId: string): Task[] {
+  return tasks.filter((task) => task.linkedGoalIds?.includes(goalId));
+}
+
+export function getUnassignedGoalTasks(tasks: Task[], goalId: string, milestones: GoalMilestone[]): Task[] {
+  const milestoneIds = new Set(milestones.map((milestone) => milestone.id));
+  return selectGoalTasks(tasks, goalId).filter((task) => !task.milestoneId || !milestoneIds.has(task.milestoneId));
+}
+
 export function projectGoalPlanProgress(goal: Goal, tasks: Task[]): GoalPlanProgress {
   const milestones = normalizeGoalMilestones(goal.milestones);
-  const milestoneIds = new Set(milestones.map((milestone) => milestone.id));
-  const relatedTasks = tasks.filter((task) => task.linkedGoalIds?.includes(goal.id) || (task.milestoneId && milestoneIds.has(task.milestoneId)));
+  const relatedTasks = selectGoalTasks(tasks, goal.id);
   const milestoneCompleted = milestones.filter((milestone) => milestone.status === 'completed').length;
   const taskCompleted = relatedTasks.filter((task) => task.lifecycleStatus === 'completed').length;
   // A goal with milestones is projected from milestone completion only; task completion remains a separate, visible count.

@@ -19,7 +19,7 @@ import { useSupabaseAuth } from './hooks/useSupabaseAuth';
 import type { Roadmap } from './types/roadmap';
 import type { VDNotification } from './types/notification';
 import type { BuiltInLifeEventType, LifeEventStore } from './types/lifeController';
-import type { Achievement, AIArtifact, AIArtifactInput, ActivityType, DailyQuest, DailyReview, Goal, GoalInput, GoalMilestone, LifecycleStatus, PressureBreakdown, PressureCalibrationSnapshot, PressureHistoryEventType, PressureHistoryRecord, ReminderSettings, Task, TaskInput, UserProfile } from './types/task';
+import type { Achievement, AIArtifact, AIArtifactInput, ActivityType, DailyQuest, DailyReview, Goal, GoalInput, LifecycleStatus, PressureBreakdown, PressureCalibrationSnapshot, PressureHistoryEventType, PressureHistoryRecord, ReminderSettings, Task, TaskInput, UserProfile } from './types/task';
 import {
   achievementCatalog,
   calculatePressureIndex,
@@ -48,7 +48,7 @@ import { abortCaptureMaterialization, beginCaptureMaterialization, claimCaptureT
 import { buildCaptureMaterializationPlan } from './domain/capture/materializer';
 import type { CaptureInput, CaptureInterpretation } from './domain/capture/types';
 import { applyTaskEditLifecycle, deleteTaskWithReferences, reconcileTaskGoalLinks, transitionTaskLifecycle } from './domain/tasks/operations';
-import { assignTaskToMilestone, createGoalMilestone, deleteGoalWithPlanCleanup, deleteMilestoneWithTaskCleanup, normalizeGoalMilestones, reorderGoalMilestones, unassignTaskFromMilestone, updateGoalMilestone } from './domain/plan/hierarchy';
+import { assignTaskToMilestone, createGoalMilestone, deleteGoalWithPlanCleanup, deleteMilestoneWithTaskCleanup, normalizeGoalMilestones, reorderGoalMilestones, unassignTaskFromMilestone, updateGoalMilestone, type GoalMilestoneUpdate } from './domain/plan/hierarchy';
 import { buildGoalDecompositionMaterializationPlan, type GoalDecompositionDraft } from './domain/plan/decomposition';
 import { defaultAISettings } from './services/aiClient';
 import { isAuthenticatedPath, isKnownAuthenticatedEntryPath, legacyRouteRedirect, safeAuthenticatedNext } from './lib/appRoutes';
@@ -1030,12 +1030,12 @@ function AuthenticatedApp() {
     setGoals(cleaned.goals); setTasks(cleaned.tasks);
   }
 
-  function saveMilestone(goalId: string, input: Partial<GoalMilestone> & { title: string }, milestoneId?: string) {
+  function saveMilestone(goalId: string, input: GoalMilestoneUpdate & { title: string }, milestoneId?: string) {
     const now = new Date().toISOString();
     setGoals((currentGoals) => normalizeGoals(currentGoals).map((goal) => {
       if (goal.id !== goalId) return goal;
       if (milestoneId) return updateGoalMilestone(goal, milestoneId, input, now);
-      const milestone = createGoalMilestone(input, now);
+      const milestone = createGoalMilestone({ ...input, targetDate: input.targetDate ?? undefined }, now);
       return { ...goal, milestones: [...normalizeGoalMilestones(goal.milestones, now), { ...milestone, sequence: normalizeGoalMilestones(goal.milestones, now).length + 1 }], updatedAt: now };
     }));
   }

@@ -1,5 +1,4 @@
 import type { ActivityType, Goal, GoalMilestone, Importance, Task, TaskInput } from '../../types/task.js';
-import { clampImportance, normalizeActivityType } from '../../utils/taskScoring.js';
 import { createGoalMilestone, normalizeGoalMilestones } from './hierarchy.js';
 
 export interface DecompositionMilestoneDraft {
@@ -37,8 +36,9 @@ export interface GoalDecompositionDraft {
 export type GoalDecompositionParseResult = { ok: true; value: GoalDecompositionDraft } | { ok: false; error: string };
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-const MAX_MILESTONES = 20;
+const MAX_MILESTONES = 10;
 const MAX_TASKS = 100;
+const ACTIVITY_TYPES: readonly ActivityType[] = ['task', 'schedule', 'entertainment', 'recovery', 'study', 'research', 'fitness', 'exercise', 'work', 'life', 'social', 'other'];
 
 function boundedText(value: unknown, max: number): string | undefined {
   if (typeof value !== 'string') return undefined;
@@ -75,7 +75,7 @@ export function parseGoalDecomposition(raw: string, existingTasks: Task[] = [], 
   if (!parsed || typeof parsed !== 'object') return { ok: false, error: 'AI 返回的计划格式无效。' };
   const record = parsed as Record<string, unknown>;
   if (!Array.isArray(record.milestones) || !Array.isArray(record.tasks)) return { ok: false, error: 'AI 计划必须包含 milestones 和 tasks 数组。' };
-  if (record.milestones.length > MAX_MILESTONES || record.tasks.length > MAX_TASKS) return { ok: false, error: 'AI 计划超过安全数量上限。' };
+  if (record.milestones.length < 1 || record.milestones.length > MAX_MILESTONES || record.tasks.length > MAX_TASKS) return { ok: false, error: 'AI 计划必须包含 1–10 个里程碑，且不能超过任务数量上限。' };
   const milestoneIds = new Set<string>();
   const milestones: DecompositionMilestoneDraft[] = [];
   for (const item of record.milestones) {
@@ -100,10 +100,13 @@ export function parseGoalDecomposition(raw: string, existingTasks: Task[] = [], 
     if (milestoneDraftId && !milestoneIds.has(milestoneDraftId)) return { ok: false, error: '任务引用了不存在的里程碑。' };
     const dependencies = Array.isArray(source.dependencyDraftIds) ? source.dependencyDraftIds.map((value) => boundedText(value, 120)).filter((value): value is string => Boolean(value)) : [];
     if (dependencies.length > 20 || dependencies.includes(id)) return { ok: false, error: '任务依赖无效或包含自身。' };
-    const duration = typeof source.estimatedDuration === 'number' && Number.isFinite(source.estimatedDuration) && source.estimatedDuration > 0 ? Math.min(10_080, Math.round(source.estimatedDuration)) : undefined;
+    if (typeof source.importance !== 'number' || !Number.isFinite(source.importance) || !Number.isInteger(source.importance) || source.importance < 1 || source.importance > 10) return { ok: false, error: '任务重要性必须是 1–10 的整数。' };
+    if (source.estimatedDuration !== null && source.estimatedDuration !== undefined && (typeof source.estimatedDuration !== 'number' || !Number.isFinite(source.estimatedDuration) || source.estimatedDuration <= 0)) return { ok: false, error: '任务预计时长必须是正数分钟或 null。' };
+    const duration = typeof source.estimatedDuration === 'number' ? Math.min(10_080, Math.round(source.estimatedDuration)) : undefined;
+    if (source.category !== null && source.category !== undefined && (typeof source.category !== 'string' || !ACTIVITY_TYPES.includes(source.category as ActivityType))) return { ok: false, error: '任务类别无效。' };
     taskIds.add(id);
     const duplicate = existingTasks.some((task) => task.title.trim() === title);
-    tasks.push({ id, title, description: boundedText(source.description, 8_000), importance: clampImportance(typeof source.importance === 'number' ? source.importance : 5), deadline: validDate(source.deadline) ? source.deadline : undefined, estimatedDuration: duration, category: normalizeActivityType(typeof source.category === 'string' ? source.category : undefined), milestoneDraftId, dependencyDraftIds: dependencies, included: !duplicate, duplicateWarning: duplicate ? `可能与现有任务重复：${title}` : undefined });
+    tasks.push({ id, title, description: boundedText(source.description, 8_000), importance: source.importance as Importance, deadline: validDate(source.deadline) ? source.deadline : undefined, estimatedDuration: duration, category: source.category === null || source.category === undefined ? 'task' : source.category as ActivityType, milestoneDraftId, dependencyDraftIds: dependencies, included: !duplicate, duplicateWarning: duplicate ? `可能与现有任务重复：${title}` : undefined });
   }
   if (tasks.some((task) => task.dependencyDraftIds.some((id) => !taskIds.has(id))) || hasCycle(tasks)) return { ok: false, error: '任务依赖引用不存在或形成循环。' };
   const normalizeMessages = (value: unknown) => Array.isArray(value) ? value.slice(0, 20).map((entry) => boundedText(entry, 500)).filter((entry): entry is string => Boolean(entry)) : [];

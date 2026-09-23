@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { AIArtifactInput, Goal, GoalInput, GoalMilestone, Task, TaskInput } from '../types/task.js';
 import { buildGoalDecompositionMaterializationPlan, goalDecompositionSystemPrompt, parseGoalDecomposition, type GoalDecompositionDraft } from '../domain/plan/decomposition.js';
-import { normalizeGoalMilestones, projectGoalPlanProgress, validatePlanHierarchy } from '../domain/plan/hierarchy.js';
+import { getUnassignedGoalTasks, normalizeGoalMilestones, projectGoalPlanProgress, selectGoalTasks, validatePlanHierarchy, type GoalMilestoneUpdate } from '../domain/plan/hierarchy.js';
 import { defaultAISettings, requestChatCompletion } from '../services/aiClient.js';
 
 type Props = {
@@ -11,7 +11,7 @@ type Props = {
   roadmaps: { id: string; title?: string }[];
   onSaveGoal: (input: GoalInput, goalId?: string) => void;
   onDeleteGoal: (goalId: string) => void;
-  onSaveMilestone: (goalId: string, milestone: Partial<GoalMilestone> & { title: string }, milestoneId?: string) => void;
+  onSaveMilestone: (goalId: string, milestone: GoalMilestoneUpdate & { title: string }, milestoneId?: string) => void;
   onDeleteMilestone: (goalId: string, milestoneId: string) => void;
   onReorderMilestones: (goalId: string, orderedIds: string[]) => void;
   onAssignTask: (taskId: string, goalId: string, milestoneId: string) => void;
@@ -21,7 +21,7 @@ type Props = {
 };
 
 const emptyGoal = (): GoalInput => ({ title: '', description: '', successCriteria: '', category: 'task', priority: 5, linkedTaskIds: [] });
-const emptyMilestone = (): Partial<GoalMilestone> & { title: string } => ({ title: '', description: '', targetDate: undefined, successCriteria: '', status: 'planned' });
+const emptyMilestone = (): GoalMilestoneUpdate & { title: string } => ({ title: '', description: '', targetDate: undefined, successCriteria: '', status: 'planned' });
 
 function GoalEditor({ goal, onSave, onCancel }: { goal?: Goal; onSave: (input: GoalInput) => void; onCancel: () => void }) {
   const [form, setForm] = useState<GoalInput>(() => goal ? { title: goal.title, description: goal.description, successCriteria: goal.successCriteria, targetDate: goal.targetDate, category: goal.category, priority: goal.priority, linkedTaskIds: goal.linkedTaskIds, roadmapSuggestions: goal.roadmapSuggestions, milestones: goal.milestones } : emptyGoal());
@@ -34,11 +34,11 @@ function GoalEditor({ goal, onSave, onCancel }: { goal?: Goal; onSave: (input: G
   </form>;
 }
 
-function MilestoneEditor({ milestone, onSave, onCancel }: { milestone?: GoalMilestone; onSave: (input: Partial<GoalMilestone> & { title: string }) => void; onCancel: () => void }) {
-  const [form, setForm] = useState<Partial<GoalMilestone> & { title: string }>(() => milestone ? { ...milestone } : emptyMilestone());
+function MilestoneEditor({ milestone, onSave, onCancel }: { milestone?: GoalMilestone; onSave: (input: GoalMilestoneUpdate & { title: string }) => void; onCancel: () => void }) {
+  const [form, setForm] = useState<GoalMilestoneUpdate & { title: string }>(() => milestone ? { ...milestone } : emptyMilestone());
   return <form className="mt-3 grid gap-3 rounded-lg border border-zinc-200 bg-white p-3" onSubmit={(event) => { event.preventDefault(); if (form.title.trim()) onSave({ ...form, title: form.title.trim() }); }}>
     <label className="grid gap-1 text-sm">标题<input autoFocus value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} className="rounded border border-zinc-300 px-2 py-1.5" /></label>
-    <div className="grid gap-2 sm:grid-cols-2"><label className="grid gap-1 text-sm">状态<select value={form.status ?? 'planned'} onChange={(event) => setForm({ ...form, status: event.target.value as GoalMilestone['status'] })} className="rounded border border-zinc-300 px-2 py-1.5"><option value="planned">计划中</option><option value="ready">就绪</option><option value="in_progress">进行中</option><option value="completed">已完成</option><option value="blocked">受阻</option><option value="skipped">跳过</option><option value="archived">归档</option></select></label><label className="grid gap-1 text-sm">目标日期<input type="date" value={form.targetDate ?? ''} onChange={(event) => setForm({ ...form, targetDate: event.target.value || undefined })} className="rounded border border-zinc-300 px-2 py-1.5" /></label></div>
+    <div className="grid gap-2 sm:grid-cols-2"><label className="grid gap-1 text-sm">状态<select value={form.status ?? 'planned'} onChange={(event) => setForm({ ...form, status: event.target.value as GoalMilestone['status'] })} className="rounded border border-zinc-300 px-2 py-1.5"><option value="planned">计划中</option><option value="ready">就绪</option><option value="in_progress">进行中</option><option value="completed">已完成</option><option value="blocked">受阻</option><option value="skipped">跳过</option><option value="archived">归档</option></select></label><label className="grid gap-1 text-sm">目标日期<input type="date" value={form.targetDate ?? ''} onChange={(event) => setForm({ ...form, targetDate: event.target.value || null })} className="rounded border border-zinc-300 px-2 py-1.5" /></label></div>
     <label className="grid gap-1 text-sm">描述<textarea value={form.description ?? ''} onChange={(event) => setForm({ ...form, description: event.target.value })} className="rounded border border-zinc-300 px-2 py-1.5" /></label><label className="grid gap-1 text-sm">成功标准<textarea value={form.successCriteria ?? ''} onChange={(event) => setForm({ ...form, successCriteria: event.target.value })} className="rounded border border-zinc-300 px-2 py-1.5" /></label><label className="grid gap-1 text-sm">完成证据<textarea value={form.completionEvidence ?? ''} onChange={(event) => setForm({ ...form, completionEvidence: event.target.value })} className="rounded border border-zinc-300 px-2 py-1.5" /></label>
     <div className="flex gap-2"><button type="submit" className="rounded bg-zinc-950 px-3 py-1.5 text-sm text-white">保存</button><button type="button" onClick={onCancel} className="rounded px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100">取消</button></div>
   </form>;
@@ -58,17 +58,20 @@ export function PlanPage(props: Props) {
   const [draft, setDraft] = useState<GoalDecompositionDraft | undefined>();
   const [aiError, setAiError] = useState<string | undefined>();
   const [isGenerating, setIsGenerating] = useState(false);
+  const [existingTaskId, setExistingTaskId] = useState<string | undefined>();
+  const [existingTaskMilestoneId, setExistingTaskMilestoneId] = useState<string | undefined>();
   const selectedGoal = props.goals.find((goal) => goal.id === selectedGoalId) ?? props.goals[0];
   const hierarchyWarnings = useMemo(() => validatePlanHierarchy(props.goals, props.tasks).warnings, [props.goals, props.tasks]);
 
-  useEffect(() => { setSelectedGoalId(undefined); setEditingGoal(false); setEditingMilestoneId(undefined); setAddingMilestone(false); setDraft(undefined); setAiError(undefined); setIsGenerating(false); }, [props.ownerKey]);
+  useEffect(() => { setSelectedGoalId(undefined); setEditingGoal(false); setEditingMilestoneId(undefined); setAddingMilestone(false); setDraft(undefined); setAiError(undefined); setIsGenerating(false); setExistingTaskId(undefined); setExistingTaskMilestoneId(undefined); }, [props.ownerKey]);
   useEffect(() => { if (selectedGoalId && !props.goals.some((goal) => goal.id === selectedGoalId)) setSelectedGoalId(undefined); }, [props.goals, selectedGoalId]);
+  useEffect(() => { setExistingTaskId(undefined); setExistingTaskMilestoneId(undefined); }, [selectedGoal?.id]);
 
   async function generateDraft() {
     if (!selectedGoal) return;
     setIsGenerating(true); setAiError(undefined); setDraft(undefined);
     try {
-      const selectedGoalTasks = props.tasks.filter((task) => task.linkedGoalIds?.includes(selectedGoal.id));
+      const selectedGoalTasks = selectGoalTasks(props.tasks, selectedGoal.id);
       const response = await requestChatCompletion(defaultAISettings, goalDecompositionSystemPrompt, JSON.stringify({ goal: { id: selectedGoal.id, title: selectedGoal.title, description: selectedGoal.description, category: selectedGoal.category, priority: selectedGoal.priority, successCriteria: selectedGoal.successCriteria, targetDate: selectedGoal.targetDate }, existingMilestones: normalizeGoalMilestones(selectedGoal.milestones), tasks: selectedGoalTasks.map((task) => ({ id: task.id, title: task.title, description: task.description, importance: task.importance, deadline: task.deadline, lifecycleStatus: task.lifecycleStatus, estimatedDuration: task.estimatedDuration, milestoneId: task.milestoneId, dependencyIds: task.dependencyIds })), legacyRoadmapSuggestions: selectedGoal.roadmapSuggestions }), { mode: 'goal_decompose', context: { goals: [selectedGoal], tasks: selectedGoalTasks } });
       const parsed = parseGoalDecomposition(response, selectedGoalTasks, normalizeGoalMilestones(selectedGoal.milestones).map((milestone) => milestone.title));
       if (!parsed.ok) throw new Error(parsed.error);
@@ -91,8 +94,9 @@ export function PlanPage(props: Props) {
   const milestones = normalizeGoalMilestones(selectedGoal.milestones);
   const progress = projectGoalPlanProgress(selectedGoal, props.tasks);
   const milestoneIds = new Set(milestones.map((milestone) => milestone.id));
-  const relevantTasks = props.tasks.filter((task) => task.linkedGoalIds?.includes(selectedGoal.id) || (task.milestoneId && milestoneIds.has(task.milestoneId)));
-  const unassigned = relevantTasks.filter((task) => !task.milestoneId || !milestoneIds.has(task.milestoneId));
+  const relevantTasks = selectGoalTasks(props.tasks, selectedGoal.id);
+  const unassigned = getUnassignedGoalTasks(props.tasks, selectedGoal.id, milestones);
+  const assignableExistingTasks = props.tasks.filter((task) => !(task.linkedGoalIds?.includes(selectedGoal.id) && task.milestoneId && milestoneIds.has(task.milestoneId)));
 
   return <section className="grid gap-6 lg:grid-cols-[15rem_minmax(0,1fr)]">
     <aside className="rounded-2xl border border-zinc-200 bg-white p-3"><div className="mb-3 flex items-center justify-between"><p className="text-xs font-semibold tracking-[.14em] text-zinc-400">GOALS</p><button type="button" onClick={() => setEditingGoal(true)} className="rounded px-2 py-1 text-sm text-zinc-700 hover:bg-zinc-100">+ 新建</button></div><div className="space-y-1">{props.goals.map((goal) => <button key={goal.id} type="button" onClick={() => setSelectedGoalId(goal.id)} className={`w-full rounded-lg px-3 py-2 text-left text-sm ${goal.id === selectedGoal.id ? 'bg-zinc-950 text-white' : 'text-zinc-700 hover:bg-zinc-100'}`}>{goal.title}</button>)}</div>{editingGoal ? <div className="mt-3"><GoalEditor onSave={(input) => { props.onSaveGoal(input); setEditingGoal(false); }} onCancel={() => setEditingGoal(false)} /></div> : null}</aside>
@@ -106,6 +110,7 @@ export function PlanPage(props: Props) {
         {editingMilestoneId === milestone.id ? <MilestoneEditor milestone={milestone} onSave={(input) => { props.onSaveMilestone(selectedGoal.id, input, milestone.id); setEditingMilestoneId(undefined); }} onCancel={() => setEditingMilestoneId(undefined)} /> : null}
         <div className="mt-3 space-y-2">{milestoneTasks.length ? milestoneTasks.map((task) => <div key={task.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-zinc-50 px-3 py-2 text-sm"><span>{task.title} <span className="text-xs text-zinc-500">{task.lifecycleStatus}{task.deadline ? ` · ${task.deadline}` : ''}{task.dependencyIds?.length ? ' · 有前置任务' : ''}</span></span><div className="flex gap-2"><select aria-label={`移动 ${task.title} 到里程碑`} value={milestone.id} onChange={(event) => event.target.value ? props.onAssignTask(task.id, selectedGoal.id, event.target.value) : props.onUnassignTask(task.id)} className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs"><option value="">未分配</option>{milestones.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select><button type="button" onClick={() => props.onUnassignTask(task.id)} className="text-xs text-zinc-500">取消分配</button></div></div>) : <p className="text-sm text-zinc-500">这个里程碑还没有任务。</p>}</div></li>; })}</ol>}
       <section className="mt-6 rounded-xl border border-zinc-200 p-4"><h2 className="font-medium">未分配任务</h2>{unassigned.length ? <div className="mt-3 space-y-2">{unassigned.map((task) => <div key={task.id} className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>{task.title}{task.milestoneId ? <span className="ml-2 text-xs text-amber-700">里程碑引用无效</span> : null}</span><select aria-label={`分配 ${task.title} 到里程碑`} defaultValue="" onChange={(event) => { if (event.target.value) props.onAssignTask(task.id, selectedGoal.id, event.target.value); }} className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs"><option value="">分配到里程碑</option>{milestones.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></div>)}</div> : <p className="mt-2 text-sm text-zinc-500">没有未分配任务。</p>}</section>
+      <section className="mt-4 rounded-xl border border-zinc-200 p-4"><h2 className="font-medium">添加现有任务</h2><p className="mt-1 text-sm text-zinc-500">选择任何尚未分配到此目标里程碑的任务；原有目标链接、依赖、进度与生命周期都会保留。</p><div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"><select aria-label="选择现有任务" value={existingTaskId ?? ''} onChange={(event) => setExistingTaskId(event.target.value || undefined)} disabled={!milestones.length || !assignableExistingTasks.length} className="rounded border border-zinc-300 bg-white px-2 py-2 text-sm"><option value="">选择任务</option>{assignableExistingTasks.map((task) => <option key={task.id} value={task.id}>{task.title}</option>)}</select><select aria-label="选择目标里程碑" value={existingTaskMilestoneId ?? ''} onChange={(event) => setExistingTaskMilestoneId(event.target.value || undefined)} disabled={!milestones.length} className="rounded border border-zinc-300 bg-white px-2 py-2 text-sm"><option value="">选择里程碑</option>{milestones.map((milestone) => <option key={milestone.id} value={milestone.id}>{milestone.title}</option>)}</select><button type="button" disabled={!existingTaskId || !existingTaskMilestoneId} onClick={() => { if (existingTaskId && existingTaskMilestoneId) { props.onAssignTask(existingTaskId, selectedGoal.id, existingTaskMilestoneId); setExistingTaskId(undefined); setExistingTaskMilestoneId(undefined); } }} className="rounded-lg bg-zinc-950 px-3 py-2 text-sm text-white disabled:opacity-40">添加</button></div>{!milestones.length ? <p className="mt-2 text-xs text-zinc-500">请先添加一个里程碑。</p> : null}</section>
       {aiError ? <p role="alert" className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{aiError}</p> : null}
       {draft ? <DecompositionReview draft={draft} onChange={setDraft} onConfirm={confirmDraft} /> : null}
       {props.roadmaps.length ? <p className="mt-6 text-xs text-zinc-500">历史路线图仍以只读兼容数据保留（{props.roadmaps.length} 条）。</p> : null}
