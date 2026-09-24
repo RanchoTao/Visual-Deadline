@@ -20,7 +20,11 @@ export function captureReviewHistoryEvents(input: { tasks: readonly Task[]; goal
     if (task.abandonedAt) events.push({ ...facts, id: `task-abandoned:${task.id}`, timestamp: task.abandonedAt, kind: 'task_abandoned', title: `任务放弃：${task.title}` });
   });
   input.goals.forEach((goal) => (goal.milestones ?? []).forEach((milestone) => { if (milestone.status === 'completed' && milestone.completedAt) events.push({ id: `milestone:${goal.id}:${milestone.id}`, timestamp: milestone.completedAt, recordedAt: input.recordedAt, evidenceSource: 'legacy_backfill', kind: 'milestone_completed', title: `里程碑完成：${milestone.title}`, entityTitle: milestone.title, relatedGoalId: goal.id, relatedMilestoneId: milestone.id }); }));
-  input.pressureHistory.forEach((record) => events.push({ id: `pressure:${record.id}`, timestamp: record.timestamp, recordedAt: input.recordedAt, evidenceSource: 'derived', kind: record.eventType === 'recalibration' ? 'pressure_recalibrated' : 'pressure_sample', title: record.eventType === 'recalibration' ? '压力重新校准' : '压力快照', description: record.note, pressure: record.pressure, activeTaskCount: record.activeTaskCount, pressureSource: record.source ?? 'unknown' }));
+  input.pressureHistory.forEach((record) => {
+    const pressureSource = record.source === 'task_derived' ? 'task_derived' : record.source === 'manual' ? 'manual' : 'unknown';
+    const evidenceSource = pressureSource === 'task_derived' ? 'derived' : pressureSource === 'manual' ? 'captured_live' : 'legacy_backfill';
+    events.push({ id: `pressure:${record.id}`, timestamp: record.timestamp, recordedAt: input.recordedAt, evidenceSource, kind: record.eventType === 'recalibration' ? 'pressure_recalibrated' : 'pressure_sample', title: record.eventType === 'recalibration' ? '压力重新校准' : '压力快照', description: record.note, pressure: record.pressure, activeTaskCount: record.activeTaskCount, pressureSource });
+  });
   (input.aiArtifacts ?? []).filter((artifact) => ['review', 'task-analysis', 'pressure-analysis'].includes(artifact.kind)).forEach((artifact) => events.push({ id: `legacy-ai:${artifact.id}`, timestamp: artifact.createdAt, recordedAt: input.recordedAt, evidenceSource: 'legacy_backfill', kind: 'legacy_ai', title: `历史 AI 记录：${artifact.title}`, entityTitle: artifact.title, description: artifact.content }));
   return events;
 }

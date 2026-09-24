@@ -1,4 +1,4 @@
-import type { PressureBreakdown, PressureHistoryEventType, PressureHistoryRecord, PressureHistorySource, Task } from '../types/task';
+import type { PressureBreakdown, PressureHistoryEventType, PressureHistoryRecord, PressureHistorySource, Task } from '../types/task.js';
 
 const AUTO_RECORD_WINDOW_MS = 30 * 60 * 1000;
 const EVENT_SETTLE_WINDOW_MS = 2 * 60 * 1000;

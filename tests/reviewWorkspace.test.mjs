@@ -4,6 +4,7 @@ import test from 'node:test';
 
 const review = await import('./.compiled/src/domain/review/index.js');
 const ops = await import('./.compiled/src/domain/ops/types.js');
+const pressureHistory = await import('./.compiled/src/utils/pressureHistory.js');
 const now = '2026-09-24T12:00:00.000Z';
 const task = (id, patch = {}) => ({ id, title: id, importance: 5, progress: 0, taskProgress: 0, activityType: 'task', lifecycleStatus: 'active', schemaVersion: 3, createdAt: now, updatedAt: now, ...patch });
 const goals = () => [{ id: 'g', title: 'G', category: 'work', priority: 5, linkedTaskIds: [], createdAt: now, updatedAt: now, milestones: [{ id: 'm', title: 'Original milestone', sequence: 1, status: 'completed', createdAt: now, updatedAt: now, completedAt: '2026-09-22T00:00:00.000Z' }] }];
@@ -42,14 +43,31 @@ test('immutable event snapshots keep REVIEW stable after Task and Goal edits or 
   assert.equal(review.buildReviewDailyTrends({ events: afterDelete.events, window }).find((entry) => entry.completedCount === 1)?.averagePressure, 71);
 });
 
-test('history snapshots distinguish derived pressure from manual recalibration and remain deterministic newest first', () => {
-  const state = capturedState({ tasks: [task('done', { lifecycleStatus: 'completed', completedAt: '2026-09-23T00:00:00.000Z' })], goals: goals(), pressureHistory: [pressure('auto', '2026-09-23T09:00:00.000Z', 50, { source: 'task_derived', eventType: 'auto' }), pressure('cal', '2026-09-23T08:00:00.000Z', 60, { source: 'manual', eventType: 'recalibration' })] });
+test('history snapshots distinguish derived, manual, and unknown pressure provenance', () => {
+  const state = capturedState({ tasks: [task('done', { lifecycleStatus: 'completed', completedAt: '2026-09-23T00:00:00.000Z' })], goals: goals(), pressureHistory: [pressure('auto', '2026-09-23T09:00:00.000Z', 50, { source: 'task_derived', eventType: 'auto' }), pressure('cal', '2026-09-23T08:00:00.000Z', 60, { source: 'manual', eventType: 'recalibration' }), pressure('legacy', '2026-09-23T07:00:00.000Z', 55)] });
   const events = review.buildReviewHistoryEvents({ events: state.events, window });
   assert.equal(events.find((event) => event.id === 'pressure:auto')?.kind, 'pressure_sample');
   assert.equal(events.find((event) => event.id === 'pressure:auto')?.pressureSource, 'task_derived');
+  assert.equal(events.find((event) => event.id === 'pressure:auto')?.evidenceSource, 'derived');
   assert.equal(events.find((event) => event.id === 'pressure:cal')?.kind, 'pressure_recalibrated');
   assert.equal(events.find((event) => event.id === 'pressure:cal')?.pressureSource, 'manual');
+  assert.equal(events.find((event) => event.id === 'pressure:cal')?.evidenceSource, 'captured_live');
+  const legacy = events.find((event) => event.id === 'pressure:legacy');
+  assert.equal(legacy?.pressureSource, 'unknown');
+  assert.equal(legacy?.evidenceSource, 'legacy_backfill');
   assert.deepEqual(events, [...events].sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp) || a.id.localeCompare(b.id)));
+});
+
+test('pressure recomputation replaces task-derived rows without rewriting manual observations', () => {
+  const manual = pressure('manual', '2026-09-23T08:00:00.000Z', 61, { source: 'manual', eventType: 'recalibration', note: 'user observation' });
+  const legacy = pressure('legacy', '2026-09-23T08:30:00.000Z', 55, { note: 'old imported observation' });
+  const derived = pressure('derived-old', '2026-09-23T09:00:00.000Z', 50, { source: 'task_derived', eventType: 'auto' });
+  const replacement = pressure('derived-new', '2026-09-23T10:00:00.000Z', 45, { source: 'task_derived', eventType: 'auto' });
+  const result = pressureHistory.replaceTaskDerivedPressureHistory([manual, legacy, derived], replacement);
+  assert.deepEqual(result.find((record) => record.id === 'manual'), pressureHistory.normalizePressureHistory([manual])[0]);
+  assert.deepEqual(result.find((record) => record.id === 'legacy'), pressureHistory.normalizePressureHistory([legacy])[0]);
+  assert.equal(result.some((record) => record.id === 'derived-old'), false);
+  assert.equal(result.find((record) => record.id === 'derived-new')?.source, 'task_derived');
 });
 
 test('7/30/90 windows use local calendar dates and preserve DST semantics', () => {
@@ -193,7 +211,7 @@ test('REVIEW wiring uses row-level cloud persistence, real AI provenance, and an
   const migration = readFileSync(new URL('../supabase/migrations/20260924034628_v2_review_history.sql', import.meta.url), 'utf8');
   const rlsTest = readFileSync(new URL('../supabase/tests/review_history_rls_test.sql', import.meta.url), 'utf8');
   assert.match(app, /synchronizeReviewHistory/); assert.match(app, /saveCloudReviewState/); assert.match(app, /onRecalibrate=\{openRecalibration\}/);
-  assert.match(page, /重新校准压力/); assert.match(page, /requestChatCompletionWithProvenance/); assert.match(page, /inputFingerprint/); assert.match(page, /windowIdentity/); assert.match(page, /Archive/); assert.match(page, /formatReviewDateTime/); assert.match(page, /evidenceLabels/);
+  assert.match(page, /重新校准压力/); assert.match(page, /requestChatCompletionWithProvenance/); assert.match(page, /inputFingerprint/); assert.match(page, /windowIdentity/); assert.match(page, /Archive/); assert.match(page, /formatReviewDateTime/); assert.match(page, /evidenceLabels/); assert.match(page, /pressureSourceLabels/);
   assert.doesNotMatch(page, /nowRef|toLocaleString|slice\(0,\s*10\)/);
   assert.doesNotMatch(cloud.match(/saveCloudProfile[\s\S]*$/)?.[0] ?? '', /reviewState: input\.reviewState/);
   assert.match(cloud, /review_records/); assert.match(cloud, /review_events/); assert.match(cloud, /review_archive_events/); assert.match(cloud, /review_tombstones/); assert.match(cloud, /resolution=ignore-duplicates/); assert.doesNotMatch(cloud, /supabase-schema\.sql/); assert.match(cloud, /20260924034628_v2_review_history\.sql/);
