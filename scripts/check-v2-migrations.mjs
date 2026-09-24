@@ -5,10 +5,10 @@ import { fileURLToPath } from 'node:url';
 const migrationDirectory = new URL('../supabase/migrations/', import.meta.url);
 const migrationPath = fileURLToPath(migrationDirectory);
 const migrationFiles = readdirSync(migrationDirectory)
-  .filter((name) => name.endsWith('.sql') && (name.includes('v2_beta_') || name.includes('legacy_core_additive_baseline')))
+  .filter((name) => name.endsWith('.sql') && (name.includes('v2_beta_') || name.includes('legacy_core_additive_baseline') || name === '20260924034628_v2_review_history.sql'))
   .sort();
 
-if (migrationFiles.length !== 4) throw new Error(`Expected 4 PR E migrations, found ${migrationFiles.length}: ${migrationFiles.join(', ')}`);
+if (migrationFiles.length !== 5) throw new Error(`Expected 4 PR E migrations and the PR M REVIEW migration, found ${migrationFiles.length}: ${migrationFiles.join(', ')}`);
 
 const stripComments = (sql) => sql.replace(/\/\*[\s\S]*?\*\//g, '').replace(/--.*$/gm, '');
 const combined = migrationFiles.map((name) => stripComments(readFileSync(join(migrationPath, name), 'utf8'))).join('\n').toLowerCase();
@@ -53,6 +53,22 @@ for (const table of ['v2_goals', 'v2_milestones', 'v2_tasks', 'v2_task_dependenc
   if (!combined.includes(`alter table public.${table} enable row level security`)) throw new Error(`Missing RLS enablement for ${table}`);
 }
 
+const review = stripComments(readFileSync(join(migrationPath, '20260924034628_v2_review_history.sql'), 'utf8')).toLowerCase();
+for (const table of ['review_records', 'review_events', 'review_archive_events', 'review_tombstones']) {
+  if (!review.includes(`create table public.${table}`)) throw new Error(`Missing required REVIEW table ${table}`);
+  if (!review.includes(`alter table public.${table} enable row level security`)) throw new Error(`Missing REVIEW RLS enablement for ${table}`);
+  if (!review.includes(`create policy ${table}_select_own`)) throw new Error(`Missing REVIEW owner SELECT policy for ${table}`);
+  if (!review.includes(`create policy ${table}_insert_own`)) throw new Error(`Missing REVIEW owner INSERT policy for ${table}`);
+  if (new RegExp(`create\\s+policy\\s+\\S+\\s+on\\s+public\\.${table}\\s+for\\s+(?:update|delete)`).test(review)) throw new Error(`REVIEW table ${table} must remain append-only`);
+}
+for (const contract of ['revoke all on table public.review_records', 'grant select, insert on table public.review_records', 'review_archive_events_record_fk']) {
+  if (!review.includes(contract)) throw new Error(`REVIEW migration is missing append-only contract: ${contract}`);
+}
+const reviewRlsTest = readFileSync(new URL('../supabase/tests/review_history_rls_test.sql', import.meta.url), 'utf8').toLowerCase();
+for (const requiredCase of ['anonymous review select is denied', 'forged review user_id insert is denied', 'authenticated review update is denied', 'authenticated review delete is denied', 'cross-user review select returns no rows']) {
+  if (!reviewRlsTest.includes(requiredCase)) throw new Error(`REVIEW RLS test is missing case: ${requiredCase}`);
+}
+
 for (const deferred of [
   'resource_budgets', 'resource_allocations', 'fixed_commitments', 'operations_plan_versions', 'execution_windows',
   'execution_events', 'reviews', 'review_entities', 'ai_reports', 'ai_report_refs', 'subscriptions',
@@ -70,4 +86,4 @@ for (const relationship of [
   if (!combined.includes(relationship)) throw new Error(`Missing same-owner relationship constraint ${relationship}`);
 }
 
-console.log(`PR E static SQL checks passed for ${migrationFiles.length} additive migrations.`);
+console.log(`PR E/PR M static SQL checks passed for ${migrationFiles.length} additive migrations.`);

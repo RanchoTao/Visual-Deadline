@@ -34,6 +34,7 @@ test('immutable event snapshots keep REVIEW stable after Task and Goal edits or 
   const taskEvents = afterDelete.events.filter((event) => event.kind === 'task_completed'); const milestoneEvents = afterDelete.events.filter((event) => event.kind === 'milestone_completed');
   assert.equal(taskEvents.length, 1); assert.equal(taskEvents[0].entityTitle, 'Original task'); assert.equal(taskEvents[0].description, 'original fact');
   assert.equal(taskEvents[0].timestamp, '2026-09-23T00:00:00.000Z'); assert.equal(taskEvents[0].deadline, '2026-09-23T01:00:00.000Z');
+  assert.equal(taskEvents[0].evidenceSource, 'legacy_backfill');
   assert.equal(milestoneEvents.length, 1);
   assert.equal(afterDelete.events.find((event) => event.kind === 'milestone_completed')?.entityTitle, 'Original milestone');
   const metrics = review.deriveReviewMetrics({ tasks: [], goals: [], pressureHistory: [], events: afterDelete.events, opsState, window, now });
@@ -67,11 +68,22 @@ test('daily trends use the exact timezone calendar buckets across a DST transiti
   assert.equal(trends.find((entry) => entry.date === '2026-03-08')?.completedCount, 1);
 });
 
+test('REVIEW advances across canonical-zone midnight and persists local date metadata', () => {
+  const before = review.createReviewWindow(7, '2026-09-24T15:59:59.000Z', 'Asia/Shanghai');
+  const after = review.createReviewWindow(7, '2026-09-24T16:00:00.000Z', 'Asia/Shanghai');
+  assert.equal(before.dateKeys.at(-1), '2026-09-24'); assert.equal(after.dateKeys.at(-1), '2026-09-25');
+  assert.notEqual(review.reviewWindowCalendarIdentity(before), review.reviewWindowCalendarIdentity(after));
+  const metrics = review.deriveReviewMetrics({ tasks: [], goals: [], pressureHistory: [], opsState, window: after, now: after.end });
+  const record = review.createReviewRecord({ id: 'midnight', window: after, metrics, now: '2026-09-24T16:00:01.000Z' });
+  assert.equal(record.timezone, 'Asia/Shanghai'); assert.equal(record.windowStartDate, after.dateKeys[0]); assert.equal(record.windowEndDate, '2026-09-25'); assert.equal(record.savedDate, '2026-09-25'); assert.match(record.title, /2026-09-25/);
+  assert.equal(review.reviewDateKey('2026-09-24T16:30:00.000Z', 'Asia/Shanghai'), '2026-09-25');
+});
+
 test('normalization retains all review records and migrates schema 1 without a 100-record cap', () => {
   const metrics = review.deriveReviewMetrics({ tasks: [], goals: [], pressureHistory: [], opsState, window, now });
-  const record = review.createReviewRecord({ id: 'one', windowDays: 7, windowStart: window.start, windowEnd: window.end, metrics, now });
+  const record = review.createReviewRecord({ id: 'one', window, metrics, now });
   const many = review.normalizeReviewState({ schemaVersion: 1, defaultWindowDays: 7, updatedAt: now, reviews: Array.from({ length: 205 }, (_, index) => ({ ...record, id: `r-${index}`, createdAt: new Date(Date.parse(now) + index).toISOString(), updatedAt: now })) });
-  assert.equal(many.schemaVersion, 2); assert.equal(many.reviews.length, 205); assert.equal(many.events.length, 0);
+  assert.equal(many.schemaVersion, 3); assert.equal(many.reviews.length, 205); assert.equal(many.events.length, 0);
   assert.equal(review.normalizeReviewState({ schemaVersion: 1, defaultWindowDays: 7, updatedAt: now, reviews: [{ ...record, id: '', windowEnd: window.start }] }).reviews.length, 0);
 });
 
@@ -81,10 +93,10 @@ test('row pagination loads complete REVIEW history despite a smaller server page
   assert.equal(rows.length, source.length); assert.deepEqual(offsets, [0, 200, 400, 600, 800, 1000, 1200]); assert.equal(rows.at(-1).id, 'row-1204');
 });
 
-test('concurrent device states merge records and events by identity, while archive tombstones prevent resurrection', () => {
+test('concurrent device states merge records and events by identity, while permanent-delete tombstones prevent resurrection', () => {
   const metrics = review.deriveReviewMetrics({ tasks: [], goals: [], pressureHistory: [], opsState, window, now });
-  const recordA = review.createReviewRecord({ id: 'a', windowDays: 7, windowStart: window.start, windowEnd: window.end, metrics, now: '2026-09-24T12:01:00.000Z' });
-  const recordB = review.createReviewRecord({ id: 'b', windowDays: 7, windowStart: window.start, windowEnd: window.end, metrics, now: '2026-09-24T12:02:00.000Z' });
+  const recordA = review.createReviewRecord({ id: 'a', window, metrics, now: '2026-09-24T12:01:00.000Z' });
+  const recordB = review.createReviewRecord({ id: 'b', window, metrics, now: '2026-09-24T12:02:00.000Z' });
   const deviceA = review.addReviewRecord(review.createDefaultReviewState(now), recordA);
   const deviceB = review.addReviewRecord(review.createDefaultReviewState(now), recordB);
   const merged = review.mergeReviewStates(deviceA, deviceB);
@@ -92,13 +104,65 @@ test('concurrent device states merge records and events by identity, while archi
   const archived = review.deleteReviewRecord(merged, 'a', '2026-09-24T12:03:00.000Z');
   assert.deepEqual(review.mergeReviewStates(deviceA, archived).reviews.map((entry) => entry.id), ['b']);
   assert.ok(review.mergeReviewStates(deviceA, archived).events.some((event) => event.reviewId === 'a'));
+  const archiveThenDelete = review.deleteReviewRecord(review.archiveReviewRecord(merged, 'a', '2026-09-24T12:02:00.000Z', 'archive-before-delete'), 'a', '2026-09-24T12:03:00.000Z');
+  assert.equal(archiveThenDelete.reviewArchiveEvents.some((event) => event.reviewId === 'a'), false);
+});
+
+test('archive preserves complete records, unarchives, and converges across devices without tombstones', () => {
+  const metrics = review.deriveReviewMetrics({ tasks: [], goals: [], pressureHistory: [], opsState, window, now });
+  const report = { content: 'full report', generatedAt: '2026-09-24T11:59:00.000Z', provider: 'deepseek', model: 'deepseek-chat', inputFingerprint: `sha256-${'a'.repeat(64)}`, windowIdentity: review.reviewWindowIdentity(window) };
+  const record = review.createReviewRecord({ id: 'archive-me', window, metrics, userNote: 'keep every field', aiReport: report, now });
+  const base = review.addReviewRecord(review.createDefaultReviewState(now), record); const storedRecord = base.reviews[0];
+  const archived = review.archiveReviewRecord(base, record.id, '2026-09-24T12:01:00.000Z', 'archive-1');
+  assert.equal(archived.reviews.length, 1); assert.deepEqual(archived.reviews[0], storedRecord); assert.equal(review.isReviewArchived(archived, record.id), true); assert.equal(archived.reviewTombstones.length, 0);
+  const merged = review.mergeReviewStates(base, archived); assert.equal(review.isReviewArchived(merged, record.id), true); assert.deepEqual(merged.reviews[0], storedRecord);
+  const restored = review.unarchiveReviewRecord(merged, record.id, '2026-09-24T12:02:00.000Z', 'archive-2');
+  assert.equal(review.isReviewArchived(restored, record.id), false); assert.deepEqual(restored.reviews[0].aiReport, report); assert.equal(restored.reviews[0].userNote, 'keep every field');
+});
+
+test('live lifecycle capture preserves repeated task completion and abandonment occurrences', () => {
+  const active = task('repeat');
+  const completedOnce = { ...active, lifecycleStatus: 'completed', completedAt: '2026-09-24T01:00:00.000Z' };
+  let state = review.captureTaskLifecycleTransition(review.createDefaultReviewState(now), { previous: active, next: completedOnce, recordedAt: completedOnce.completedAt, eventId: 'complete-1' });
+  const restored = { ...completedOnce, lifecycleStatus: 'active', completedAt: undefined, updatedAt: '2026-09-24T02:00:00.000Z' };
+  state = review.captureTaskLifecycleTransition(state, { previous: completedOnce, next: restored, recordedAt: restored.updatedAt, eventId: 'restore-1' });
+  const completedTwice = { ...restored, lifecycleStatus: 'completed', completedAt: '2026-09-24T03:00:00.000Z' };
+  state = review.captureTaskLifecycleTransition(state, { previous: restored, next: completedTwice, recordedAt: completedTwice.completedAt, eventId: 'complete-2' });
+  const abandonedOnce = { ...active, lifecycleStatus: 'abandoned', abandonedAt: '2026-09-24T04:00:00.000Z' };
+  state = review.captureTaskLifecycleTransition(state, { previous: active, next: abandonedOnce, recordedAt: abandonedOnce.abandonedAt, eventId: 'abandon-1' });
+  const restoredAgain = { ...abandonedOnce, lifecycleStatus: 'active', abandonedAt: undefined, updatedAt: '2026-09-24T05:00:00.000Z' };
+  const abandonedTwice = { ...restoredAgain, lifecycleStatus: 'abandoned', abandonedAt: '2026-09-24T06:00:00.000Z' };
+  state = review.captureTaskLifecycleTransition(state, { previous: restoredAgain, next: abandonedTwice, recordedAt: abandonedTwice.abandonedAt, eventId: 'abandon-2' });
+  assert.deepEqual(state.events.filter((event) => event.kind === 'task_completed').map((event) => event.id), ['complete-1', 'complete-2']);
+  assert.deepEqual(state.events.filter((event) => event.kind === 'task_abandoned').map((event) => event.id), ['abandon-1', 'abandon-2']);
+  assert.ok(state.events.every((event) => event.evidenceSource === 'captured_live'));
+});
+
+test('live milestone capture preserves complete-active-complete occurrences while edits remain single', () => {
+  const planned = { ...goals()[0].milestones[0], status: 'planned', completedAt: undefined };
+  const first = { ...planned, status: 'completed', completedAt: '2026-09-24T01:00:00.000Z' };
+  let state = review.captureMilestoneLifecycleTransition(review.createDefaultReviewState(now), { goalId: 'g', previous: planned, next: first, recordedAt: first.completedAt, eventId: 'milestone-1' });
+  state = review.captureMilestoneLifecycleTransition(state, { goalId: 'g', previous: first, next: { ...first, title: 'edited' }, recordedAt: '2026-09-24T02:00:00.000Z', eventId: 'milestone-edit' });
+  const restored = { ...first, status: 'in_progress', completedAt: undefined };
+  const second = { ...restored, status: 'completed', completedAt: '2026-09-24T03:00:00.000Z' };
+  state = review.captureMilestoneLifecycleTransition(state, { goalId: 'g', previous: restored, next: second, recordedAt: second.completedAt, eventId: 'milestone-2' });
+  assert.deepEqual(state.events.map((event) => event.id), ['milestone-1', 'milestone-2']);
 });
 
 test('logical event identity deduplicates legacy timestamp ids across devices without rewriting the earliest snapshot', () => {
-  const legacy = { id: 'task-completed:same:2026-09-23T00:00:00.000Z', kind: 'task_completed', timestamp: '2026-09-23T00:00:00.000Z', recordedAt: '2026-09-23T01:00:00.000Z', title: '任务完成：Original', entityTitle: 'Original', relatedTaskId: 'same' };
+  const legacy = { id: 'task-completed:same:2026-09-23T00:00:00.000Z', kind: 'task_completed', timestamp: '2026-09-23T00:00:00.000Z', recordedAt: '2026-09-23T01:00:00.000Z', evidenceSource: 'legacy_backfill', title: '任务完成：Original', entityTitle: 'Original', relatedTaskId: 'same' };
   const current = { ...legacy, id: 'task-completed:same', timestamp: '2026-09-24T00:00:00.000Z', recordedAt: '2026-09-24T01:00:00.000Z', title: '任务完成：Edited', entityTitle: 'Edited' };
   const merged = review.mergeReviewStates({ ...review.createDefaultReviewState(now), events: [legacy] }, { ...review.createDefaultReviewState(now), events: [current] });
   assert.equal(merged.events.length, 1); assert.equal(merged.events[0].id, legacy.id); assert.equal(merged.events[0].entityTitle, 'Original');
+});
+
+test('captured occurrence replaces only its exact legacy backfill while repeated live occurrences remain distinct', () => {
+  const timestamp = '2026-09-23T00:00:00.000Z';
+  const backfill = { id: 'task-completed:same', kind: 'task_completed', timestamp, recordedAt: '2026-09-24T00:00:00.000Z', evidenceSource: 'legacy_backfill', title: '任务完成：Backfill', relatedTaskId: 'same' };
+  const captured = { ...backfill, id: 'capture-1', recordedAt: timestamp, evidenceSource: 'captured_live', title: '任务完成：Captured' };
+  const repeated = { ...captured, id: 'capture-2', timestamp: '2026-09-24T01:00:00.000Z', recordedAt: '2026-09-24T01:00:00.000Z' };
+  const merged = review.mergeReviewStates({ ...review.createDefaultReviewState(now), events: [backfill] }, { ...review.createDefaultReviewState(now), events: [captured, repeated] });
+  assert.deepEqual(merged.events.map((event) => event.id), ['capture-1', 'capture-2']);
 });
 
 test('AI report records preserve response-time provenance and bind a deterministic SHA-256 input/window identity', async () => {
@@ -107,10 +171,10 @@ test('AI report records preserve response-time provenance and bind a determinist
   assert.match(fingerprint, /^sha256-[0-9a-f]{64}$/); assert.equal(fingerprint, await review.fingerprintReviewAnalysisInput(input)); assert.notEqual(fingerprint, await review.fingerprintReviewAnalysisInput({ ...input, resolvedTasks: [{ id: 'y' }] }));
   const metrics = review.deriveReviewMetrics({ tasks: [], goals: [], pressureHistory: [], opsState, window, now });
   const report = { content: 'report', generatedAt: '2026-09-24T11:59:00.000Z', provider: 'deepseek', model: 'deepseek-chat', inputFingerprint: fingerprint, windowIdentity: identity };
-  const record = review.createReviewRecord({ id: 'ai', windowDays: 7, windowStart: window.start, windowEnd: window.end, metrics, aiReport: report, now });
+  const record = review.createReviewRecord({ id: 'ai', window, metrics, aiReport: report, now });
   assert.deepEqual(review.normalizeReviewState({ ...review.createDefaultReviewState(now), reviews: [record] }).reviews[0].aiReport, report);
   assert.notEqual(record.aiReport.generatedAt, record.createdAt);
-  assert.throws(() => review.createReviewRecord({ id: 'bad-ai', windowDays: 7, windowStart: window.start, windowEnd: window.end, metrics, aiReport: { ...report, model: undefined }, now }), /REVIEW_AI_PROVENANCE_INCOMPLETE/);
+  assert.throws(() => review.createReviewRecord({ id: 'bad-ai', window, metrics, aiReport: { ...report, model: undefined }, now }), /REVIEW_AI_PROVENANCE_INCOMPLETE/);
 });
 
 test('review AI payload is bounded, based on immutable facts, and excludes profile data', () => {
@@ -127,12 +191,15 @@ test('REVIEW wiring uses row-level cloud persistence, real AI provenance, and an
   const client = readFileSync(new URL('../src/lib/supabaseClient.ts', import.meta.url), 'utf8');
   const ai = readFileSync(new URL('../src/services/aiClient.ts', import.meta.url), 'utf8');
   const migration = readFileSync(new URL('../supabase/migrations/20260924034628_v2_review_history.sql', import.meta.url), 'utf8');
+  const rlsTest = readFileSync(new URL('../supabase/tests/review_history_rls_test.sql', import.meta.url), 'utf8');
   assert.match(app, /synchronizeReviewHistory/); assert.match(app, /saveCloudReviewState/); assert.match(app, /onRecalibrate=\{openRecalibration\}/);
-  assert.match(page, /重新校准压力/); assert.match(page, /requestChatCompletionWithProvenance/); assert.match(page, /inputFingerprint/); assert.match(page, /windowIdentity/);
+  assert.match(page, /重新校准压力/); assert.match(page, /requestChatCompletionWithProvenance/); assert.match(page, /inputFingerprint/); assert.match(page, /windowIdentity/); assert.match(page, /Archive/); assert.match(page, /formatReviewDateTime/); assert.match(page, /evidenceLabels/);
+  assert.doesNotMatch(page, /nowRef|toLocaleString|slice\(0,\s*10\)/);
   assert.doesNotMatch(cloud.match(/saveCloudProfile[\s\S]*$/)?.[0] ?? '', /reviewState: input\.reviewState/);
-  assert.match(cloud, /review_records/); assert.match(cloud, /review_events/); assert.match(cloud, /review_tombstones/); assert.match(cloud, /resolution=ignore-duplicates/);
+  assert.match(cloud, /review_records/); assert.match(cloud, /review_events/); assert.match(cloud, /review_archive_events/); assert.match(cloud, /review_tombstones/); assert.match(cloud, /resolution=ignore-duplicates/); assert.doesNotMatch(cloud, /supabase-schema\.sql/); assert.match(cloud, /20260924034628_v2_review_history\.sql/);
   assert.match(cloud, /loadAllReviewRows/); assert.match(cloud, /offset=\$\{offset\}/); assert.match(client, /count=exact/); assert.match(client, /Content-Range/);
   assert.match(cloud, /if \(profileData\?\.reviewState\) await saveCloudReviewState\(reviewState, session, owner\)/);
   assert.match(ai, /generatedAt: new Date\(\)\.toISOString\(\), model: response\.model, provider: response\.provider/);
-  for (const table of ['review_records', 'review_events', 'review_tombstones']) { assert.match(migration, new RegExp(`alter table public\\.${table} enable row level security`)); assert.match(migration, new RegExp(`create policy ${table}_select_own`)); }
+  for (const table of ['review_records', 'review_events', 'review_archive_events', 'review_tombstones']) { assert.match(migration, new RegExp(`alter table public\\.${table} enable row level security`)); assert.match(migration, new RegExp(`create policy ${table}_select_own`)); }
+  for (const contract of ['owner inserts own ReviewRecord', 'cross-user REVIEW select returns no rows', 'forged REVIEW user_id insert is denied', 'anonymous REVIEW select is denied', 'authenticated REVIEW update is denied', 'authenticated REVIEW delete is denied']) assert.match(rlsTest, new RegExp(contract));
 });

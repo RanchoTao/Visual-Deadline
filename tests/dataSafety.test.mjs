@@ -39,6 +39,7 @@ function seededStorage() {
   entries[storageKeys.lifeEventsByOwner] = JSON.stringify({ local: [{ id: 'le1', type: 'wake' }] });
   entries[storageKeys.socialNodes] = JSON.stringify([{ id: 's1', name: 'friend' }]);
   entries[storageKeys.socialLayoutVersion] = '2';
+  entries[storageKeys.reviewState] = JSON.stringify({ schemaVersion: 3, defaultWindowDays: 7, reviews: [{ id: 'review-archived', windowDays: 7, windowStart: '2026-09-18T16:00:00.000Z', windowEnd: '2026-09-24T12:00:00.000Z', timezone: 'Asia/Shanghai', windowStartDate: '2026-09-19', windowEndDate: '2026-09-24', savedDate: '2026-09-24', title: '近 7 天复盘 · 2026-09-24', userNote: 'preserve this note', metrics: { completedCount: 2 }, aiReport: { content: 'preserve report', generatedAt: '2026-09-24T11:59:00.000Z', provider: 'deepseek', model: 'deepseek-chat', inputFingerprint: `sha256-${'a'.repeat(64)}`, windowIdentity: 'Asia/Shanghai:7:window' }, createdAt: '2026-09-24T12:00:00.000Z', updatedAt: '2026-09-24T12:00:00.000Z' }], events: [], reviewArchiveEvents: [{ id: 'archive-1', reviewId: 'review-archived', archived: true, changedAt: '2026-09-24T12:01:00.000Z' }], reviewTombstones: [], updatedAt: '2026-09-24T12:01:00.000Z' });
   entries[storageKeys.achievements] = JSON.stringify([{ id: 'ach1' }]);
   entries[storageKeys.onboardingComplete] = 'true';
   entries['vd.supabase.session'] = JSON.stringify({ access_token: 'jwt', refresh_token: 'refresh' });
@@ -81,6 +82,14 @@ test('complete export includes tasks and goals', () => {
 test('complete export includes accepted planning versions', () => {
   const domain = createCompleteBackup(seededStorage()).domains['planning.plan-versions'];
   assert.equal(domain.payload[0].status, 'accepted');
+});
+
+test('archived REVIEW survives complete backup and restore with full content and provenance', () => {
+  const envelope = createCompleteBackup(seededStorage()); const payload = envelope.domains['review.v2-state'].payload;
+  assert.equal(payload.reviewArchiveEvents[0].archived, true); assert.equal(payload.reviews[0].userNote, 'preserve this note'); assert.equal(payload.reviews[0].aiReport.inputFingerprint, `sha256-${'a'.repeat(64)}`);
+  const target = new MemoryStorage(); const result = restoreBackup(target, envelope); assert.equal(result.ok, true);
+  const restored = JSON.parse(target.getItem(storageKeys.reviewState));
+  assert.deepEqual(restored.reviews[0], payload.reviews[0]); assert.deepEqual(restored.reviewArchiveEvents, payload.reviewArchiveEvents); assert.equal(restored.reviewTombstones.length, 0);
 });
 
 test('absent domain remains explicitly absent', () => {

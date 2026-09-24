@@ -55,7 +55,7 @@ import { chooseNewerOpsState, normalizeOpsState } from './domain/ops/normalizati
 import { createDefaultOpsState, type OpsState } from './domain/ops/types';
 import { deleteTaskFromOpsState } from './domain/ops/plans';
 import { defaultAISettings } from './services/aiClient';
-import { chooseNewerReviewState, createDefaultReviewState, normalizeReviewState, synchronizeReviewHistory, type ReviewState } from './domain/review';
+import { captureMilestoneLifecycleTransition, captureTaskLifecycleTransition, chooseNewerReviewState, createDefaultReviewState, normalizeReviewState, synchronizeReviewHistory, type ReviewState } from './domain/review';
 import { isAuthenticatedPath, isKnownAuthenticatedEntryPath, legacyRouteRedirect, safeAuthenticatedNext } from './lib/appRoutes';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -339,8 +339,7 @@ function createGoal(input: GoalInput): Goal {
   };
 }
 
-function createTask(input: TaskInput): Task {
-  const now = new Date().toISOString();
+function createTask(input: TaskInput, now = new Date().toISOString()): Task {
   const normalizedInput = normalizeTaskInput(input);
   const lifecycleStatus = normalizedInput.lifecycleStatus === 'active' && normalizedInput.progress >= 100 ? 'completed' : normalizedInput.lifecycleStatus;
   const task: Task = {
@@ -967,11 +966,13 @@ function AuthenticatedApp() {
       const nextTask = applyTaskEditLifecycle(previousTask, normalizedInput, now);
       const reconciled = reconcileTaskGoalLinks(normalizedTasks, normalizedGoals, nextTask, previousTask.linkedGoalIds);
       setTasks(reconciled.tasks); setGoals(reconciled.goals);
+      setReviewState((current) => captureTaskLifecycleTransition(normalizeReviewState(current, now), { previous: previousTask, next: nextTask, recordedAt: now }));
       recalculateTaskDerivedPressureHistory(reconciled.tasks, `修改任务后重算压力曲线：${normalizedInput.title}`);
     } else {
-      const newTask = createTask(normalizedInput);
+      const newTask = createTask(normalizedInput, now);
       const reconciled = reconcileTaskGoalLinks(normalizedTasks, normalizedGoals, newTask);
       setTasks(reconciled.tasks); setGoals(reconciled.goals);
+      setReviewState((current) => captureTaskLifecycleTransition(normalizeReviewState(current, now), { next: newTask, recordedAt: now }));
       recordPressureSnapshot('task_created', reconciled.tasks, `新建任务：${newTask.title}`);
     }
     closeForm();
@@ -981,7 +982,9 @@ function AuthenticatedApp() {
   function archiveTask(task: Task, lifecycleStatus: Exclude<LifecycleStatus, 'active'>) {
     const now = new Date().toISOString();
     const nextTasks = normalizedTasks.map((item) => item.id === task.id ? transitionTaskLifecycle(item, lifecycleStatus, now) : item);
+    const nextTask = nextTasks.find((item) => item.id === task.id)!;
     setTasks(nextTasks);
+    setReviewState((current) => captureTaskLifecycleTransition(normalizeReviewState(current, now), { previous: task, next: nextTask, recordedAt: now }));
     recalculateTaskDerivedPressureHistory(nextTasks, `${lifecycleStatus === 'completed' ? '完成' : '放弃'}任务后重算压力曲线：${task.title}`);
   }
 
@@ -997,7 +1000,8 @@ function AuthenticatedApp() {
 
 
   function restoreTask(task: Task) {
-    const nextTasks = normalizedTasks.map((item) => item.id === task.id ? transitionTaskLifecycle(item, 'active') : item);
+    const now = new Date().toISOString();
+    const nextTasks = normalizedTasks.map((item) => item.id === task.id ? transitionTaskLifecycle(item, 'active', now) : item);
     setTasks(nextTasks);
     recalculateTaskDerivedPressureHistory(nextTasks, `恢复任务后重算压力曲线：${task.title}`);
   }
@@ -1042,12 +1046,12 @@ function AuthenticatedApp() {
 
   function saveMilestone(goalId: string, input: GoalMilestoneUpdate & { title: string }, milestoneId?: string) {
     const now = new Date().toISOString();
-    setGoals((currentGoals) => normalizeGoals(currentGoals).map((goal) => {
-      if (goal.id !== goalId) return goal;
-      if (milestoneId) return updateGoalMilestone(goal, milestoneId, input, now);
-      const milestone = createGoalMilestone({ ...input, targetDate: input.targetDate ?? undefined }, now);
-      return { ...goal, milestones: [...normalizeGoalMilestones(goal.milestones, now), { ...milestone, sequence: normalizeGoalMilestones(goal.milestones, now).length + 1 }], updatedAt: now };
-    }));
+    const currentGoal = normalizedGoals.find((goal) => goal.id === goalId); if (!currentGoal) return;
+    const previous = milestoneId ? normalizeGoalMilestones(currentGoal.milestones, now).find((milestone) => milestone.id === milestoneId) : undefined;
+    const nextGoal = milestoneId ? updateGoalMilestone(currentGoal, milestoneId, input, now) : (() => { const milestones = normalizeGoalMilestones(currentGoal.milestones, now); const milestone = createGoalMilestone({ ...input, targetDate: input.targetDate ?? undefined }, now); return { ...currentGoal, milestones: [...milestones, { ...milestone, sequence: milestones.length + 1 }], updatedAt: now }; })();
+    const next = normalizeGoalMilestones(nextGoal.milestones, now).find((milestone) => milestone.id === (milestoneId ?? nextGoal.milestones?.at(-1)?.id));
+    setGoals(normalizedGoals.map((goal) => goal.id === goalId ? nextGoal : goal));
+    if (next) setReviewState((current) => captureMilestoneLifecycleTransition(normalizeReviewState(current, now), { goalId, previous, next, recordedAt: now }));
   }
 
   function deleteMilestone(goalId: string, milestoneId: string) {

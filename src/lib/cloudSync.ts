@@ -6,7 +6,7 @@ import { assertWorkspaceSessionOwner, type WorkspaceOwner } from '../storage/wor
 import type { OpsState } from '../domain/ops/types';
 import { mergeReviewStates, normalizeReviewState } from '../domain/review/normalization';
 import { collectReviewRowPages } from '../domain/review/pagination';
-import type { ReviewHistoryEvent, ReviewRecord, ReviewState } from '../domain/review/types';
+import type { ReviewArchiveEvent, ReviewHistoryEvent, ReviewRecord, ReviewState } from '../domain/review/types';
 
 interface JsonRow<T> {
   id: string;
@@ -48,6 +48,7 @@ interface LifeEventRow {
 
 interface ReviewRecordRow { id: string; user_id: string; data: ReviewRecord; }
 interface ReviewEventRow { id: string; user_id: string; data: ReviewHistoryEvent; }
+interface ReviewArchiveEventRow { id: string; user_id: string; data: ReviewArchiveEvent; }
 interface ReviewTombstoneRow { review_id: string; user_id: string; deleted_at: string; }
 
 const REVIEW_PAGE_SIZE = 500;
@@ -91,8 +92,12 @@ function formatCloudSyncError(error: unknown): Error {
 
   console.error('[Visual Deadline cloud sync error]', error);
 
+  if (/review_(?:records|events|archive_events|tombstones)/i.test(details) && TABLE_OR_COLUMN_MISSING_PATTERNS.some((pattern) => pattern.test(details))) {
+    return new Error('REVIEW 云端表尚未初始化，请应用 additive migration supabase/migrations/20260924034628_v2_review_history.sql。');
+  }
+
   if (TABLE_OR_COLUMN_MISSING_PATTERNS.some((pattern) => pattern.test(details))) {
-    return new Error('数据库结构尚未初始化，请先执行 supabase-schema.sql。');
+    return new Error('数据库结构尚未初始化，请应用对应的 supabase/migrations additive migration。');
   }
 
   if (RLS_DENIED_PATTERNS.some((pattern) => pattern.test(details)) || (error instanceof SupabaseRestError && [401, 403].includes(error.status))) {
@@ -131,17 +136,18 @@ async function replaceJsonRows<T extends { id: string }>(table: 'tasks' | 'goals
 export async function loadCloudData(session: SupabaseSession, owner: WorkspaceOwner): Promise<CloudData> {
   assertWorkspaceSessionOwner(owner, session.user.id);
   return withCloudSyncErrors((async () => {
-    const [tasks, goals, pressureHistory, profiles, reviewRecords, reviewEvents, reviewTombstones] = await Promise.all([
+    const [tasks, goals, pressureHistory, profiles, reviewRecords, reviewEvents, reviewArchiveEvents, reviewTombstones] = await Promise.all([
       loadJsonRows<Task>('tasks', session),
       loadJsonRows<Goal>('goals', session),
       loadJsonRows<PressureHistoryRecord>('pressure_logs', session),
       supabase.rest<ProfileRow[]>(`profiles?select=id,user_id,email,display_name,avatar_url,avatar_storage_path,data,updated_at&user_id=eq.${encode(session.user.id)}&limit=1`, { method: 'GET' }, session),
       loadAllReviewRows<ReviewRecordRow>('review_records', 'id,user_id,data', 'id.asc', session),
       loadAllReviewRows<ReviewEventRow>('review_events', 'id,user_id,data', 'id.asc', session),
+      loadAllReviewRows<ReviewArchiveEventRow>('review_archive_events', 'id,user_id,data', 'id.asc', session),
       loadAllReviewRows<ReviewTombstoneRow>('review_tombstones', 'review_id,user_id,deleted_at', 'review_id.asc', session),
     ]);
     const profileData = profiles[0]?.data;
-    const rowReviewState = normalizeReviewState({ schemaVersion: 2, defaultWindowDays: 7, reviews: reviewRecords.map((row) => row.data), events: reviewEvents.map((row) => row.data), reviewTombstones: reviewTombstones.map((row) => ({ id: row.review_id, deletedAt: row.deleted_at })), updatedAt: [...reviewRecords.map((row) => row.data.updatedAt), ...reviewEvents.map((row) => row.data.recordedAt), ...reviewTombstones.map((row) => row.deleted_at)].sort().at(-1) ?? new Date(0).toISOString() });
+    const rowReviewState = normalizeReviewState({ schemaVersion: 3, defaultWindowDays: 7, reviews: reviewRecords.map((row) => row.data), events: reviewEvents.map((row) => row.data), reviewArchiveEvents: reviewArchiveEvents.map((row) => row.data), reviewTombstones: reviewTombstones.map((row) => ({ id: row.review_id, deletedAt: row.deleted_at })), updatedAt: [...reviewRecords.map((row) => row.data.updatedAt), ...reviewEvents.map((row) => row.data.recordedAt), ...reviewArchiveEvents.map((row) => row.data.changedAt), ...reviewTombstones.map((row) => row.deleted_at)].sort().at(-1) ?? new Date(0).toISOString() });
     const reviewState = profileData?.reviewState ? mergeReviewStates(profileData.reviewState, rowReviewState) : rowReviewState;
     // Complete the legacy profile-to-row migration before a later profile save can remove the legacy payload.
     if (profileData?.reviewState) await saveCloudReviewState(reviewState, session, owner);
@@ -155,7 +161,7 @@ export async function loadCloudData(session: SupabaseSession, owner: WorkspaceOw
       socialNodes: Array.isArray(profileData?.socialNodes) ? profileData.socialNodes : null,
       socialLayoutVersion: typeof profileData?.socialLayoutVersion === 'number' ? profileData.socialLayoutVersion : null,
       opsState: profileData?.opsState ?? null,
-      reviewState: reviewState.reviews.length || reviewState.events.length || reviewState.reviewTombstones.length ? reviewState : null,
+      reviewState: reviewState.reviews.length || reviewState.events.length || reviewState.reviewArchiveEvents.length || reviewState.reviewTombstones.length ? reviewState : null,
     };
   })());
 }
@@ -229,11 +235,12 @@ export async function saveCloudReviewState(state: ReviewState, session: Supabase
   await withCloudSyncErrors((async () => {
     for (const records of batches(normalized.reviews)) await supabase.rest('review_records', { method: 'POST', headers: { Prefer: 'resolution=ignore-duplicates,return=minimal' }, body: JSON.stringify(records.map((record) => ({ id: record.id, user_id: session.user.id, data: record, created_at: record.createdAt, updated_at: record.updatedAt }))) }, session);
     for (const events of batches(normalized.events)) await supabase.rest('review_events', { method: 'POST', headers: { Prefer: 'resolution=ignore-duplicates,return=minimal' }, body: JSON.stringify(events.map((event) => ({ id: event.id, user_id: session.user.id, data: event, occurred_at: event.timestamp, recorded_at: event.recordedAt }))) }, session);
+    for (const archiveEvents of batches(normalized.reviewArchiveEvents)) await supabase.rest('review_archive_events', { method: 'POST', headers: { Prefer: 'resolution=ignore-duplicates,return=minimal' }, body: JSON.stringify(archiveEvents.map((event) => ({ id: event.id, user_id: session.user.id, review_id: event.reviewId, data: event, changed_at: event.changedAt }))) }, session);
     for (const tombstones of batches(normalized.reviewTombstones)) await supabase.rest('review_tombstones', { method: 'POST', headers: { Prefer: 'resolution=ignore-duplicates,return=minimal' }, body: JSON.stringify(tombstones.map((entry) => ({ review_id: entry.id, user_id: session.user.id, deleted_at: entry.deletedAt }))) }, session);
   })());
 }
 
-async function loadAllReviewRows<T>(table: 'review_records' | 'review_events' | 'review_tombstones', select: string, order: string, session: SupabaseSession): Promise<T[]> {
+async function loadAllReviewRows<T>(table: 'review_records' | 'review_events' | 'review_archive_events' | 'review_tombstones', select: string, order: string, session: SupabaseSession): Promise<T[]> {
   return collectReviewRowPages((offset) => supabase.restPage<T[]>(`${table}?select=${select}&user_id=eq.${encode(session.user.id)}&order=${order}&limit=${REVIEW_PAGE_SIZE}&offset=${offset}`, { method: 'GET' }, session));
 }
 
