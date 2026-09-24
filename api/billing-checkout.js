@@ -26,6 +26,10 @@ function paddleBaseUrl() {
     : 'https://sandbox-api.paddle.com';
 }
 
+function providerEnvironment() {
+  return env('PADDLE_ENVIRONMENT').toLowerCase() === 'production' ? 'production' : 'sandbox';
+}
+
 async function parseResponse(result) {
   const text = await result.text();
   let body = null;
@@ -109,6 +113,7 @@ export default async function handler(request, response) {
         id: orderId,
         user_id: user.id,
         provider: 'paddle',
+        provider_environment: providerEnvironment(),
         plan_code: planCode,
         amount_minor: plan.amountMinor,
         currency: plan.currency,

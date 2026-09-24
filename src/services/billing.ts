@@ -1,4 +1,5 @@
 import { supabase, type SupabaseSession } from '../lib/supabaseClient';
+import type { Entitlement, EntitlementDecision, PaymentReference, Subscription } from '../domain/billing/contracts';
 
 export type BillingPlanCode = 'vd_monthly' | 'vd_yearly';
 export type BillingOrderStatus = 'pending' | 'paid' | 'failed' | 'canceled' | 'partially_refunded' | 'refunded';
@@ -36,6 +37,21 @@ export interface BillingSnapshot {
   membership: MembershipRecord | null;
   orders: BillingOrder[];
 }
+
+export interface SubscriptionBillingSnapshot extends BillingSnapshot {
+  subscriptions: Subscription[];
+  payments: PaymentReference[];
+  entitlements: Entitlement[];
+  entitlement: EntitlementDecision;
+}
+
+export type RecurringPlanCode = 'vd.plus.monthly.v1' | 'vd.plus.annual.v1';
+export type PortalAction = 'overview' | 'update_payment' | 'cancel';
+
+export const RECURRING_PLANS = [
+  { code: 'vd.plus.monthly.v1' as const, label: 'Plus 月付', intervalLabel: '每月自动续费' },
+  { code: 'vd.plus.annual.v1' as const, label: 'Plus 年付', intervalLabel: '每年自动续费' },
+] as const;
 
 interface CheckoutResponse {
   ok: boolean;
@@ -89,6 +105,19 @@ const PADDLE_ENVIRONMENT = ((import.meta.env.VITE_PADDLE_ENVIRONMENT as string |
   : 'sandbox';
 
 let paddleScriptPromise: Promise<PaddleSdk> | null = null;
+
+export function isRecurringBillingEnabled(): boolean {
+  return (import.meta.env.VITE_RECURRING_BILLING_ENABLED as string | undefined)?.trim().toLowerCase() === 'true';
+}
+
+interface RecurringCheckoutResponse {
+  ok: boolean;
+  transactionId: string;
+  paymentReferenceId: string;
+  planCode: RecurringPlanCode;
+  catalogVersion: 'vd-recurring-v1';
+  providerEnvironment: 'sandbox' | 'production';
+}
 
 function billingApiError(payload: unknown, fallback: string): Error {
   if (payload && typeof payload === 'object') {
@@ -186,6 +215,82 @@ export async function getBillingSnapshot(session: SupabaseSession): Promise<Bill
     membership: memberships[0] ?? null,
     orders: Array.isArray(orders) ? orders : [],
   };
+}
+
+export function hasEntitlement(entitlements: readonly Entitlement[], userId: string, capability: 'vd.plus', at = new Date()): EntitlementDecision {
+  const instant = at.getTime();
+  const sources = entitlements.filter((row) => {
+    if (row.user_id !== userId || row.capability !== capability || row.status !== 'active') return false;
+    const start = new Date(row.valid_from).getTime();
+    const end = row.valid_until ? new Date(row.valid_until).getTime() : Number.POSITIVE_INFINITY;
+    return Number.isFinite(start) && start <= instant && instant < end;
+  }).map((row) => ({ sourceType: row.source_type, sourceId: row.source_id, validUntil: row.valid_until }));
+  const finiteEnds = sources.map((source) => source.validUntil).filter((value): value is string => Boolean(value)).sort();
+  return {
+    allowed: sources.length > 0,
+    capability,
+    validUntil: sources.some((source) => source.validUntil === null) ? null : finiteEnds.at(-1) ?? null,
+    sources,
+    reason: sources.length ? 'valid_entitlement_source' : 'no_valid_entitlement_source',
+  };
+}
+
+export async function getSubscriptionBillingSnapshot(session: SupabaseSession): Promise<SubscriptionBillingSnapshot> {
+  const userId = encodeURIComponent(session.user.id);
+  const [legacy, subscriptions, payments, entitlements] = await Promise.all([
+    getBillingSnapshot(session),
+    supabase.rest<Subscription[]>(
+      `subscriptions?select=id,user_id,provider,provider_environment,provider_subscription_id,provider_customer_id,plan_code,catalog_version,status,current_period_start,current_period_end,cancel_at,canceled_at,scheduled_change,provider_updated_at,last_provider_event_id,created_at,updated_at&user_id=eq.${userId}&order=updated_at.desc`,
+      {}, session,
+    ),
+    supabase.rest<PaymentReference[]>(
+      `payment_references?select=id,user_id,subscription_id,provider,provider_environment,provider_transaction_id,kind,status,currency,subtotal_minor,tax_minor,total_minor,occurred_at,created_at,updated_at&user_id=eq.${userId}&order=occurred_at.desc&limit=20`,
+      {}, session,
+    ),
+    supabase.rest<Entitlement[]>(
+      `entitlements?select=id,user_id,capability,source_type,source_id,status,valid_from,valid_until,reason,created_at,updated_at&user_id=eq.${userId}&capability=eq.vd.plus&order=valid_until.desc.nullslast`,
+      {}, session,
+    ),
+  ]);
+  const safeEntitlements = Array.isArray(entitlements) ? entitlements : [];
+  return {
+    ...legacy,
+    subscriptions: Array.isArray(subscriptions) ? subscriptions : [],
+    payments: Array.isArray(payments) ? payments : [],
+    entitlements: safeEntitlements,
+    entitlement: hasEntitlement(safeEntitlements, session.user.id, 'vd.plus'),
+  };
+}
+
+export async function createRecurringCheckout(planCode: RecurringPlanCode, session: SupabaseSession): Promise<RecurringCheckoutResponse> {
+  const response = await fetch('/api/billing-subscription-checkout', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ planCode }),
+  });
+  const payload = await parseApiJson(response);
+  if (!response.ok) throw billingApiError(payload, '暂时无法创建订阅。');
+  if (!payload || typeof payload !== 'object' || typeof (payload as { transactionId?: unknown }).transactionId !== 'string') {
+    throw new Error('订阅服务没有返回有效交易。');
+  }
+  const checkout = payload as Partial<RecurringCheckoutResponse>;
+  if (checkout.providerEnvironment !== PADDLE_ENVIRONMENT || checkout.planCode !== planCode || checkout.catalogVersion !== 'vd-recurring-v1') {
+    throw new Error('订阅服务与浏览器的 Paddle 环境或目录不一致。');
+  }
+  return checkout as RecurringCheckoutResponse;
+}
+
+export async function openBillingPortal(action: PortalAction, subscriptionId: string, session: SupabaseSession): Promise<void> {
+  const response = await fetch('/api/billing-portal', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, subscriptionId }),
+  });
+  const payload = await parseApiJson(response);
+  if (!response.ok) throw billingApiError(payload, '暂时无法打开 Paddle 订阅管理。');
+  const url = payload && typeof payload === 'object' ? (payload as { url?: unknown }).url : null;
+  if (typeof url !== 'string' || !url.startsWith('https://')) throw new Error('Paddle 没有返回有效的订阅管理链接。');
+  window.location.assign(url);
 }
 
 export async function createBillingCheckout(planCode: BillingPlanCode, session: SupabaseSession): Promise<CheckoutResponse> {

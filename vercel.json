@@ -1,4 +1,7 @@
 {
+  "crons": [
+    { "path": "/api/billing-reconcile", "schedule": "17 3 * * *" }
+  ],
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
   ]
