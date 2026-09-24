@@ -70,6 +70,26 @@ test('pressure recomputation replaces task-derived rows without rewriting manual
   assert.equal(result.find((record) => record.id === 'derived-new')?.source, 'task_derived');
 });
 
+test('schema 2 and 3 normalization overrides stale pressure evidence from canonical pressure source', () => {
+  const base = { timestamp: '2026-09-23T08:00:00.000Z', recordedAt: '2026-09-24T12:00:00.000Z', title: 'pressure', pressure: 60, activeTaskCount: 2 };
+  const events = [
+    { ...base, id: 'manual-stale', kind: 'pressure_recalibrated', pressureSource: 'manual', evidenceSource: 'derived' },
+    { ...base, id: 'derived-stale', kind: 'pressure_sample', pressureSource: 'task_derived', evidenceSource: 'captured_live' },
+    { ...base, id: 'legacy-stale', kind: 'pressure_sample', evidenceSource: 'derived' },
+    { ...base, id: 'non-pressure', kind: 'task_completed', relatedTaskId: 'task', evidenceSource: 'derived' },
+  ];
+  for (const schemaVersion of [2, 3]) {
+    const normalized = review.normalizeReviewState({ schemaVersion, defaultWindowDays: 7, reviews: [], events, reviewArchiveEvents: [], reviewTombstones: [], updatedAt: now });
+    assert.equal(normalized.events.find((event) => event.id === 'manual-stale')?.evidenceSource, 'captured_live');
+    assert.equal(normalized.events.find((event) => event.id === 'manual-stale')?.pressureSource, 'manual');
+    assert.equal(normalized.events.find((event) => event.id === 'derived-stale')?.evidenceSource, 'derived');
+    assert.equal(normalized.events.find((event) => event.id === 'derived-stale')?.pressureSource, 'task_derived');
+    assert.equal(normalized.events.find((event) => event.id === 'legacy-stale')?.evidenceSource, 'legacy_backfill');
+    assert.equal(normalized.events.find((event) => event.id === 'legacy-stale')?.pressureSource, 'unknown');
+    assert.equal(normalized.events.find((event) => event.id === 'non-pressure')?.evidenceSource, 'derived');
+  }
+});
+
 test('7/30/90 windows use local calendar dates and preserve DST semantics', () => {
   const spring = review.createReviewWindow(7, '2026-03-08T16:00:00.000Z', 'America/New_York');
   assert.equal(spring.start, '2026-03-02T05:00:00.000Z');
