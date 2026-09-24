@@ -20,8 +20,9 @@ function canonicalJson(value: unknown): string {
   return JSON.stringify(value);
 }
 
-export function fingerprintReviewAnalysisInput(value: unknown): string {
-  const text = canonicalJson(value); let hash = 0x811c9dc5;
-  for (let index = 0; index < text.length; index += 1) { hash ^= text.charCodeAt(index); hash = Math.imul(hash, 0x01000193); }
-  return `fnv1a32-${(hash >>> 0).toString(16).padStart(8, '0')}`;
+export function reviewAnalysisInputIdentity(value: unknown): string { return canonicalJson(value); }
+
+export async function fingerprintReviewAnalysisInput(value: unknown): Promise<string> {
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonicalJson(value)));
+  return `sha256-${[...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')}`;
 }

@@ -5,6 +5,7 @@ import { SupabaseRestError, supabase, type SupabaseSession } from './supabaseCli
 import { assertWorkspaceSessionOwner, type WorkspaceOwner } from '../storage/workspace';
 import type { OpsState } from '../domain/ops/types';
 import { mergeReviewStates, normalizeReviewState } from '../domain/review/normalization';
+import { collectReviewRowPages } from '../domain/review/pagination';
 import type { ReviewHistoryEvent, ReviewRecord, ReviewState } from '../domain/review/types';
 
 interface JsonRow<T> {
@@ -48,6 +49,8 @@ interface LifeEventRow {
 interface ReviewRecordRow { id: string; user_id: string; data: ReviewRecord; }
 interface ReviewEventRow { id: string; user_id: string; data: ReviewHistoryEvent; }
 interface ReviewTombstoneRow { review_id: string; user_id: string; deleted_at: string; }
+
+const REVIEW_PAGE_SIZE = 500;
 
 export interface CloudData {
   tasks: Task[];
@@ -133,13 +136,15 @@ export async function loadCloudData(session: SupabaseSession, owner: WorkspaceOw
       loadJsonRows<Goal>('goals', session),
       loadJsonRows<PressureHistoryRecord>('pressure_logs', session),
       supabase.rest<ProfileRow[]>(`profiles?select=id,user_id,email,display_name,avatar_url,avatar_storage_path,data,updated_at&user_id=eq.${encode(session.user.id)}&limit=1`, { method: 'GET' }, session),
-      supabase.rest<ReviewRecordRow[]>(`review_records?select=id,user_id,data&user_id=eq.${encode(session.user.id)}`, { method: 'GET' }, session),
-      supabase.rest<ReviewEventRow[]>(`review_events?select=id,user_id,data&user_id=eq.${encode(session.user.id)}`, { method: 'GET' }, session),
-      supabase.rest<ReviewTombstoneRow[]>(`review_tombstones?select=review_id,user_id,deleted_at&user_id=eq.${encode(session.user.id)}`, { method: 'GET' }, session),
+      loadAllReviewRows<ReviewRecordRow>('review_records', 'id,user_id,data', 'id.asc', session),
+      loadAllReviewRows<ReviewEventRow>('review_events', 'id,user_id,data', 'id.asc', session),
+      loadAllReviewRows<ReviewTombstoneRow>('review_tombstones', 'review_id,user_id,deleted_at', 'review_id.asc', session),
     ]);
     const profileData = profiles[0]?.data;
     const rowReviewState = normalizeReviewState({ schemaVersion: 2, defaultWindowDays: 7, reviews: reviewRecords.map((row) => row.data), events: reviewEvents.map((row) => row.data), reviewTombstones: reviewTombstones.map((row) => ({ id: row.review_id, deletedAt: row.deleted_at })), updatedAt: [...reviewRecords.map((row) => row.data.updatedAt), ...reviewEvents.map((row) => row.data.recordedAt), ...reviewTombstones.map((row) => row.deleted_at)].sort().at(-1) ?? new Date(0).toISOString() });
     const reviewState = profileData?.reviewState ? mergeReviewStates(profileData.reviewState, rowReviewState) : rowReviewState;
+    // Complete the legacy profile-to-row migration before a later profile save can remove the legacy payload.
+    if (profileData?.reviewState) await saveCloudReviewState(reviewState, session, owner);
     return {
       tasks,
       goals,
@@ -226,6 +231,10 @@ export async function saveCloudReviewState(state: ReviewState, session: Supabase
     for (const events of batches(normalized.events)) await supabase.rest('review_events', { method: 'POST', headers: { Prefer: 'resolution=ignore-duplicates,return=minimal' }, body: JSON.stringify(events.map((event) => ({ id: event.id, user_id: session.user.id, data: event, occurred_at: event.timestamp, recorded_at: event.recordedAt }))) }, session);
     for (const tombstones of batches(normalized.reviewTombstones)) await supabase.rest('review_tombstones', { method: 'POST', headers: { Prefer: 'resolution=ignore-duplicates,return=minimal' }, body: JSON.stringify(tombstones.map((entry) => ({ review_id: entry.id, user_id: session.user.id, deleted_at: entry.deletedAt }))) }, session);
   })());
+}
+
+async function loadAllReviewRows<T>(table: 'review_records' | 'review_events' | 'review_tombstones', select: string, order: string, session: SupabaseSession): Promise<T[]> {
+  return collectReviewRowPages((offset) => supabase.restPage<T[]>(`${table}?select=${select}&user_id=eq.${encode(session.user.id)}&order=${order}&limit=${REVIEW_PAGE_SIZE}&offset=${offset}`, { method: 'GET' }, session));
 }
 
 export async function saveCloudProfile(input: { profile: UserProfile; pressureCalibration: PressureCalibrationSnapshot; onboardingComplete: boolean; socialNodes: unknown[]; socialLayoutVersion: number; opsState: OpsState }, session: SupabaseSession, owner: WorkspaceOwner): Promise<void> {

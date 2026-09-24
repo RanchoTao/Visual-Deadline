@@ -24,6 +24,7 @@ export type ReviewHistoryKind = 'task_completed' | 'task_abandoned' | 'milestone
 export interface ReviewHistoryEvent {
   id: string; timestamp: string; recordedAt: string; kind: ReviewHistoryKind; title: string; entityTitle?: string; description?: string;
   relatedTaskId?: string; relatedGoalId?: string; reviewId?: string; deadline?: string; importance?: number; activityType?: string;
+  relatedMilestoneId?: string;
   pressure?: number; activeTaskCount?: number; pressureSource?: 'manual' | 'task_derived' | 'unknown';
 }
 export interface ReviewTombstone { id: string; deletedAt: string; }

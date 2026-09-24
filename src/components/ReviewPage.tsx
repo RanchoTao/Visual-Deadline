@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AIArtifact, Goal, PressureHistoryRecord, Task } from '../types/task.js';
 import type { OpsState } from '../domain/ops/types.js';
 import { AIReportRenderer } from './AIReportRenderer.js';
-import { addReviewRecord, buildReviewAnalysisInput, buildReviewDailyTrends, buildReviewHistoryEvents, createReviewRecord, createReviewWindow, deleteReviewRecord, deriveReviewMetrics, fingerprintReviewAnalysisInput, reviewAnalysisSystemPrompt, reviewWindowIdentity, type ReviewAIReport, type ReviewHistoryKind, type ReviewState, type ReviewWindowDays } from '../domain/review/index.js';
+import { addReviewRecord, buildReviewAnalysisInput, buildReviewDailyTrends, buildReviewHistoryEvents, createReviewRecord, createReviewWindow, deleteReviewRecord, deriveReviewMetrics, fingerprintReviewAnalysisInput, reviewAnalysisInputIdentity, reviewAnalysisSystemPrompt, reviewWindowIdentity, type ReviewAIReport, type ReviewHistoryKind, type ReviewState, type ReviewWindowDays } from '../domain/review/index.js';
 import { defaultAISettings, requestChatCompletionWithProvenance } from '../services/aiClient.js';
 
 type Tab = 'overview' | 'history' | 'trends' | 'reports';
@@ -23,7 +23,7 @@ export function ReviewPage(props: Props) {
   const [aiDraftSignature, setAiDraftSignature] = useState<string>();
   const [aiStatus, setAiStatus] = useState<'idle' | 'loading' | 'error'>('idle');
   const [historyFilter, setHistoryFilter] = useState<'all' | 'task' | 'milestone' | 'review' | 'pressure'>('all');
-  const ownerRef = useRef(props.ownerKey); const requestRef = useRef(0); const nowRef = useRef(new Date().toISOString());
+  const ownerRef = useRef(props.ownerKey); const signatureRef = useRef(''); const requestRef = useRef(0); const nowRef = useRef(new Date().toISOString());
   ownerRef.current = props.ownerKey;
   const now = nowRef.current;
   const window = useMemo(() => createReviewWindow(windowDays, now, props.opsState.timezone), [windowDays, now, props.opsState.timezone]);
@@ -32,9 +32,11 @@ export function ReviewPage(props: Props) {
   const trends = useMemo(() => buildReviewDailyTrends({ events: props.reviewState.events, window }), [props.reviewState.events, window]);
   const analysisInput = useMemo(() => buildReviewAnalysisInput({ window, metrics, tasks: props.tasks, events: props.reviewState.events, opsState: props.opsState }), [metrics, props.opsState, props.reviewState.events, props.tasks, window]);
   const aiContext = useMemo(() => ({ tasks: props.tasks.slice(0, 50), goals: props.goals.slice(0, 30) }), [props.goals, props.tasks]);
-  const inputFingerprint = useMemo(() => fingerprintReviewAnalysisInput({ mode: 'pressure_analysis', systemPrompt: reviewAnalysisSystemPrompt, analysisInput, context: aiContext }), [aiContext, analysisInput]);
+  const provenanceInput = useMemo(() => ({ mode: 'pressure_analysis', systemPrompt: reviewAnalysisSystemPrompt, analysisInput, context: aiContext }), [aiContext, analysisInput]);
+  const inputIdentity = useMemo(() => reviewAnalysisInputIdentity(provenanceInput), [provenanceInput]);
   const windowIdentity = reviewWindowIdentity(window);
-  const signature = `${props.ownerKey}:${windowIdentity}:${inputFingerprint}`;
+  const signature = `${props.ownerKey}:${windowIdentity}:${inputIdentity}`;
+  signatureRef.current = signature;
 
   useEffect(() => () => { requestRef.current += 1; }, []);
   useEffect(() => { setTab('overview'); setWindowDays(props.reviewState.defaultWindowDays); setNote(''); setAiDraft(undefined); setAiDraftSignature(undefined); setAiStatus('idle'); requestRef.current += 1; }, [props.ownerKey]);
@@ -45,10 +47,12 @@ export function ReviewPage(props: Props) {
   async function generateAI() {
     const id = ++requestRef.current; const requestOwner = props.ownerKey; const requestSignature = signature; setAiStatus('loading');
     try {
+      const inputFingerprint = await fingerprintReviewAnalysisInput(provenanceInput);
+      if (id !== requestRef.current || ownerRef.current !== requestOwner || requestSignature !== signatureRef.current) return;
       const result = await requestChatCompletionWithProvenance(defaultAISettings, reviewAnalysisSystemPrompt, JSON.stringify(analysisInput), { mode: 'pressure_analysis', context: aiContext });
-      if (id !== requestRef.current || ownerRef.current !== requestOwner || requestSignature !== signature) return;
+      if (id !== requestRef.current || ownerRef.current !== requestOwner || requestSignature !== signatureRef.current) return;
       setAiDraft({ ...result, content: result.content.trim(), inputFingerprint, windowIdentity }); setAiDraftSignature(requestSignature); setAiStatus('idle');
-    } catch { if (id === requestRef.current && ownerRef.current === requestOwner && requestSignature === signature) setAiStatus('error'); }
+    } catch { if (id === requestRef.current && ownerRef.current === requestOwner && requestSignature === signatureRef.current) setAiStatus('error'); }
   }
 
   function saveReview() {

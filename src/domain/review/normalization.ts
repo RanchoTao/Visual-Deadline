@@ -1,5 +1,6 @@
 import type { ReviewAIReport, ReviewHistoryEvent, ReviewHistoryKind, ReviewMetricsSnapshot, ReviewRecord, ReviewState, ReviewTombstone, ReviewWindowDays } from './types.js';
 import { isReviewWindowDays } from './window.js';
+import { reviewEventIdentity } from './history.js';
 
 const historyKinds: readonly ReviewHistoryKind[] = ['task_completed', 'task_abandoned', 'milestone_completed', 'review_saved', 'ai_review_generated', 'pressure_sample', 'pressure_recalibrated', 'legacy_ai'];
 const iso = (value: unknown): value is string => typeof value === 'string' && Number.isFinite(Date.parse(value));
@@ -32,7 +33,7 @@ function normalizeEvent(value: unknown): ReviewHistoryEvent | undefined {
   if (!value || typeof value !== 'object') return undefined; const source = value as Record<string, unknown>;
   if (!string(source.id, 500) || !iso(source.timestamp) || !iso(source.recordedAt) || !historyKinds.includes(source.kind as ReviewHistoryKind) || !string(source.title, 500)) return undefined;
   const pressureSource = source.pressureSource === 'manual' || source.pressureSource === 'task_derived' || source.pressureSource === 'unknown' ? source.pressureSource : undefined;
-  return { id: source.id, timestamp: source.timestamp, recordedAt: source.recordedAt, kind: source.kind as ReviewHistoryKind, title: source.title.trim(), entityTitle: optionalString(source.entityTitle, 240), description: optionalString(source.description, 20000), relatedTaskId: optionalString(source.relatedTaskId, 200), relatedGoalId: optionalString(source.relatedGoalId, 200), reviewId: optionalString(source.reviewId, 200), deadline: iso(source.deadline) ? source.deadline : undefined, importance: finite(source.importance) ? source.importance : undefined, activityType: optionalString(source.activityType, 100), pressure: finite(source.pressure) ? source.pressure : undefined, activeTaskCount: finite(source.activeTaskCount) ? source.activeTaskCount : undefined, pressureSource };
+  return { id: source.id, timestamp: source.timestamp, recordedAt: source.recordedAt, kind: source.kind as ReviewHistoryKind, title: source.title.trim(), entityTitle: optionalString(source.entityTitle, 240), description: optionalString(source.description, 20000), relatedTaskId: optionalString(source.relatedTaskId, 200), relatedGoalId: optionalString(source.relatedGoalId, 200), relatedMilestoneId: optionalString(source.relatedMilestoneId, 200), reviewId: optionalString(source.reviewId, 200), deadline: iso(source.deadline) ? source.deadline : undefined, importance: finite(source.importance) ? source.importance : undefined, activityType: optionalString(source.activityType, 100), pressure: finite(source.pressure) ? source.pressure : undefined, activeTaskCount: finite(source.activeTaskCount) ? source.activeTaskCount : undefined, pressureSource };
 }
 
 function normalizeTombstone(value: unknown): ReviewTombstone | undefined {
@@ -48,13 +49,17 @@ const later = <T extends { updatedAt: string }>(left: T, right: T) => Date.parse
 const laterTombstone = (left: ReviewTombstone, right: ReviewTombstone) => Date.parse(right.deletedAt) > Date.parse(left.deletedAt) ? right : left;
 const earlierEvent = (left: ReviewHistoryEvent, right: ReviewHistoryEvent) => Date.parse(right.recordedAt) < Date.parse(left.recordedAt) ? right : left;
 
+function uniqueEvents(values: ReviewHistoryEvent[]): ReviewHistoryEvent[] {
+  const map = new Map<string, ReviewHistoryEvent>(); values.forEach((value) => { const identity = reviewEventIdentity(value); map.set(identity, map.has(identity) ? earlierEvent(map.get(identity)!, value) : value); }); return [...map.values()];
+}
+
 export function createDefaultReviewState(now = new Date().toISOString()): ReviewState { return { schemaVersion: 2, defaultWindowDays: 7, reviews: [], events: [], reviewTombstones: [], updatedAt: now }; }
 
 export function normalizeReviewState(value: unknown, now = new Date().toISOString()): ReviewState {
   if (!value || typeof value !== 'object') return createDefaultReviewState(now); const source = value as Record<string, unknown>;
   if (source.schemaVersion !== 1 && source.schemaVersion !== 2) return createDefaultReviewState(now);
   const reviews = uniqueById((Array.isArray(source.reviews) ? source.reviews : []).flatMap((value) => { const record = normalizeRecord(value); return record ? [record] : []; }), later);
-  const events = uniqueById((Array.isArray(source.events) ? source.events : []).flatMap((value) => { const event = normalizeEvent(value); return event ? [event] : []; }), earlierEvent);
+  const events = uniqueEvents((Array.isArray(source.events) ? source.events : []).flatMap((value) => { const event = normalizeEvent(value); return event ? [event] : []; }));
   const reviewTombstones = uniqueById((Array.isArray(source.reviewTombstones) ? source.reviewTombstones : []).flatMap((value) => { const tombstone = normalizeTombstone(value); return tombstone ? [tombstone] : []; }), laterTombstone);
   const deleted = new Set(reviewTombstones.map((entry) => entry.id));
   return { schemaVersion: 2, defaultWindowDays: isReviewWindowDays(source.defaultWindowDays) ? source.defaultWindowDays : 7, reviews: reviews.filter((record) => !deleted.has(record.id)).sort((left, right) => right.createdAt.localeCompare(left.createdAt)), events: events.sort((left, right) => left.recordedAt.localeCompare(right.recordedAt) || left.id.localeCompare(right.id)), reviewTombstones, updatedAt: iso(source.updatedAt) ? source.updatedAt : now };
@@ -77,4 +82,11 @@ export function deleteReviewRecord(state: ReviewState, id: string, now: string):
   return normalizeReviewState({ ...state, reviews: state.reviews.filter((record) => record.id !== id), reviewTombstones: [...state.reviewTombstones, { id, deletedAt: now }], updatedAt: now }, now);
 }
 
-export function createReviewRecord(input: { id: string; windowDays: ReviewWindowDays; windowStart: string; windowEnd: string; metrics: ReviewMetricsSnapshot; userNote?: string; aiReport?: ReviewAIReport; now: string }): ReviewRecord { return { id: input.id, windowDays: input.windowDays, windowStart: input.windowStart, windowEnd: input.windowEnd, title: `近 ${input.windowDays} 天复盘 · ${input.now.slice(0, 10)}`, userNote: input.userNote?.trim() || undefined, metrics: input.metrics, aiReport: input.aiReport, createdAt: input.now, updatedAt: input.now }; }
+export function hasCompleteReviewAIProvenance(report: ReviewAIReport): boolean {
+  return iso(report.generatedAt) && string(report.provider, 200) && string(report.model, 200) && /^sha256-[0-9a-f]{64}$/.test(report.inputFingerprint ?? '') && string(report.windowIdentity, 500);
+}
+
+export function createReviewRecord(input: { id: string; windowDays: ReviewWindowDays; windowStart: string; windowEnd: string; metrics: ReviewMetricsSnapshot; userNote?: string; aiReport?: ReviewAIReport; now: string }): ReviewRecord {
+  if (input.aiReport && !hasCompleteReviewAIProvenance(input.aiReport)) throw new Error('REVIEW_AI_PROVENANCE_INCOMPLETE');
+  return { id: input.id, windowDays: input.windowDays, windowStart: input.windowStart, windowEnd: input.windowEnd, title: `近 ${input.windowDays} 天复盘 · ${input.now.slice(0, 10)}`, userNote: input.userNote?.trim() || undefined, metrics: input.metrics, aiReport: input.aiReport, createdAt: input.now, updatedAt: input.now };
+}

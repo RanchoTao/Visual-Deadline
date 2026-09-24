@@ -5,3 +5,4 @@ export * from './normalization.js';
 export * from './history.js';
 export * from './trends.js';
 export * from './reports.js';
+export * from './pagination.js';
