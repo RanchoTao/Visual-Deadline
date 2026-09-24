@@ -183,6 +183,14 @@ class VisualDeadlineSupabaseFacade {
     headers.set('apikey', this.config.anonKey); headers.set('Content-Type', 'application/json'); if (activeSession) headers.set('Authorization', `Bearer ${activeSession.access_token}`);
     return parseResponse<T>(await fetch(`${this.config.url}/rest/v1/${path}`, { ...init, headers }));
   }
+  async restPage<T>(path: string, init: RequestInit = {}, session?: SupabaseSession | null): Promise<{ data: T; total?: number }> {
+    const activeSession = session ?? await identityClient.getSession(); const headers = new Headers(init.headers);
+    headers.set('apikey', this.config.anonKey); headers.set('Content-Type', 'application/json'); if (activeSession) headers.set('Authorization', `Bearer ${activeSession.access_token}`);
+    const preferences = headers.get('Prefer'); headers.set('Prefer', preferences ? `${preferences},count=exact` : 'count=exact');
+    const response = await fetch(`${this.config.url}/rest/v1/${path}`, { ...init, headers });
+    const totalText = response.headers.get('Content-Range')?.split('/')[1]; const total = totalText && totalText !== '*' ? Number(totalText) : undefined;
+    return { data: await parseResponse<T>(response), total: Number.isFinite(total) ? total : undefined };
+  }
   async uploadStorageObject(bucket: string, path: string, file: Blob, session?: SupabaseSession | null, upsert = false): Promise<void> {
     if (!(session ?? await identityClient.getSession())) throw new Error('请先登录后上传附件。'); const { error } = await this.client.storage.from(bucket).upload(path, file, { upsert }); if (error) throw error;
   }

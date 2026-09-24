@@ -6,7 +6,7 @@ import { HomePage } from './components/HomePage';
 import { CaptureIntakePanel } from './components/CaptureIntakePanel';
 import { PlanPage } from './components/PlanPage';
 import { OpsPage } from './components/OpsPage';
-import { LogPage } from './components/LogPage';
+import { ReviewPage } from './components/ReviewPage';
 import { ProfilePage } from './components/ProfilePage';
 import { PrivacyPolicyPage } from './components/PrivacyPolicyPage';
 import { TaskForm } from './components/TaskForm';
@@ -39,7 +39,7 @@ import {
 import { appendPressureHistoryRecord, createPressureHistoryRecord, normalizePressureHistory, replaceTaskDerivedPressureHistory } from './utils/pressureHistory';
 import { sortActiveTasksByProgress } from './utils/taskDerivedState';
 import { generateDailyQuest } from './utils/dailyQuest';
-import { deleteCloudLifeEvent, loadCloudData, loadCloudLifeEvents, saveCloudGoals, saveCloudPressureHistory, saveCloudProfile, saveCloudTasks, upsertCloudLifeEvents } from './lib/cloudSync';
+import { deleteCloudLifeEvent, loadCloudData, loadCloudLifeEvents, saveCloudGoals, saveCloudPressureHistory, saveCloudProfile, saveCloudReviewState, saveCloudTasks, upsertCloudLifeEvents } from './lib/cloudSync';
 import { assertWorkspaceSessionOwner, browserStorageAdapter, loadValue, mergeAuthenticatedWorkspaceRecords, saveValue, storageKeys, workspaceOnboardingFallback, workspaceOwnerKey } from './storage';
 import { createDefaultLifePreferences, createLifeEvent, deriveLifeState, getLifeEventsForOwner, mergeLifeEvents, planLifeController, setLifeEventsForOwner, undoLatestLifeEvent as removeLatestLifeEvent } from './domain/life-controller';
 import { buildHomeRecommendationComparison } from './domain/execution/homeProjection';
@@ -55,6 +55,7 @@ import { chooseNewerOpsState, normalizeOpsState } from './domain/ops/normalizati
 import { createDefaultOpsState, type OpsState } from './domain/ops/types';
 import { deleteTaskFromOpsState } from './domain/ops/plans';
 import { defaultAISettings } from './services/aiClient';
+import { captureMilestoneLifecycleTransition, captureTaskLifecycleTransition, chooseNewerReviewState, createDefaultReviewState, normalizeReviewState, synchronizeReviewHistory, type ReviewState } from './domain/review';
 import { isAuthenticatedPath, isKnownAuthenticatedEntryPath, legacyRouteRedirect, safeAuthenticatedNext } from './lib/appRoutes';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -338,8 +339,7 @@ function createGoal(input: GoalInput): Goal {
   };
 }
 
-function createTask(input: TaskInput): Task {
-  const now = new Date().toISOString();
+function createTask(input: TaskInput, now = new Date().toISOString()): Task {
   const normalizedInput = normalizeTaskInput(input);
   const lifecycleStatus = normalizedInput.lifecycleStatus === 'active' && normalizedInput.progress >= 100 ? 'completed' : normalizedInput.lifecycleStatus;
   const task: Task = {
@@ -390,6 +390,7 @@ function AuthenticatedApp() {
   const [tasks, setTasks, tasksReady] = useWorkspaceLocalStorage<Task[]>(workspaceOwner, storageKeys.tasks, []);
   const [goals, setGoals, goalsReady] = useWorkspaceLocalStorage<Goal[]>(workspaceOwner, storageKeys.goals, []);
   const [opsState, setOpsState, opsStateReady] = useWorkspaceLocalStorage<OpsState>(workspaceOwner, storageKeys.opsState, createDefaultOpsState());
+  const [reviewState, setReviewState, reviewStateReady] = useWorkspaceLocalStorage<ReviewState>(workspaceOwner, storageKeys.reviewState, createDefaultReviewState());
   const [achievements, setAchievements, achievementsReady] = useWorkspaceLocalStorage<Achievement[]>(workspaceOwner, storageKeys.achievements, []);
   const [aiArtifacts, setAIArtifacts, aiArtifactsReady] = useWorkspaceLocalStorage<AIArtifact[]>(workspaceOwner, storageKeys.aiArtifacts, []);
   const [roadmaps, , roadmapsReady] = useWorkspaceLocalStorage<Roadmap[]>(workspaceOwner, storageKeys.roadmaps, []);
@@ -406,7 +407,7 @@ function AuthenticatedApp() {
   const [dailyReview, , dailyReviewReady] = useWorkspaceLocalStorage<DailyReview | null>(workspaceOwner, storageKeys.dailyReview, null);
   const [, , reminderSettingsReady] = useWorkspaceLocalStorage<ReminderSettings>(workspaceOwner, storageKeys.reminderSettings, defaultReminderSettings);
   const [lifeEventsByOwner, setLifeEventsByOwner, lifeEventsReady] = useWorkspaceLocalStorage<LifeEventStore>(workspaceOwner, storageKeys.lifeEventsByOwner, {});
-  const isWorkspaceReady = isWorkspaceOwnerReady && [tasksReady, goalsReady, opsStateReady, achievementsReady, aiArtifactsReady, roadmapsReady, notificationsReady, profileReady, socialNodesReady, socialLayoutReady, onboardingReady, baselinePressureReady, pressureCalibrationReady, pressureHistoryReady, dailyQuestReady, dailyReviewReady, reminderSettingsReady, lifeEventsReady].every(Boolean);
+  const isWorkspaceReady = isWorkspaceOwnerReady && [tasksReady, goalsReady, opsStateReady, reviewStateReady, achievementsReady, aiArtifactsReady, roadmapsReady, notificationsReady, profileReady, socialNodesReady, socialLayoutReady, onboardingReady, baselinePressureReady, pressureCalibrationReady, pressureHistoryReady, dailyQuestReady, dailyReviewReady, reminderSettingsReady, lifeEventsReady].every(Boolean);
   const [, setViewportWidth] = useState(() => window.innerWidth);
   const [isRecalibrationOpen, setIsRecalibrationOpen] = useState(false);
   const [recalibrationPressure, setRecalibrationPressure] = useState(legacyReferencePressure);
@@ -463,11 +464,18 @@ function AuthenticatedApp() {
   }, [tasks]);
   const normalizedGoals = useMemo(() => normalizeGoals(goals), [goals]);
   const normalizedOpsState = useMemo(() => normalizeOpsState(opsState), [opsState]);
+  const normalizedReviewState = useMemo(() => normalizeReviewState(reviewState), [reviewState]);
   const normalizedAchievements = useMemo(() => normalizeStoredAchievements(achievements), [achievements]);
   const normalizedAIArtifacts = useMemo(() => normalizeAIArtifacts(aiArtifacts), [aiArtifacts]);
   const normalizedProfile = useMemo(() => normalizeProfile(profile), [profile]);
   const normalizedPressureCalibration = useMemo(() => normalizePressureCalibration(pressureCalibration, legacyReferencePressure), [legacyReferencePressure, pressureCalibration]);
   const normalizedPressureHistory = useMemo(() => normalizePressureHistory(pressureHistory), [pressureHistory]);
+
+  useEffect(() => {
+    if (!isWorkspaceReady) return;
+    const now = new Date().toISOString();
+    setReviewState((current) => synchronizeReviewHistory(normalizeReviewState(current, now), { tasks: normalizedTasks, goals: normalizedGoals, pressureHistory: normalizedPressureHistory, aiArtifacts: normalizedAIArtifacts, now }));
+  }, [isWorkspaceReady, normalizedAIArtifacts, normalizedGoals, normalizedPressureHistory, normalizedTasks, setReviewState]);
   const activeTasks = useMemo(() => sortActiveTasksByProgress(normalizedTasks.filter((task) => task.lifecycleStatus === 'active')), [normalizedTasks]);
   const recommendedTasks = useMemo(() => normalizedTasks.filter((task) => task.lifecycleStatus === 'active').sort((a, b) => getTaskScore(b) - getTaskScore(a)).slice(0, 3), [normalizedTasks]);
   const homeRecommendationComparison = useMemo(
@@ -575,6 +583,7 @@ function AuthenticatedApp() {
         setSocialNodes(mergedSocialNodes);
         setSocialLayoutVersion(mergedSocialLayoutVersion);
         if (cloudData.opsState) setOpsState(chooseNewerOpsState(normalizedOpsState, cloudData.opsState));
+        if (cloudData.reviewState) setReviewState(chooseNewerReviewState(normalizedReviewState, cloudData.reviewState));
         if (cloudData.profile) setProfile(cloudData.profile);
         if (cloudData.pressureCalibration) setPressureCalibration(cloudData.pressureCalibration);
         if (cloudData.onboardingComplete !== null) setOnboardingComplete(cloudData.onboardingComplete);
@@ -709,6 +718,15 @@ function AuthenticatedApp() {
       .catch((error) => { if (isCurrent) setCloudError(error instanceof Error ? error.message : '个人设置云同步失败。'); });
     return () => { isCurrent = false; };
   }, [isCloudReady, isWorkspaceReady, normalizedOpsState, normalizedPressureCalibration, normalizedProfile, onboardingComplete, session, socialLayoutVersion, socialNodes, workspaceOwner]);
+
+  useEffect(() => {
+    if (!session || !workspaceOwner || !isWorkspaceReady || !isCloudReady || isApplyingCloudData.current) return;
+    let isCurrent = true;
+    saveCloudReviewState(normalizedReviewState, session, workspaceOwner)
+      .then(() => { if (isCurrent) setCloudStatus('REVIEW 历史已同步到云端'); })
+      .catch((error) => { if (isCurrent) setCloudError(error instanceof Error ? error.message : 'REVIEW 历史云同步失败。'); });
+    return () => { isCurrent = false; };
+  }, [isCloudReady, isWorkspaceReady, normalizedReviewState, session, workspaceOwner]);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => setPressureClock(Date.now()), 60 * 1000);
@@ -923,14 +941,14 @@ function AuthenticatedApp() {
     recordPressureSnapshot('recalibration', sourceTasks, `用户将主观压力重新校准为 ${calibration.lastSubjectivePressure}，系统已更新压力映射系数。`, calibration);
   }
 
-  function openRecalibration() {
-    setRecalibrationPressure(pressure.referencePressure);
-    setIsRecalibrationOpen(true);
-  }
-
   function submitRecalibration() {
     savePressureCalibration(recalibrationPressure);
     setIsRecalibrationOpen(false);
+  }
+
+  function openRecalibration() {
+    setRecalibrationPressure(pressure.referencePressure);
+    setIsRecalibrationOpen(true);
   }
 
   function closeForm() {
@@ -948,11 +966,13 @@ function AuthenticatedApp() {
       const nextTask = applyTaskEditLifecycle(previousTask, normalizedInput, now);
       const reconciled = reconcileTaskGoalLinks(normalizedTasks, normalizedGoals, nextTask, previousTask.linkedGoalIds);
       setTasks(reconciled.tasks); setGoals(reconciled.goals);
+      setReviewState((current) => captureTaskLifecycleTransition(normalizeReviewState(current, now), { previous: previousTask, next: nextTask, recordedAt: now }));
       recalculateTaskDerivedPressureHistory(reconciled.tasks, `修改任务后重算压力曲线：${normalizedInput.title}`);
     } else {
-      const newTask = createTask(normalizedInput);
+      const newTask = createTask(normalizedInput, now);
       const reconciled = reconcileTaskGoalLinks(normalizedTasks, normalizedGoals, newTask);
       setTasks(reconciled.tasks); setGoals(reconciled.goals);
+      setReviewState((current) => captureTaskLifecycleTransition(normalizeReviewState(current, now), { next: newTask, recordedAt: now }));
       recordPressureSnapshot('task_created', reconciled.tasks, `新建任务：${newTask.title}`);
     }
     closeForm();
@@ -962,7 +982,9 @@ function AuthenticatedApp() {
   function archiveTask(task: Task, lifecycleStatus: Exclude<LifecycleStatus, 'active'>) {
     const now = new Date().toISOString();
     const nextTasks = normalizedTasks.map((item) => item.id === task.id ? transitionTaskLifecycle(item, lifecycleStatus, now) : item);
+    const nextTask = nextTasks.find((item) => item.id === task.id)!;
     setTasks(nextTasks);
+    setReviewState((current) => captureTaskLifecycleTransition(normalizeReviewState(current, now), { previous: task, next: nextTask, recordedAt: now }));
     recalculateTaskDerivedPressureHistory(nextTasks, `${lifecycleStatus === 'completed' ? '完成' : '放弃'}任务后重算压力曲线：${task.title}`);
   }
 
@@ -978,27 +1000,11 @@ function AuthenticatedApp() {
 
 
   function restoreTask(task: Task) {
-    const nextTasks = normalizedTasks.map((item) => item.id === task.id ? transitionTaskLifecycle(item, 'active') : item);
+    const now = new Date().toISOString();
+    const nextTasks = normalizedTasks.map((item) => item.id === task.id ? transitionTaskLifecycle(item, 'active', now) : item);
     setTasks(nextTasks);
     recalculateTaskDerivedPressureHistory(nextTasks, `恢复任务后重算压力曲线：${task.title}`);
   }
-
-  function updateReviewNote(taskId: string, reviewNote: string) {
-    const now = new Date().toISOString();
-    setTasks((currentTasks) =>
-      currentTasks.map((task) =>
-        task.id === taskId
-          ? {
-              ...task,
-              reviewNote,
-              updatedAt: now,
-            }
-          : task,
-      ),
-    );
-  }
-
-
 
   function startEditing(task: Task) {
     setEditingTask(task);
@@ -1040,12 +1046,12 @@ function AuthenticatedApp() {
 
   function saveMilestone(goalId: string, input: GoalMilestoneUpdate & { title: string }, milestoneId?: string) {
     const now = new Date().toISOString();
-    setGoals((currentGoals) => normalizeGoals(currentGoals).map((goal) => {
-      if (goal.id !== goalId) return goal;
-      if (milestoneId) return updateGoalMilestone(goal, milestoneId, input, now);
-      const milestone = createGoalMilestone({ ...input, targetDate: input.targetDate ?? undefined }, now);
-      return { ...goal, milestones: [...normalizeGoalMilestones(goal.milestones, now), { ...milestone, sequence: normalizeGoalMilestones(goal.milestones, now).length + 1 }], updatedAt: now };
-    }));
+    const currentGoal = normalizedGoals.find((goal) => goal.id === goalId); if (!currentGoal) return;
+    const previous = milestoneId ? normalizeGoalMilestones(currentGoal.milestones, now).find((milestone) => milestone.id === milestoneId) : undefined;
+    const nextGoal = milestoneId ? updateGoalMilestone(currentGoal, milestoneId, input, now) : (() => { const milestones = normalizeGoalMilestones(currentGoal.milestones, now); const milestone = createGoalMilestone({ ...input, targetDate: input.targetDate ?? undefined }, now); return { ...currentGoal, milestones: [...milestones, { ...milestone, sequence: milestones.length + 1 }], updatedAt: now }; })();
+    const next = normalizeGoalMilestones(nextGoal.milestones, now).find((milestone) => milestone.id === (milestoneId ?? nextGoal.milestones?.at(-1)?.id));
+    setGoals(normalizedGoals.map((goal) => goal.id === goalId ? nextGoal : goal));
+    if (next) setReviewState((current) => captureMilestoneLifecycleTransition(normalizeReviewState(current, now), { goalId, previous, next, recordedAt: now }));
   }
 
   function deleteMilestone(goalId: string, milestoneId: string) {
@@ -1189,7 +1195,7 @@ function AuthenticatedApp() {
         : publicPath === '/app/ops'
           ? <OpsPage key={authoritativeOwnerKey} ownerKey={authoritativeOwnerKey} tasks={normalizedTasks} goals={normalizedGoals} state={normalizedOpsState} onChange={setOpsState} />
         : publicPath === '/app/review'
-          ? <LogPage tasks={normalizedTasks} goals={normalizedGoals} profile={normalizedProfile} pressure={pressure} pressureHistory={normalizedPressureHistory} achievements={normalizedAchievements} aiArtifacts={normalizedAIArtifacts} onRecalculatePressureHistory={() => recalculateTaskDerivedPressureHistory()} onRecalibrate={openRecalibration} onAIReportGenerated={(artifact) => { saveAIArtifact(artifact); unlockAchievement('ai-report-generated'); }} onDelete={deleteTask} onEdit={startEditing} onRestore={restoreTask} onReviewNoteChange={updateReviewNote} />
+          ? <ReviewPage key={authoritativeOwnerKey} ownerKey={authoritativeOwnerKey} tasks={normalizedTasks} goals={normalizedGoals} opsState={normalizedOpsState} pressureHistory={normalizedPressureHistory} reviewState={normalizedReviewState} legacyAIArtifacts={normalizedAIArtifacts} onReviewStateChange={setReviewState} onRecalibrate={openRecalibration} />
           : publicPath === '/settings'
             ? profileModule
             : publicPath === '/billing'

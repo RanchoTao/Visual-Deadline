@@ -32,6 +32,13 @@ interface RequestChatCompletionOptions {
   context?: BackendAIRequest['context'];
 }
 
+export interface AICompletionResult {
+  content: string;
+  generatedAt: string;
+  model: string;
+  provider: string;
+}
+
 export const defaultAISettings: AISettings = {
   provider: 'openai-compatible',
   baseUrl: 'https://api.openai.com/v1',
@@ -160,7 +167,7 @@ export async function callBackendAI(request: BackendAIRequest): Promise<BackendA
   return payload;
 }
 
-async function requestBrowserChatCompletion(settings: AISettings, systemPrompt: string, userPrompt: string): Promise<string> {
+async function requestBrowserChatCompletion(settings: AISettings, systemPrompt: string, userPrompt: string): Promise<AICompletionResult> {
   const normalized = normalizeAISettings(settings);
   if (!normalized.apiKey.trim()) throw new Error('缺少 API Key，请先完成 AI 设置。');
   if (!normalized.baseUrl.trim()) throw new Error('缺少服务地址，请检查 AI 设置。');
@@ -194,10 +201,14 @@ async function requestBrowserChatCompletion(settings: AISettings, systemPrompt: 
 
   const content = payload?.choices?.[0]?.message?.content?.trim();
   if (!content) throw new Error('AI 服务未返回有效分析内容。');
-  return content;
+  return { content, generatedAt: new Date().toISOString(), model: normalized.model, provider: normalized.provider };
 }
 
 export async function requestChatCompletion(settings: AISettings, systemPrompt: string, userPrompt: string, options: RequestChatCompletionOptions = {}): Promise<string> {
+  return (await requestChatCompletionWithProvenance(settings, systemPrompt, userPrompt, options)).content;
+}
+
+export async function requestChatCompletionWithProvenance(settings: AISettings, systemPrompt: string, userPrompt: string, options: RequestChatCompletionOptions = {}): Promise<AICompletionResult> {
   const normalized = normalizeAISettings(settings);
   if (normalized.apiKey.trim()) return requestBrowserChatCompletion(normalized, systemPrompt, userPrompt);
 
@@ -206,5 +217,5 @@ export async function requestChatCompletion(settings: AISettings, systemPrompt: 
     message: buildBackendMessage(systemPrompt, userPrompt),
     context: options.context,
   });
-  return response.content;
+  return { content: response.content, generatedAt: new Date().toISOString(), model: response.model, provider: response.provider };
 }

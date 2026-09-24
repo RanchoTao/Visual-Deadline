@@ -162,10 +162,10 @@ test('legacy Project metadata stays compatibility-only', () => {
   assert.ok(result.diagnostics.some(({ code }) => code === 'LEGACY_PROJECT_REFERENCE_IGNORED'));
 });
 
-test('OPS persistence is Beta-required once OPS consumes execution state, while REVIEW remains deferred', () => {
+test('OPS and REVIEW persistence are Beta-required once their workspaces consume durable state', () => {
   const byId = Object.fromEntries(V2_PERSISTENCE_STAGING.map((item) => [item.id, item]));
   assert.equal(byId.ops_resource_model.stage, 'BETA_REQUIRED');
   assert.match(byId.ops_resource_model.rationale, /OpsState/);
-  assert.equal(byId.review_history.stage, 'DEFERRED');
-  assert.match(byId.review_history.becomesRequiredWhen, /REVIEW migration/);
+  assert.equal(byId.review_history.stage, 'BETA_REQUIRED');
+  assert.match(byId.review_history.rationale, /REVIEW now persists/);
 });
