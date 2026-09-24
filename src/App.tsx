@@ -39,7 +39,7 @@ import {
 import { appendPressureHistoryRecord, createPressureHistoryRecord, normalizePressureHistory, replaceTaskDerivedPressureHistory } from './utils/pressureHistory';
 import { sortActiveTasksByProgress } from './utils/taskDerivedState';
 import { generateDailyQuest } from './utils/dailyQuest';
-import { deleteCloudLifeEvent, loadCloudData, loadCloudLifeEvents, saveCloudGoals, saveCloudPressureHistory, saveCloudProfile, saveCloudTasks, upsertCloudLifeEvents } from './lib/cloudSync';
+import { deleteCloudLifeEvent, loadCloudData, loadCloudLifeEvents, saveCloudGoals, saveCloudPressureHistory, saveCloudProfile, saveCloudReviewState, saveCloudTasks, upsertCloudLifeEvents } from './lib/cloudSync';
 import { assertWorkspaceSessionOwner, browserStorageAdapter, loadValue, mergeAuthenticatedWorkspaceRecords, saveValue, storageKeys, workspaceOnboardingFallback, workspaceOwnerKey } from './storage';
 import { createDefaultLifePreferences, createLifeEvent, deriveLifeState, getLifeEventsForOwner, mergeLifeEvents, planLifeController, setLifeEventsForOwner, undoLatestLifeEvent as removeLatestLifeEvent } from './domain/life-controller';
 import { buildHomeRecommendationComparison } from './domain/execution/homeProjection';
@@ -55,7 +55,7 @@ import { chooseNewerOpsState, normalizeOpsState } from './domain/ops/normalizati
 import { createDefaultOpsState, type OpsState } from './domain/ops/types';
 import { deleteTaskFromOpsState } from './domain/ops/plans';
 import { defaultAISettings } from './services/aiClient';
-import { chooseNewerReviewState, createDefaultReviewState, normalizeReviewState, type ReviewState } from './domain/review';
+import { chooseNewerReviewState, createDefaultReviewState, normalizeReviewState, synchronizeReviewHistory, type ReviewState } from './domain/review';
 import { isAuthenticatedPath, isKnownAuthenticatedEntryPath, legacyRouteRedirect, safeAuthenticatedNext } from './lib/appRoutes';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -471,6 +471,12 @@ function AuthenticatedApp() {
   const normalizedProfile = useMemo(() => normalizeProfile(profile), [profile]);
   const normalizedPressureCalibration = useMemo(() => normalizePressureCalibration(pressureCalibration, legacyReferencePressure), [legacyReferencePressure, pressureCalibration]);
   const normalizedPressureHistory = useMemo(() => normalizePressureHistory(pressureHistory), [pressureHistory]);
+
+  useEffect(() => {
+    if (!isWorkspaceReady) return;
+    const now = new Date().toISOString();
+    setReviewState((current) => synchronizeReviewHistory(normalizeReviewState(current, now), { tasks: normalizedTasks, goals: normalizedGoals, pressureHistory: normalizedPressureHistory, aiArtifacts: normalizedAIArtifacts, now }));
+  }, [isWorkspaceReady, normalizedAIArtifacts, normalizedGoals, normalizedPressureHistory, normalizedTasks, setReviewState]);
   const activeTasks = useMemo(() => sortActiveTasksByProgress(normalizedTasks.filter((task) => task.lifecycleStatus === 'active')), [normalizedTasks]);
   const recommendedTasks = useMemo(() => normalizedTasks.filter((task) => task.lifecycleStatus === 'active').sort((a, b) => getTaskScore(b) - getTaskScore(a)).slice(0, 3), [normalizedTasks]);
   const homeRecommendationComparison = useMemo(
@@ -708,11 +714,20 @@ function AuthenticatedApp() {
   useEffect(() => {
     if (!session || !workspaceOwner || !isWorkspaceReady || !isCloudReady || isApplyingCloudData.current) return;
     let isCurrent = true;
-    saveCloudProfile({ profile: normalizedProfile, pressureCalibration: normalizedPressureCalibration, onboardingComplete, socialNodes, socialLayoutVersion, opsState: normalizedOpsState, reviewState: normalizedReviewState }, session, workspaceOwner)
+    saveCloudProfile({ profile: normalizedProfile, pressureCalibration: normalizedPressureCalibration, onboardingComplete, socialNodes, socialLayoutVersion, opsState: normalizedOpsState }, session, workspaceOwner)
       .then(() => { if (isCurrent) setCloudStatus('已同步到云端'); })
       .catch((error) => { if (isCurrent) setCloudError(error instanceof Error ? error.message : '个人设置云同步失败。'); });
     return () => { isCurrent = false; };
-  }, [isCloudReady, isWorkspaceReady, normalizedOpsState, normalizedPressureCalibration, normalizedProfile, normalizedReviewState, onboardingComplete, session, socialLayoutVersion, socialNodes, workspaceOwner]);
+  }, [isCloudReady, isWorkspaceReady, normalizedOpsState, normalizedPressureCalibration, normalizedProfile, onboardingComplete, session, socialLayoutVersion, socialNodes, workspaceOwner]);
+
+  useEffect(() => {
+    if (!session || !workspaceOwner || !isWorkspaceReady || !isCloudReady || isApplyingCloudData.current) return;
+    let isCurrent = true;
+    saveCloudReviewState(normalizedReviewState, session, workspaceOwner)
+      .then(() => { if (isCurrent) setCloudStatus('REVIEW 历史已同步到云端'); })
+      .catch((error) => { if (isCurrent) setCloudError(error instanceof Error ? error.message : 'REVIEW 历史云同步失败。'); });
+    return () => { isCurrent = false; };
+  }, [isCloudReady, isWorkspaceReady, normalizedReviewState, session, workspaceOwner]);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => setPressureClock(Date.now()), 60 * 1000);
@@ -930,6 +945,11 @@ function AuthenticatedApp() {
   function submitRecalibration() {
     savePressureCalibration(recalibrationPressure);
     setIsRecalibrationOpen(false);
+  }
+
+  function openRecalibration() {
+    setRecalibrationPressure(pressure.referencePressure);
+    setIsRecalibrationOpen(true);
   }
 
   function closeForm() {
@@ -1171,7 +1191,7 @@ function AuthenticatedApp() {
         : publicPath === '/app/ops'
           ? <OpsPage key={authoritativeOwnerKey} ownerKey={authoritativeOwnerKey} tasks={normalizedTasks} goals={normalizedGoals} state={normalizedOpsState} onChange={setOpsState} />
         : publicPath === '/app/review'
-          ? <ReviewPage key={authoritativeOwnerKey} ownerKey={authoritativeOwnerKey} tasks={normalizedTasks} goals={normalizedGoals} opsState={normalizedOpsState} pressureHistory={normalizedPressureHistory} reviewState={normalizedReviewState} legacyAIArtifacts={normalizedAIArtifacts} onReviewStateChange={setReviewState} />
+          ? <ReviewPage key={authoritativeOwnerKey} ownerKey={authoritativeOwnerKey} tasks={normalizedTasks} goals={normalizedGoals} opsState={normalizedOpsState} pressureHistory={normalizedPressureHistory} reviewState={normalizedReviewState} legacyAIArtifacts={normalizedAIArtifacts} onReviewStateChange={setReviewState} onRecalibrate={openRecalibration} />
           : publicPath === '/settings'
             ? profileModule
             : publicPath === '/billing'

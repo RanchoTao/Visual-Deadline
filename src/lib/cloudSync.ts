@@ -4,7 +4,8 @@ import { normalizeLifeEvents } from '../domain/life-controller';
 import { SupabaseRestError, supabase, type SupabaseSession } from './supabaseClient';
 import { assertWorkspaceSessionOwner, type WorkspaceOwner } from '../storage/workspace';
 import type { OpsState } from '../domain/ops/types';
-import type { ReviewState } from '../domain/review/types';
+import { mergeReviewStates, normalizeReviewState } from '../domain/review/normalization';
+import type { ReviewHistoryEvent, ReviewRecord, ReviewState } from '../domain/review/types';
 
 interface JsonRow<T> {
   id: string;
@@ -43,6 +44,10 @@ interface LifeEventRow {
   created_at: string;
   updated_at: string;
 }
+
+interface ReviewRecordRow { id: string; user_id: string; data: ReviewRecord; }
+interface ReviewEventRow { id: string; user_id: string; data: ReviewHistoryEvent; }
+interface ReviewTombstoneRow { review_id: string; user_id: string; deleted_at: string; }
 
 export interface CloudData {
   tasks: Task[];
@@ -123,13 +128,18 @@ async function replaceJsonRows<T extends { id: string }>(table: 'tasks' | 'goals
 export async function loadCloudData(session: SupabaseSession, owner: WorkspaceOwner): Promise<CloudData> {
   assertWorkspaceSessionOwner(owner, session.user.id);
   return withCloudSyncErrors((async () => {
-    const [tasks, goals, pressureHistory, profiles] = await Promise.all([
+    const [tasks, goals, pressureHistory, profiles, reviewRecords, reviewEvents, reviewTombstones] = await Promise.all([
       loadJsonRows<Task>('tasks', session),
       loadJsonRows<Goal>('goals', session),
       loadJsonRows<PressureHistoryRecord>('pressure_logs', session),
       supabase.rest<ProfileRow[]>(`profiles?select=id,user_id,email,display_name,avatar_url,avatar_storage_path,data,updated_at&user_id=eq.${encode(session.user.id)}&limit=1`, { method: 'GET' }, session),
+      supabase.rest<ReviewRecordRow[]>(`review_records?select=id,user_id,data&user_id=eq.${encode(session.user.id)}`, { method: 'GET' }, session),
+      supabase.rest<ReviewEventRow[]>(`review_events?select=id,user_id,data&user_id=eq.${encode(session.user.id)}`, { method: 'GET' }, session),
+      supabase.rest<ReviewTombstoneRow[]>(`review_tombstones?select=review_id,user_id,deleted_at&user_id=eq.${encode(session.user.id)}`, { method: 'GET' }, session),
     ]);
     const profileData = profiles[0]?.data;
+    const rowReviewState = normalizeReviewState({ schemaVersion: 2, defaultWindowDays: 7, reviews: reviewRecords.map((row) => row.data), events: reviewEvents.map((row) => row.data), reviewTombstones: reviewTombstones.map((row) => ({ id: row.review_id, deletedAt: row.deleted_at })), updatedAt: [...reviewRecords.map((row) => row.data.updatedAt), ...reviewEvents.map((row) => row.data.recordedAt), ...reviewTombstones.map((row) => row.deleted_at)].sort().at(-1) ?? new Date(0).toISOString() });
+    const reviewState = profileData?.reviewState ? mergeReviewStates(profileData.reviewState, rowReviewState) : rowReviewState;
     return {
       tasks,
       goals,
@@ -140,7 +150,7 @@ export async function loadCloudData(session: SupabaseSession, owner: WorkspaceOw
       socialNodes: Array.isArray(profileData?.socialNodes) ? profileData.socialNodes : null,
       socialLayoutVersion: typeof profileData?.socialLayoutVersion === 'number' ? profileData.socialLayoutVersion : null,
       opsState: profileData?.opsState ?? null,
-      reviewState: profileData?.reviewState ?? null,
+      reviewState: reviewState.reviews.length || reviewState.events.length || reviewState.reviewTombstones.length ? reviewState : null,
     };
   })());
 }
@@ -207,7 +217,18 @@ export async function deleteCloudLifeEvent(eventId: string, session: SupabaseSes
   await withCloudSyncErrors(supabase.rest(`life_events?id=eq.${encode(eventId)}&user_id=eq.${encode(session.user.id)}`, { method: 'DELETE' }, session));
 }
 
-export async function saveCloudProfile(input: { profile: UserProfile; pressureCalibration: PressureCalibrationSnapshot; onboardingComplete: boolean; socialNodes: unknown[]; socialLayoutVersion: number; opsState: OpsState; reviewState: ReviewState }, session: SupabaseSession, owner: WorkspaceOwner): Promise<void> {
+export async function saveCloudReviewState(state: ReviewState, session: SupabaseSession, owner: WorkspaceOwner): Promise<void> {
+  assertWorkspaceSessionOwner(owner, session.user.id);
+  const normalized = normalizeReviewState(state);
+  const batches = <T,>(values: T[]) => Array.from({ length: Math.ceil(values.length / 100) }, (_, index) => values.slice(index * 100, index * 100 + 100));
+  await withCloudSyncErrors((async () => {
+    for (const records of batches(normalized.reviews)) await supabase.rest('review_records', { method: 'POST', headers: { Prefer: 'resolution=ignore-duplicates,return=minimal' }, body: JSON.stringify(records.map((record) => ({ id: record.id, user_id: session.user.id, data: record, created_at: record.createdAt, updated_at: record.updatedAt }))) }, session);
+    for (const events of batches(normalized.events)) await supabase.rest('review_events', { method: 'POST', headers: { Prefer: 'resolution=ignore-duplicates,return=minimal' }, body: JSON.stringify(events.map((event) => ({ id: event.id, user_id: session.user.id, data: event, occurred_at: event.timestamp, recorded_at: event.recordedAt }))) }, session);
+    for (const tombstones of batches(normalized.reviewTombstones)) await supabase.rest('review_tombstones', { method: 'POST', headers: { Prefer: 'resolution=ignore-duplicates,return=minimal' }, body: JSON.stringify(tombstones.map((entry) => ({ review_id: entry.id, user_id: session.user.id, deleted_at: entry.deletedAt }))) }, session);
+  })());
+}
+
+export async function saveCloudProfile(input: { profile: UserProfile; pressureCalibration: PressureCalibrationSnapshot; onboardingComplete: boolean; socialNodes: unknown[]; socialLayoutVersion: number; opsState: OpsState }, session: SupabaseSession, owner: WorkspaceOwner): Promise<void> {
   assertWorkspaceSessionOwner(owner, session.user.id);
   await withCloudSyncErrors(supabase.rest('profiles', {
     method: 'POST',
@@ -226,7 +247,6 @@ export async function saveCloudProfile(input: { profile: UserProfile; pressureCa
         socialNodes: input.socialNodes,
         socialLayoutVersion: input.socialLayoutVersion,
         opsState: input.opsState,
-        reviewState: input.reviewState,
       },
       updated_at: new Date().toISOString(),
     }),

@@ -43,6 +43,6 @@ export const V2_PERSISTENCE_STAGING = [
   {
     id: 'review_history',
     stage: 'BETA_REQUIRED',
-    rationale: 'REVIEW now persists owner-scoped snapshot/report history locally and in profile JSON; canonical review tables remain future work.',
+    rationale: 'REVIEW now persists durable immutable snapshots and reports in owner-scoped row-level tables, with append-only tombstones for archive intent.',
   },
 ] as const satisfies readonly PersistenceCapability[];
