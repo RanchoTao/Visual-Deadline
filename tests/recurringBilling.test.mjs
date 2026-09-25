@@ -8,6 +8,7 @@ import {
   catalogPlanFromPrice,
   hasEntitlement,
   mergePaymentStatus,
+  normalizeProviderEnvironment,
   normalizeSubscriptionSnapshot,
   resolveCatalog,
   shouldApplySubscriptionSnapshot,
@@ -15,7 +16,7 @@ import {
 } from '../server/billing/domain.js';
 import { processProviderEvent } from '../server/billing/processor.js';
 import { createLegacyBillingHandler } from '../server/billing/legacy.js';
-import { verifyPaddleSignature } from '../server/billing/runtime.js';
+import { createCheckoutRecoveryBinding, verifyCheckoutRecoveryBinding, verifyPaddleSignature } from '../server/billing/runtime.js';
 import crypto from 'node:crypto';
 
 const ENV = {
@@ -40,18 +41,21 @@ function event(type, data, id = `evt_${type}`, occurredAt = data.updated_at || '
   return { event_id: id, event_type: type, occurred_at: occurredAt, data };
 }
 
-function fakeSystem({ environment = 'sandbox', payments = new Map([['txn_checkout', { status: 'pending', userId: 'user_1' }]]), providerSubscriptions = new Map() } = {}) {
+function fakeSystem({ environment = 'sandbox', payments = new Map([['txn_checkout', { status: 'pending', userId: 'user_1' }]]), providerSubscriptions = new Map(), providerTransactions = new Map() } = {}) {
   const events = new Map();
+  const eventSources = new Map();
   const subscriptions = new Map();
   let subscriptionEffects = 0;
   let paymentEffects = 0;
   const repository = {
-    async claimEvent(nextEvent, claimedEnvironment) {
+    async claimEvent(nextEvent, claimedEnvironment, _checksum, eventSource) {
       if (claimedEnvironment !== environment) return { claim_status: 'environment_conflict' };
+      if (eventSources.has(nextEvent.event_id) && eventSources.get(nextEvent.event_id) !== eventSource) return { claim_status: 'source_conflict' };
       const current = events.get(nextEvent.event_id);
       if (current === 'succeeded' || current === 'ignored') return { claim_status: 'duplicate_succeeded' };
       if (current === 'processing') return { claim_status: 'in_progress' };
       events.set(nextEvent.event_id, 'processing');
+      eventSources.set(nextEvent.event_id, eventSource);
       return { claim_status: 'claimed' };
     },
     async finishEvent(id, status) { events.set(id, status); },
@@ -61,8 +65,15 @@ function fakeSystem({ environment = 'sandbox', payments = new Map([['txn_checkou
       if (!current && !payments.has(snapshot.originatingTransactionId)) return { outcome: 'ignored_unknown_provider_evidence' };
       if (!shouldApplySubscriptionSnapshot(current, snapshot)) return { outcome: 'ignored_stale_subscription', applied_subscription_id: current?.id };
       subscriptionEffects += 1;
-      subscriptions.set(snapshot.providerSubscriptionId, { ...snapshot, id: current?.id || `local_${snapshot.providerSubscriptionId}`, user_id: 'user_1' });
+      subscriptions.set(snapshot.providerSubscriptionId, { ...snapshot, id: current?.id || `local_${snapshot.providerSubscriptionId}`, user_id: current?.user_id || payments.get(snapshot.originatingTransactionId)?.userId || 'user_1' });
       return { outcome: 'subscription_applied', applied_subscription_id: `local_${snapshot.providerSubscriptionId}`, applied_user_id: 'user_1' };
+    },
+    async recoverCheckoutPayment(binding, payment) {
+      const current = payments.get(payment.providerTransactionId);
+      if (current && current.userId !== binding.userId) return { outcome: 'ignored_user_mismatch' };
+      if (current) return { outcome: 'checkout_payment_already_known' };
+      payments.set(payment.providerTransactionId, { ...payment, status: 'pending', userId: binding.userId });
+      return { outcome: 'checkout_payment_recovered', applied_payment_reference_id: `pay_${payment.providerTransactionId}` };
     },
     async applyPayment(next) {
       const current = payments.get(next.providerTransactionId);
@@ -75,14 +86,17 @@ function fakeSystem({ environment = 'sandbox', payments = new Map([['txn_checkou
     },
     async findCheckoutPayment(_environment, transactionId) { return payments.get(transactionId) || null; },
   };
-  const paddle = { async getSubscription(id) { return { data: providerSubscriptions.get(id) || subscriptionData({ id }) }; } };
-  const runtime = { environment, processingEnabled: true, isolation: { valid: true, reason: null } };
+  const paddle = {
+    async getSubscription(id) { return { data: providerSubscriptions.get(id) || subscriptionData({ id }) }; },
+    async getTransaction(id) { return { data: providerTransactions.get(id) || null }; },
+  };
+  const runtime = { environment, webhookSecret: 'secret', processingEnabled: true, isolation: { valid: true, reason: null } };
   const legacyHandler = async () => ({ handled: false, outcome: 'ignored_unknown_order' });
-  return { repository, paddle, runtime, legacyHandler, events, subscriptions, payments, effects: () => ({ subscriptionEffects, paymentEffects }) };
+  return { repository, paddle, runtime, legacyHandler, events, eventSources, subscriptions, payments, effects: () => ({ subscriptionEffects, paymentEffects }) };
 }
 
-async function process(system, nextEvent, checksum = 'a'.repeat(64)) {
-  return processProviderEvent({ ...system, event: nextEvent, checksum, readEnv });
+async function process(system, nextEvent, checksum = 'a'.repeat(64), eventSource = 'webhook') {
+  return processProviderEvent({ ...system, event: nextEvent, eventSource, checksum, readEnv });
 }
 
 test('immutable monthly and annual recurring catalog bindings are separate by environment', () => {
@@ -102,6 +116,68 @@ test('shared sandbox and production credentials fail closed', () => {
   const isolation = validateCatalogIsolation('sandbox', (name) => mixed[name] || '');
   assert.equal(isolation.valid, false);
   assert.match(isolation.reason, /credentials/);
+});
+
+test('Paddle environment parsing accepts only explicit sandbox or production', () => {
+  assert.equal(normalizeProviderEnvironment('sandbox'), 'sandbox');
+  assert.equal(normalizeProviderEnvironment('production'), 'production');
+  assert.throws(() => normalizeProviderEnvironment(''));
+  assert.throws(() => normalizeProviderEnvironment('staging'));
+  assert.throws(() => normalizeProviderEnvironment(' Production '));
+  assert.throws(() => normalizeProviderEnvironment('SANDBOX'));
+  const legacyCheckout = readFileSync(new URL('../api/billing-checkout.js', import.meta.url), 'utf8');
+  const browserBilling = readFileSync(new URL('../src/services/billing.ts', import.meta.url), 'utf8');
+  assert.match(legacyCheckout, /normalizeProviderEnvironment\(process\.env\.PADDLE_ENVIRONMENT\)/);
+  assert.doesNotMatch(browserBilling, /\|\|\s*'sandbox'/);
+});
+
+test('billing event provenance distinguishes webhook from reconciliation and rejects source conflicts', async () => {
+  const system = fakeSystem();
+  const next = event('subscription.created', subscriptionData(), 'evt_provenance');
+  assert.equal((await process(system, next)).status, 200);
+  assert.equal(system.eventSources.get('evt_provenance'), 'webhook');
+  const conflict = await process(system, next, 'a'.repeat(64), 'reconciliation');
+  assert.equal(conflict.status, 409);
+  assert.equal(conflict.body.code, 'source_conflict');
+
+  const reconciliation = event('subscription.updated', subscriptionData({ id: 'sub_reconcile', transaction_id: 'txn_checkout' }), 'reconcile_distinct');
+  assert.equal((await process(system, reconciliation, 'b'.repeat(64), 'reconciliation')).status, 200);
+  assert.equal(system.eventSources.get('reconcile_distinct'), 'reconciliation');
+});
+
+test('signed checkout binding is tamper-evident and environment-bound', () => {
+  const binding = createCheckoutRecoveryBinding({ environment: 'sandbox', userId: '77777777-7777-4777-8777-777777777777', planCode: 'vd.plus.monthly.v1', catalogVersion: 'vd-recurring-v1' }, 'secret');
+  assert.equal(verifyCheckoutRecoveryBinding(binding, 'sandbox', 'secret')?.userId, '77777777-7777-4777-8777-777777777777');
+  assert.equal(verifyCheckoutRecoveryBinding({ ...binding, vd_catalog_code: 'vd.plus.annual.v1' }, 'sandbox', 'secret'), null);
+  assert.equal(verifyCheckoutRecoveryBinding(binding, 'production', 'secret'), null);
+});
+
+test('webhook recovers missing payment reference after Paddle transaction creation', async () => {
+  const binding = createCheckoutRecoveryBinding({ environment: 'sandbox', userId: '77777777-7777-4777-8777-777777777777', planCode: 'vd.plus.monthly.v1', catalogVersion: 'vd-recurring-v1' }, 'secret');
+  const data = {
+    id: 'txn_recovery', subscription_id: 'sub_recovery', status: 'completed', currency_code: 'CNY', custom_data: binding,
+    items: [{ price: { id: 'pri_month_sandbox', billing_cycle: { interval: 'month' } } }], updated_at: '2026-09-01T00:00:00Z',
+  };
+  const provider = subscriptionData({ id: 'sub_recovery', transaction_id: undefined });
+  const system = fakeSystem({ payments: new Map(), providerSubscriptions: new Map([['sub_recovery', provider]]) });
+  const result = await process(system, event('transaction.completed', data, 'evt_recovery'));
+  assert.equal(result.body.outcome, 'payment_applied');
+  assert.equal(system.payments.get('txn_recovery').userId, '77777777-7777-4777-8777-777777777777');
+  assert.equal(system.subscriptions.get('sub_recovery').originatingTransactionId, 'txn_recovery');
+});
+
+test('subscription-created can recover first by fetching signed originating transaction', async () => {
+  const binding = createCheckoutRecoveryBinding({ environment: 'sandbox', userId: '88888888-8888-4888-8888-888888888888', planCode: 'vd.plus.monthly.v1', catalogVersion: 'vd-recurring-v1' }, 'secret');
+  const provider = subscriptionData({ id: 'sub_recovery_first', transaction_id: 'txn_recovery_first' });
+  const transaction = {
+    id: 'txn_recovery_first', status: 'completed', currency_code: 'CNY', custom_data: binding,
+    items: [{ price: { id: 'pri_month_sandbox', billing_cycle: { interval: 'month' } } }], updated_at: '2026-09-01T00:00:00Z',
+  };
+  const system = fakeSystem({ payments: new Map(), providerSubscriptions: new Map([['sub_recovery_first', provider]]), providerTransactions: new Map([['txn_recovery_first', transaction]]) });
+  const result = await process(system, event('subscription.created', provider, 'evt_recovery_first'));
+  assert.equal(result.body.outcome, 'subscription_applied');
+  assert.equal(system.payments.get('txn_recovery_first').userId, '88888888-8888-4888-8888-888888888888');
+  assert.equal(system.subscriptions.get('sub_recovery_first').user_id, '88888888-8888-4888-8888-888888888888');
 });
 
 test('Billing v1 trusted order mapping still rejects conflicting custom metadata', async () => {
@@ -278,8 +354,9 @@ test('missed subscription webhook is repairable through the same event processor
   const provider = subscriptionData({ updated_at: '2026-09-21T00:00:00Z' });
   const system = fakeSystem({ providerSubscriptions: new Map([['sub_1', provider]]) });
   const synthetic = event('subscription.updated', provider, 'reconcile_hash', provider.updated_at);
-  const result = await process(system, synthetic);
+  const result = await process(system, synthetic, 'a'.repeat(64), 'reconciliation');
   assert.equal(result.body.outcome, 'subscription_applied'); assert.equal(system.subscriptions.get('sub_1').providerUpdatedAt, new Date(provider.updated_at).toISOString());
+  assert.equal(system.eventSources.get('reconcile_hash'), 'reconciliation');
 });
 
 test('environment mismatch is rejected before any effect', async () => {

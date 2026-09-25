@@ -41,8 +41,7 @@ function addMilliseconds(value, milliseconds) {
 }
 
 export function normalizeProviderEnvironment(value) {
-  const normalized = String(value || '').trim().toLowerCase();
-  if (normalized === 'sandbox' || normalized === 'production') return normalized;
+  if (value === 'sandbox' || value === 'production') return value;
   throw new Error('PADDLE_ENVIRONMENT must be exactly sandbox or production.');
 }
 

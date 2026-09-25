@@ -73,6 +73,7 @@ create table public.entitlements (
 
 alter table public.billing_events
   add column provider_environment text not null default 'legacy_unknown',
+  add column event_source text not null default 'migration',
   add column payload_checksum text,
   add column received_at timestamptz,
   add column processing_status text not null default 'legacy',
@@ -86,11 +87,15 @@ alter table public.billing_events
 alter table public.billing_events
   alter column received_at set default now(),
   alter column processing_status set default 'received',
-  alter column processing_attempts set default 0;
+  alter column processing_attempts set default 0,
+  alter column event_source drop default;
 
 alter table public.billing_events
   add constraint billing_events_provider_environment_check
   check (provider_environment in ('sandbox', 'production', 'legacy_unknown'));
+alter table public.billing_events
+  add constraint billing_events_source_check
+  check (event_source in ('webhook', 'reconciliation', 'migration', 'manual_admin'));
 alter table public.billing_events
   add constraint billing_events_processing_status_check
   check (processing_status in ('legacy', 'received', 'processing', 'succeeded', 'retryable_failed', 'ignored'));
@@ -278,6 +283,7 @@ $$;
 create or replace function public.billing_claim_event(
   p_event_id text,
   p_provider_environment text,
+  p_event_source text,
   p_event_type text,
   p_payload_checksum text,
   p_occurred_at timestamptz,
@@ -295,6 +301,9 @@ begin
   if p_provider_environment not in ('sandbox', 'production') then
     raise exception 'Invalid provider environment';
   end if;
+  if p_event_source not in ('webhook', 'reconciliation', 'migration', 'manual_admin') then
+    raise exception 'Invalid billing event source';
+  end if;
   if p_event_id is null or p_event_id = '' or p_event_type is null or p_event_type = '' or p_occurred_at is null then
     raise exception 'Invalid provider event identity';
   end if;
@@ -302,11 +311,11 @@ begin
   select * into existing from public.billing_events where id = p_event_id for update;
   if not found then
     insert into public.billing_events (
-      id, provider, provider_environment, event_type, outcome, occurred_at,
+      id, provider, provider_environment, event_source, event_type, outcome, occurred_at,
       payload_checksum, received_at, processing_status, processing_attempts,
       provider_sequence, provider_version
     ) values (
-      p_event_id, 'paddle', p_provider_environment, p_event_type, 'processing', p_occurred_at,
+      p_event_id, 'paddle', p_provider_environment, p_event_source, p_event_type, 'processing', p_occurred_at,
       p_payload_checksum, now(), 'processing', 1, p_provider_sequence, p_provider_version
     );
     return query select 'claimed'::text, 1;
@@ -315,6 +324,10 @@ begin
 
   if existing.provider_environment not in (p_provider_environment, 'legacy_unknown') then
     return query select 'environment_conflict'::text, existing.processing_attempts;
+    return;
+  end if;
+  if existing.event_source <> p_event_source then
+    return query select 'source_conflict'::text, existing.processing_attempts;
     return;
   end if;
   if existing.payload_checksum is not null and existing.payload_checksum <> p_payload_checksum then
@@ -340,6 +353,66 @@ begin
       provider_version = coalesce(p_provider_version, provider_version)
   where id = p_event_id;
   return query select 'claimed'::text, existing.processing_attempts + 1;
+end;
+$$;
+
+create or replace function public.billing_recover_checkout_payment(
+  p_user_id uuid,
+  p_provider_environment text,
+  p_provider_transaction_id text,
+  p_currency text,
+  p_subtotal_minor bigint,
+  p_tax_minor bigint,
+  p_total_minor bigint,
+  p_occurred_at timestamptz
+)
+returns table(outcome text, applied_payment_reference_id uuid)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  existing public.payment_references%rowtype;
+  recovered_id uuid;
+begin
+  if p_provider_environment not in ('sandbox', 'production')
+    or p_provider_transaction_id is null or p_provider_transaction_id = ''
+    or p_currency !~ '^[A-Z]{3}$'
+    or p_subtotal_minor < 0 or p_tax_minor < 0 or p_total_minor < 0
+    or p_occurred_at is null then
+    raise exception 'Invalid checkout recovery evidence';
+  end if;
+  if not exists (select 1 from auth.users where id = p_user_id) then
+    return query select 'ignored_unknown_user'::text, null::uuid;
+    return;
+  end if;
+
+  perform pg_advisory_xact_lock(hashtext('payment:paddle:' || p_provider_environment || ':' || p_provider_transaction_id));
+  select * into existing
+  from public.payment_references
+  where provider = 'paddle'
+    and provider_environment = p_provider_environment
+    and provider_transaction_id = p_provider_transaction_id
+  for update;
+
+  if found then
+    if existing.user_id <> p_user_id then
+      return query select 'ignored_user_mismatch'::text, existing.id;
+      return;
+    end if;
+    return query select 'checkout_payment_already_known'::text, existing.id;
+    return;
+  end if;
+
+  insert into public.payment_references (
+    user_id, provider, provider_environment, provider_transaction_id,
+    kind, status, currency, subtotal_minor, tax_minor, total_minor, occurred_at
+  ) values (
+    p_user_id, 'paddle', p_provider_environment, p_provider_transaction_id,
+    'subscription', 'pending', p_currency, p_subtotal_minor, p_tax_minor, p_total_minor, p_occurred_at
+  ) returning id into recovered_id;
+
+  return query select 'checkout_payment_recovered'::text, recovered_id;
 end;
 $$;
 
@@ -626,15 +699,17 @@ end;
 $$;
 
 revoke all on function public.billing_rebuild_entitlements(uuid) from public, anon, authenticated;
-revoke all on function public.billing_claim_event(text, text, text, text, timestamptz, text, integer) from public, anon, authenticated;
+revoke all on function public.billing_claim_event(text, text, text, text, text, timestamptz, text, integer) from public, anon, authenticated;
 revoke all on function public.billing_finish_event(text, text, text, text, uuid, uuid, text) from public, anon, authenticated;
+revoke all on function public.billing_recover_checkout_payment(uuid, text, text, text, bigint, bigint, bigint, timestamptz) from public, anon, authenticated;
 revoke all on function public.billing_apply_subscription_snapshot(text, text, text, text, text, text, timestamptz, timestamptz, timestamptz, timestamptz, jsonb, timestamptz, text, text) from public, anon, authenticated;
 revoke all on function public.billing_apply_payment_reference(text, text, text, text, text, text, bigint, bigint, bigint, timestamptz) from public, anon, authenticated;
 revoke all on function public.billing_refresh_legacy_entitlements() from public, anon, authenticated;
 
 grant execute on function public.billing_rebuild_entitlements(uuid) to service_role;
-grant execute on function public.billing_claim_event(text, text, text, text, timestamptz, text, integer) to service_role;
+grant execute on function public.billing_claim_event(text, text, text, text, text, timestamptz, text, integer) to service_role;
 grant execute on function public.billing_finish_event(text, text, text, text, uuid, uuid, text) to service_role;
+grant execute on function public.billing_recover_checkout_payment(uuid, text, text, text, bigint, bigint, bigint, timestamptz) to service_role;
 grant execute on function public.billing_apply_subscription_snapshot(text, text, text, text, text, text, timestamptz, timestamptz, timestamptz, timestamptz, jsonb, timestamptz, text, text) to service_role;
 grant execute on function public.billing_apply_payment_reference(text, text, text, text, text, text, bigint, bigint, bigint, timestamptz) to service_role;
 

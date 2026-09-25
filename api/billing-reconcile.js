@@ -57,6 +57,7 @@ export default async function handler(request, response) {
         const raw = JSON.stringify(event);
         const result = await processProviderEvent({
           event,
+          eventSource: 'reconciliation',
           checksum: sha256(raw),
           runtime,
           repository,

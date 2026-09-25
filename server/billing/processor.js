@@ -5,6 +5,7 @@ import {
   matchesCatalogPolicy,
   normalizeSubscriptionSnapshot,
 } from './domain.js';
+import { verifyCheckoutRecoveryBinding } from './runtime.js';
 
 function asInteger(value) {
   return Number.isInteger(Number(value)) ? Number(value) : 0;
@@ -58,9 +59,18 @@ function resultRefs(result, transactionId = null) {
   };
 }
 
-export async function processProviderEvent({ event, checksum, runtime, repository, paddle, legacyHandler, readEnv }) {
+async function recoverCheckoutAssociation({ data, catalog, payment, runtime, repository }) {
+  const binding = verifyCheckoutRecoveryBinding(data?.custom_data, runtime.environment, runtime.webhookSecret);
+  if (!binding || !catalog || binding.planCode !== catalog.planCode || binding.catalogVersion !== catalog.catalogVersion) return null;
+  return repository.recoverCheckoutPayment(binding, payment);
+}
+
+export async function processProviderEvent({ event, eventSource, checksum, runtime, repository, paddle, legacyHandler, readEnv }) {
   if (!validEvent(event)) return { status: 400, body: { ok: false, code: 'INVALID_WEBHOOK_EVENT' } };
-  const claim = await repository.claimEvent(event, runtime.environment, checksum);
+  if (!['webhook', 'reconciliation', 'migration', 'manual_admin'].includes(eventSource)) {
+    return { status: 500, body: { ok: false, code: 'INVALID_BILLING_EVENT_SOURCE' } };
+  }
+  const claim = await repository.claimEvent(event, runtime.environment, checksum, eventSource);
   if (claim?.claim_status === 'duplicate_succeeded' || claim?.claim_status === 'in_progress') {
     return { status: 200, body: { ok: true, outcome: claim.claim_status } };
   }
@@ -85,7 +95,24 @@ export async function processProviderEvent({ event, checksum, runtime, repositor
         const snapshot = normalizeSubscriptionSnapshot(providerData, runtime.environment, readEnv, event);
         if (!snapshot) outcome = 'ignored_unknown_catalog';
         else {
-          const applied = await repository.applySubscription(snapshot);
+          let applied = await repository.applySubscription(snapshot);
+          if (applied?.outcome === 'ignored_unknown_provider_evidence' && snapshot.originatingTransactionId) {
+            const transactionResponse = await paddle.getTransaction(snapshot.originatingTransactionId);
+            const transactionData = transactionResponse?.data || {};
+            const priceId = extractSubscriptionPriceId(transactionData);
+            const catalog = priceId ? catalogPlanFromPrice(priceId, runtime.environment, readEnv) : null;
+            if (catalog && matchesCatalogPolicy(transactionData, catalog)) {
+              const payment = transactionPayment({
+                event_type: transactionData.status === 'completed' ? 'transaction.completed' : 'transaction.payment_failed',
+                occurred_at: event.occurred_at,
+                data: transactionData,
+              }, runtime.environment);
+              const recovered = await recoverCheckoutAssociation({ data: transactionData, catalog, payment, runtime, repository });
+              if (recovered?.outcome === 'checkout_payment_recovered' || recovered?.outcome === 'checkout_payment_already_known') {
+                applied = await repository.applySubscription(snapshot);
+              }
+            }
+          }
           outcome = applied?.outcome || 'ignored_subscription';
           refs = resultRefs(applied, snapshot.originatingTransactionId);
         }
@@ -102,7 +129,13 @@ export async function processProviderEvent({ event, checksum, runtime, repositor
         else if (recurringCatalog && !matchesCatalogPolicy(data, recurringCatalog)) outcome = 'ignored_catalog_policy_mismatch';
         else {
           const payment = transactionPayment(event, runtime.environment);
-          const applied = await repository.applyPayment(payment);
+          let applied = await repository.applyPayment(payment);
+          if (applied?.outcome === 'ignored_unknown_provider_evidence' && recurringCatalog) {
+            const recovered = await recoverCheckoutAssociation({ data, catalog: recurringCatalog, payment, runtime, repository });
+            if (recovered?.outcome === 'checkout_payment_recovered' || recovered?.outcome === 'checkout_payment_already_known') {
+              applied = await repository.applyPayment(payment);
+            }
+          }
           outcome = applied?.outcome || 'ignored_payment';
           refs = resultRefs(applied, payment.providerTransactionId);
           if (data.subscription_id) {

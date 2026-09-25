@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { normalizeProviderEnvironment } from '../server/billing/domain.js';
 
 const PLAN_CATALOG = {
   vd_monthly: { amountMinor: 1900, currency: 'CNY', priceEnv: 'PADDLE_PRICE_MONTHLY' },
@@ -20,14 +21,10 @@ function env(...names) {
   return '';
 }
 
-function paddleBaseUrl() {
-  return env('PADDLE_ENVIRONMENT').toLowerCase() === 'production'
+function paddleBaseUrl(environment) {
+  return environment === 'production'
     ? 'https://api.paddle.com'
     : 'https://sandbox-api.paddle.com';
-}
-
-function providerEnvironment() {
-  return env('PADDLE_ENVIRONMENT').toLowerCase() === 'production' ? 'production' : 'sandbox';
 }
 
 async function parseResponse(result) {
@@ -82,6 +79,12 @@ export default async function handler(request, response) {
   const serviceRoleKey = env('SUPABASE_SERVICE_ROLE_KEY');
   const paddleApiKey = env('PADDLE_API_KEY');
   const token = String(request.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  let environment;
+  try {
+    environment = normalizeProviderEnvironment(process.env.PADDLE_ENVIRONMENT);
+  } catch (error) {
+    return send(response, 503, { ok: false, code: 'PADDLE_ENVIRONMENT_INVALID', error: error instanceof Error ? error.message : 'Paddle 环境配置无效。' });
+  }
 
   if (!supabaseUrl || !anonKey || !serviceRoleKey) {
     return send(response, 503, { ok: false, code: 'BILLING_STORAGE_NOT_CONFIGURED', error: '支付数据库尚未完成服务端配置。' });
@@ -113,7 +116,7 @@ export default async function handler(request, response) {
         id: orderId,
         user_id: user.id,
         provider: 'paddle',
-        provider_environment: providerEnvironment(),
+        provider_environment: environment,
         plan_code: planCode,
         amount_minor: plan.amountMinor,
         currency: plan.currency,
@@ -139,7 +142,7 @@ export default async function handler(request, response) {
       checkout: { url: checkoutUrl || null },
     };
 
-    const paddleResult = await parseResponse(await fetch(`${paddleBaseUrl()}/transactions`, {
+    const paddleResult = await parseResponse(await fetch(`${paddleBaseUrl(environment)}/transactions`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${paddleApiKey}`,

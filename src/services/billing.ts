@@ -100,9 +100,12 @@ export const BILLING_PLANS: readonly BillingPlan[] = [
 ];
 
 const PADDLE_CLIENT_TOKEN = (import.meta.env.VITE_PADDLE_CLIENT_TOKEN as string | undefined)?.trim() || '';
-const PADDLE_ENVIRONMENT = ((import.meta.env.VITE_PADDLE_ENVIRONMENT as string | undefined)?.trim().toLowerCase() || 'sandbox') === 'production'
-  ? 'production'
-  : 'sandbox';
+const RAW_PADDLE_ENVIRONMENT = (import.meta.env.VITE_PADDLE_ENVIRONMENT as string | undefined) || '';
+
+function paddleEnvironment(): 'sandbox' | 'production' {
+  if (RAW_PADDLE_ENVIRONMENT === 'sandbox' || RAW_PADDLE_ENVIRONMENT === 'production') return RAW_PADDLE_ENVIRONMENT;
+  throw new Error('VITE_PADDLE_ENVIRONMENT 必须明确设置为 sandbox 或 production。');
+}
 
 let paddleScriptPromise: Promise<PaddleSdk> | null = null;
 
@@ -168,10 +171,11 @@ function loadPaddleScript(): Promise<PaddleSdk> {
 
 async function initializePaddle(): Promise<PaddleSdk> {
   if (!PADDLE_CLIENT_TOKEN) throw new Error('Paddle 客户端令牌尚未配置。');
+  const environment = paddleEnvironment();
   const paddle = await loadPaddleScript();
   if (window.__vdPaddleInitialized) return paddle;
 
-  if (PADDLE_ENVIRONMENT === 'sandbox') paddle.Environment.set('sandbox');
+  if (environment === 'sandbox') paddle.Environment.set('sandbox');
   paddle.Initialize({
     token: PADDLE_CLIENT_TOKEN,
     eventCallback: (event) => {
@@ -183,7 +187,7 @@ async function initializePaddle(): Promise<PaddleSdk> {
 }
 
 export function isPaddleClientConfigured(): boolean {
-  return Boolean(PADDLE_CLIENT_TOKEN);
+  return Boolean(PADDLE_CLIENT_TOKEN && (RAW_PADDLE_ENVIRONMENT === 'sandbox' || RAW_PADDLE_ENVIRONMENT === 'production'));
 }
 
 export function isActiveMembership(membership: MembershipRecord | null, now = new Date()): boolean {
@@ -263,6 +267,7 @@ export async function getSubscriptionBillingSnapshot(session: SupabaseSession): 
 }
 
 export async function createRecurringCheckout(planCode: RecurringPlanCode, session: SupabaseSession): Promise<RecurringCheckoutResponse> {
+  const environment = paddleEnvironment();
   const response = await fetch('/api/billing-subscription-checkout', {
     method: 'POST',
     headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
@@ -274,7 +279,7 @@ export async function createRecurringCheckout(planCode: RecurringPlanCode, sessi
     throw new Error('订阅服务没有返回有效交易。');
   }
   const checkout = payload as Partial<RecurringCheckoutResponse>;
-  if (checkout.providerEnvironment !== PADDLE_ENVIRONMENT || checkout.planCode !== planCode || checkout.catalogVersion !== 'vd-recurring-v1') {
+  if (checkout.providerEnvironment !== environment || checkout.planCode !== planCode || checkout.catalogVersion !== 'vd-recurring-v1') {
     throw new Error('订阅服务与浏览器的 Paddle 环境或目录不一致。');
   }
   return checkout as RecurringCheckoutResponse;

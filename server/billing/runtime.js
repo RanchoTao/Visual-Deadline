@@ -1,6 +1,62 @@
 import crypto from 'node:crypto';
 import { booleanFlag, normalizeProviderEnvironment, resolveCatalog, validateCatalogIsolation } from './domain.js';
 
+export const CHECKOUT_BINDING_VERSION = 'vd-recurring-binding-v1';
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function checkoutBindingMessage({ environment, userId, planCode, catalogVersion, nonce }) {
+  return ['vd-recurring-checkout', CHECKOUT_BINDING_VERSION, environment, userId, planCode, catalogVersion, nonce].join('\n');
+}
+
+export function createCheckoutRecoveryBinding({ environment, userId, planCode, catalogVersion }, secret) {
+  if (!secret) throw new Error('Paddle checkout recovery signing is not configured.');
+  const nonce = crypto.randomUUID();
+  const values = { environment, userId, planCode, catalogVersion, nonce };
+  return {
+    vd_binding_version: CHECKOUT_BINDING_VERSION,
+    vd_provider_environment: environment,
+    vd_user_id: userId,
+    vd_catalog_code: planCode,
+    vd_catalog_version: catalogVersion,
+    vd_binding_nonce: nonce,
+    vd_binding_signature: crypto.createHmac('sha256', secret).update(checkoutBindingMessage(values), 'utf8').digest('hex'),
+  };
+}
+
+export function verifyCheckoutRecoveryBinding(customData, expectedEnvironment, secret) {
+  if (!customData || typeof customData !== 'object' || !secret) return null;
+  const binding = {
+    version: customData.vd_binding_version,
+    environment: customData.vd_provider_environment,
+    userId: customData.vd_user_id,
+    planCode: customData.vd_catalog_code,
+    catalogVersion: customData.vd_catalog_version,
+    nonce: customData.vd_binding_nonce,
+    signature: customData.vd_binding_signature,
+  };
+  if (binding.version !== CHECKOUT_BINDING_VERSION || binding.environment !== expectedEnvironment) return null;
+  if (!UUID_PATTERN.test(String(binding.userId || ''))) return null;
+  if (!['vd.plus.monthly.v1', 'vd.plus.annual.v1'].includes(binding.planCode)) return null;
+  if (binding.catalogVersion !== 'vd-recurring-v1' || !UUID_PATTERN.test(String(binding.nonce || ''))) return null;
+  if (!/^[a-f0-9]{64}$/i.test(String(binding.signature || ''))) return null;
+  const message = checkoutBindingMessage({
+    environment: binding.environment,
+    userId: binding.userId,
+    planCode: binding.planCode,
+    catalogVersion: binding.catalogVersion,
+    nonce: binding.nonce,
+  });
+  const expected = Buffer.from(crypto.createHmac('sha256', secret).update(message, 'utf8').digest('hex'), 'hex');
+  const actual = Buffer.from(binding.signature, 'hex');
+  if (actual.length !== expected.length || !crypto.timingSafeEqual(actual, expected)) return null;
+  return {
+    userId: binding.userId,
+    planCode: binding.planCode,
+    catalogVersion: binding.catalogVersion,
+    environment: binding.environment,
+  };
+}
+
 export function readEnv(...names) {
   for (const name of names) {
     const value = process.env[name];
@@ -10,7 +66,7 @@ export function readEnv(...names) {
 }
 
 export function recurringRuntime() {
-  const environment = normalizeProviderEnvironment(readEnv('PADDLE_ENVIRONMENT'));
+  const environment = normalizeProviderEnvironment(process.env.PADDLE_ENVIRONMENT);
   const suffix = environment === 'production' ? 'PRODUCTION' : 'SANDBOX';
   const isolation = validateCatalogIsolation(environment, (name) => readEnv(name));
   const apiKey = readEnv(`PADDLE_API_KEY_${suffix}`, 'PADDLE_API_KEY');

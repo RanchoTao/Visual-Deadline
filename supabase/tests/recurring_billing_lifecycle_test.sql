@@ -1,16 +1,28 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(16);
+select plan(21);
 
 insert into auth.users (id, instance_id, aud, role, email, encrypted_password, created_at, updated_at)
 values ('44444444-4444-4444-8444-444444444444', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'lifecycle@example.test', '', now(), now());
 insert into public.payment_references (id, user_id, provider, provider_environment, provider_transaction_id, kind, status, currency, occurred_at)
 values ('44444444-0000-4000-8000-000000000001', '44444444-4444-4444-8444-444444444444', 'paddle', 'sandbox', 'txn_lifecycle', 'subscription', 'pending', 'CNY', '2026-09-01T00:00:00Z');
 
-select is((select claim_status from public.billing_claim_event('evt_lifecycle', 'sandbox', 'subscription.created', repeat('a', 64), '2026-09-01T00:00:00Z')), 'claimed', 'first provider event is claimed');
-select is((select claim_status from public.billing_claim_event('evt_lifecycle', 'sandbox', 'subscription.created', repeat('a', 64), '2026-09-01T00:00:00Z')), 'in_progress', 'concurrent duplicate is not processed twice');
+select is((select claim_status from public.billing_claim_event('evt_lifecycle', 'sandbox', 'webhook', 'subscription.created', repeat('a', 64), '2026-09-01T00:00:00Z')), 'claimed', 'first provider event is claimed');
+select is((select event_source from public.billing_events where id = 'evt_lifecycle'), 'webhook', 'claimed webhook records explicit provenance');
+select is((select claim_status from public.billing_claim_event('evt_lifecycle', 'sandbox', 'webhook', 'subscription.created', repeat('a', 64), '2026-09-01T00:00:00Z')), 'in_progress', 'concurrent duplicate is not processed twice');
 select lives_ok($$select public.billing_finish_event('evt_lifecycle', 'succeeded', 'subscription_applied')$$, 'claimed event can finish');
-select is((select claim_status from public.billing_claim_event('evt_lifecycle', 'sandbox', 'subscription.created', repeat('a', 64), '2026-09-01T00:00:00Z')), 'duplicate_succeeded', 'succeeded replay has zero effect');
+select is((select claim_status from public.billing_claim_event('evt_lifecycle', 'sandbox', 'webhook', 'subscription.created', repeat('a', 64), '2026-09-01T00:00:00Z')), 'duplicate_succeeded', 'succeeded replay has zero effect');
+select is((select claim_status from public.billing_claim_event('evt_lifecycle', 'sandbox', 'reconciliation', 'subscription.created', repeat('a', 64), '2026-09-01T00:00:00Z')), 'source_conflict', 'reconciliation cannot impersonate an existing webhook event');
+
+select is(
+  (select outcome from public.billing_recover_checkout_payment('44444444-4444-4444-8444-444444444444', 'sandbox', 'txn_recovered', 'CNY', 1900, 0, 1900, '2026-09-01T00:00:00Z')),
+  'checkout_payment_recovered', 'signed checkout recovery creates missing local transaction evidence'
+);
+select is((select user_id::text from public.payment_references where provider_transaction_id = 'txn_recovered'), '44444444-4444-4444-8444-444444444444', 'recovered transaction is bound to the intended user');
+select is(
+  (select outcome from public.billing_recover_checkout_payment('44444444-4444-4444-8444-444444444444', 'sandbox', 'txn_recovered', 'CNY', 1900, 0, 1900, '2026-09-01T00:00:00Z')),
+  'checkout_payment_already_known', 'checkout recovery is idempotent'
+);
 
 select is(
   (select outcome from public.billing_apply_subscription_snapshot('sandbox', 'sub_lifecycle', 'ctm_lifecycle', 'vd.plus.monthly.v1', 'vd-recurring-v1', 'active', '2026-09-01T00:00:00Z', '2026-10-01T00:00:00Z', null, null, null, '2026-09-01T00:00:00Z', 'evt_lifecycle', 'txn_lifecycle')),

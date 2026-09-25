@@ -1,6 +1,6 @@
 import { createPaddleClient } from '../server/billing/paddle.js';
 import { createBillingRepository } from '../server/billing/repository.js';
-import { authenticateUser, readEnv, recurringRuntime, sendJson, supabaseRuntime } from '../server/billing/runtime.js';
+import { authenticateUser, createCheckoutRecoveryBinding, readEnv, recurringRuntime, sendJson, supabaseRuntime } from '../server/billing/runtime.js';
 
 export default async function handler(request, response) {
   if (request.method !== 'POST') return sendJson(response, 405, { ok: false, error: '仅支持 POST。' });
@@ -29,14 +29,16 @@ export default async function handler(request, response) {
   try {
     const paddle = createPaddleClient(runtime);
     const checkoutUrl = readEnv('PADDLE_CHECKOUT_URL');
+    const recoveryBinding = createCheckoutRecoveryBinding({
+      environment: runtime.environment,
+      userId: user.id,
+      planCode: catalog.planCode,
+      catalogVersion: catalog.catalogVersion,
+    }, runtime.webhookSecret);
     const provider = await paddle.createTransaction({
       items: [{ price_id: catalog.priceId, quantity: 1 }],
       collection_mode: 'automatic',
-      custom_data: {
-        vd_user_id: user.id,
-        vd_catalog_code: catalog.planCode,
-        vd_catalog_version: catalog.catalogVersion,
-      },
+      custom_data: recoveryBinding,
       ...(checkoutUrl ? { checkout: { url: checkoutUrl } } : {}),
     });
     const transactionId = provider?.data?.id;

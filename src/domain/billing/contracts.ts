@@ -2,12 +2,14 @@ export type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'paused' |
 export type ProviderEnvironment = 'sandbox' | 'production' | 'legacy_unknown';
 export type EntitlementStatus = 'active' | 'inactive' | 'revoked' | 'expired';
 export type EntitlementSourceType = 'subscription' | 'legacy_membership_grant' | 'legacy_membership' | 'admin_grant';
+export type BillingEventSource = 'webhook' | 'reconciliation' | 'migration' | 'manual_admin';
 
 export interface Subscription {
   id: string;
   user_id: string;
   provider: 'paddle';
   provider_environment: ProviderEnvironment;
+  event_source: BillingEventSource;
   provider_subscription_id: string;
   provider_customer_id: string;
   plan_code: 'vd.plus.monthly.v1' | 'vd.plus.annual.v1';

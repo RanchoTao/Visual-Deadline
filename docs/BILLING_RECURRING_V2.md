@@ -38,6 +38,8 @@ CRON_SECRET=...
 
 Never expose API keys, webhook secrets, the service role, or `CRON_SECRET` through `VITE_*`. Browser-safe Paddle client tokens remain environment-specific deployment values; expose only the selected environment's token as `VITE_PADDLE_CLIENT_TOKEN` and pair it with `VITE_PADDLE_ENVIRONMENT`. The server rejects duplicated recurring price IDs or credentials across sandbox and production.
 
+Both server and browser billing configuration fail closed: missing values and values other than the exact strings `sandbox` or `production` are configuration errors. Billing code never treats an unknown environment as sandbox.
+
 ## Rollout flags
 
 All recurring flags default to false:
@@ -53,9 +55,9 @@ Enable processing and reconciliation only after the additive migration and sandb
 
 ## Provider flow
 
-`/api/billing-subscription-checkout` maps only trusted VD catalog codes to recurring Paddle prices and creates a pending `payment_references` binding. Browser checkout completion is UX feedback only.
+`/api/billing-subscription-checkout` maps only trusted VD catalog codes to recurring Paddle prices and creates a pending `payment_references` binding. Its server-created Paddle `custom_data` contains a domain-separated HMAC binding for user, environment, catalog, and nonce. If Paddle creates the transaction but the local insert fails, a verified webhook can validate that binding and idempotently reconstruct only the missing pending payment reference before the normal projector runs. Unsigned, modified, wrong-environment, and wrong-catalog metadata cannot recover an association. Browser checkout completion is UX feedback only.
 
-`/api/billing-webhook` verifies the raw request signature, claims `billing_events` before effects, resolves only known VD transactions/subscriptions, applies environment and provider-time ordering, and calls the single `billing_rebuild_entitlements` projector. Unknown evidence never grants access. Event claims and provider reference uniqueness make replay idempotent; advisory locks serialize each subscription/payment source.
+`/api/billing-webhook` verifies the raw request signature, claims `billing_events` before effects with `event_source=webhook`, resolves only known VD transactions/subscriptions, applies environment and provider-time ordering, and calls the single `billing_rebuild_entitlements` projector. Reconciliation claims use `event_source=reconciliation`; upgraded Billing v1 rows use `migration`; future operator evidence must explicitly use `manual_admin`. Unknown evidence never grants access. Event claims and provider reference uniqueness make replay idempotent; advisory locks serialize each subscription/payment source.
 
 `/api/billing-portal` authenticates the VD user, selects only their normalized subscription, creates a fresh Paddle portal session, and returns one requested short-lived URL with `Cache-Control: no-store`. Portal tokens and URLs are never persisted.
 

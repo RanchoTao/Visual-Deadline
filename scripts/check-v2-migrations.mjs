@@ -81,10 +81,12 @@ for (const contract of [
   'constraint entitlements_source_key unique (user_id, capability, source_type, source_id)',
   "subscription.current_period_end + interval '72 hours'",
   'billing_claim_event',
+  'billing_recover_checkout_payment',
   'billing_apply_subscription_snapshot',
   'billing_apply_payment_reference',
   'billing_rebuild_entitlements',
   "provider_environment in ('sandbox', 'production', 'legacy_unknown')",
+  "event_source in ('webhook', 'reconciliation', 'migration', 'manual_admin')",
 ]) if (!recurring.includes(contract)) throw new Error(`PR N migration is missing billing contract: ${contract}`);
 
 const billingRlsTest = readFileSync(new URL('../supabase/tests/recurring_billing_rls_test.sql', import.meta.url), 'utf8').toLowerCase();

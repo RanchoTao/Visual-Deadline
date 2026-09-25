@@ -42,6 +42,7 @@ export default async function handler(request, response) {
     const legacyHandler = createLegacyBillingHandler(repository, runtime.environment, (name) => readEnv(name));
     const result = await processProviderEvent({
       event,
+      eventSource: 'webhook',
       checksum: sha256(rawBody),
       runtime,
       repository,

@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(31);
+select plan(32);
 
 select has_table('public', 'subscriptions', 'subscriptions table exists');
 select has_table('public', 'payment_references', 'payment references table exists');
@@ -22,8 +22,8 @@ insert into public.payment_references (id, user_id, subscription_id, provider, p
 values ('11111111-0000-4000-8000-000000000002', '11111111-1111-4111-8111-111111111111', '11111111-0000-4000-8000-000000000001', 'paddle', 'sandbox', 'txn_owner_a', 'subscription', 'paid', 'CNY', 1900, now());
 insert into public.entitlements (id, user_id, capability, source_type, source_id, status, valid_from, valid_until, reason)
 values ('11111111-0000-4000-8000-000000000003', '11111111-1111-4111-8111-111111111111', 'vd.plus', 'subscription', '11111111-0000-4000-8000-000000000001', 'active', now() - interval '1 day', now() + interval '29 days', 'fixture');
-insert into public.billing_events (id, provider, provider_environment, event_type, outcome, processing_status, processed_at)
-values ('evt_rls_fixture', 'paddle', 'sandbox', 'subscription.created', 'fixture', 'succeeded', now());
+insert into public.billing_events (id, provider, provider_environment, event_source, event_type, outcome, processing_status, processed_at)
+values ('evt_rls_fixture', 'paddle', 'sandbox', 'migration', 'subscription.created', 'fixture', 'succeeded', now());
 
 set local role anon;
 select throws_ok($$select count(*) from public.subscriptions$$, '42501', null, 'anonymous subscription select is denied');
@@ -52,6 +52,7 @@ select throws_ok($$insert into public.entitlements (user_id, capability, source_
 select throws_ok($$update public.entitlements set valid_until = null where id = '11111111-0000-4000-8000-000000000003'$$, '42501', null, 'authenticated entitlement update is denied');
 select throws_ok($$delete from public.entitlements where id = '11111111-0000-4000-8000-000000000003'$$, '42501', null, 'authenticated entitlement delete is denied');
 select throws_ok($$select public.billing_rebuild_entitlements('11111111-1111-4111-8111-111111111111')$$, '42501', null, 'authenticated entitlement rebuild is denied');
+select throws_ok($$select public.billing_recover_checkout_payment('11111111-1111-4111-8111-111111111111', 'sandbox', 'txn_forged_recovery', 'CNY', 1900, 0, 1900, now())$$, '42501', null, 'authenticated checkout recovery is denied');
 select throws_ok($$insert into public.billing_events (id, provider, event_type, outcome) values ('evt_forged', 'paddle', 'subscription.updated', 'forged')$$, '42501', null, 'authenticated billing event insert is denied');
 
 reset role;

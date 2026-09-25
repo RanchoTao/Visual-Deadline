@@ -18,10 +18,11 @@ export function createBillingRepository({ url, serviceRoleKey }) {
   return {
     rest,
     rpc,
-    async claimEvent(event, environment, checksum) {
+    async claimEvent(event, environment, checksum, eventSource) {
       const rows = await rpc('billing_claim_event', {
         p_event_id: event.event_id,
         p_provider_environment: environment,
+        p_event_source: eventSource,
         p_event_type: event.event_type,
         p_payload_checksum: checksum,
         p_occurred_at: event.occurred_at,
@@ -67,6 +68,19 @@ export function createBillingRepository({ url, serviceRoleKey }) {
         p_provider_subscription_id: payment.providerSubscriptionId || null,
         p_kind: payment.kind,
         p_status: payment.status,
+        p_currency: payment.currency,
+        p_subtotal_minor: payment.subtotalMinor,
+        p_tax_minor: payment.taxMinor,
+        p_total_minor: payment.totalMinor,
+        p_occurred_at: payment.occurredAt,
+      });
+      return Array.isArray(rows) ? rows[0] : rows;
+    },
+    async recoverCheckoutPayment(binding, payment) {
+      const rows = await rpc('billing_recover_checkout_payment', {
+        p_user_id: binding.userId,
+        p_provider_environment: binding.environment,
+        p_provider_transaction_id: payment.providerTransactionId,
         p_currency: payment.currency,
         p_subtotal_minor: payment.subtotalMinor,
         p_tax_minor: payment.taxMinor,
