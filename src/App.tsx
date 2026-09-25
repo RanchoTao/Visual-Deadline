@@ -13,6 +13,7 @@ import { TaskForm } from './components/TaskForm';
 import { TaskPage } from './components/TaskPage';
 import { TermsPage } from './components/TermsPage';
 import { V2AppShell } from './components/V2AppShell';
+import { BillingPage } from './components/BillingPage';
 import { PublicNotFound, PublicSite, isPublicSurface } from './components/PublicSite';
 import { useWorkspaceLocalStorage, WorkspaceOwnerProvider } from './hooks/useLocalStorage';
 import { useWorkspaceOwner } from './hooks/useWorkspaceOwner';
@@ -1199,7 +1200,7 @@ function AuthenticatedApp() {
           : publicPath === '/settings'
             ? profileModule
             : publicPath === '/billing'
-              ? <section className="max-w-2xl rounded-2xl border border-zinc-200 bg-white p-6"><p className="text-xs font-semibold tracking-[.16em] text-zinc-400">ACCOUNT</p><h1 className="mt-2 text-2xl font-semibold tracking-tight">Subscription & billing</h1><p className="mt-3 text-sm leading-6 text-zinc-500">Billing is not enabled in this environment. Your account and workspace are unchanged.</p></section>
+              ? <BillingPage session={session!} />
               : <section className="max-w-2xl rounded-2xl border border-zinc-200 bg-white p-6"><h1 className="text-2xl font-semibold">页面不存在</h1></section>;
 
   return (
