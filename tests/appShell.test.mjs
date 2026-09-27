@@ -115,16 +115,18 @@ test('the app shell has the frozen five-page primary navigation and global accou
 test('production browser copy rejects audited English UI phrases while allowing proper nouns and internal identifiers', () => {
   const productionUiFiles = [
     'src/components/V2AppShell.tsx', 'src/components/BillingPage.tsx', 'src/components/NotificationsPage.tsx',
-    'src/components/ProfilePage.tsx', 'src/components/TaskForm.tsx', 'src/components/PublicHome.tsx',
+    'src/components/ProfilePage.tsx', 'src/components/MembershipPanel.tsx', 'src/components/RecommendationCard.tsx',
+    'src/components/TaskForm.tsx', 'src/components/PublicHome.tsx',
     'src/components/PublicSite.tsx', 'src/components/PlanPage.tsx', 'src/components/OpsPage.tsx',
-    'src/components/ReviewPage.tsx', 'src/components/HomePage.tsx', 'src/components/AuthPanel.tsx', 'src/App.tsx',
+    'src/components/ReviewPage.tsx', 'src/components/HomePage.tsx', 'src/components/AuthPanel.tsx', 'src/App.tsx', 'src/lib/cloudSync.ts',
   ];
   const obviousUntranslatedPhrases = [
     'Subscription & billing', 'Profile & settings', 'Sign out', 'All notifications', 'Manage subscription',
     'Update payment method', 'Cancel / manage billing', 'Recent payments', 'Subscription renewal',
     'Subscription payment', 'Legacy one-time Billing v1', 'Payment received / synchronizing subscription',
     'recurring subscription', 'recurring payment references', 'Blocked by', 'Find direction.', 'Move with clarity.',
-    'Mobile is coming soon', 'Page not found', 'Back home',
+    'Mobile is coming soon', 'Page not found', 'Back home', 'VD MEMBERSHIP', 'Paddle Client-side Token',
+    '支付 UI', 'Sandbox Checkout', '云端 migration', 'Life Controller migration', 'REVIEW 历史', 'Capture 整理', 'additive migration',
   ];
   const copy = productionUiFiles.map(source).join('\n');
   for (const phrase of obviousUntranslatedPhrases) assert.equal(copy.includes(phrase), false, `untranslated production UI phrase: ${phrase}`);
@@ -136,6 +138,11 @@ test('production browser copy rejects audited English UI phrases while allowing 
   assert.match(source('src/lib/appRoutes.ts'), /'\/app\/review'/);
   assert.match(source('src/components/ReviewPage.tsx'), />已归档<\/button>/);
   assert.equal(source('src/components/ReviewPage.tsx').includes('>Archive</button>'), false);
+  assert.match(source('src/components/RecommendationCard.tsx'), />优先三项<\/span>/);
+  assert.equal(source('src/components/RecommendationCard.tsx').includes('Top 3'), false);
+  assert.match(source('src/components/MembershipPanel.tsx'), /Paddle 客户端令牌/);
+  assert.match(source('src/App.tsx'), /回顾历史已同步到云端/);
+  assert.match(source('src/lib/cloudSync.ts'), /回顾云端表尚未初始化/);
 });
 
 test('user-facing AI prompts require concise Simplified Chinese while preserving wire contracts', () => {

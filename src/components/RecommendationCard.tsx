@@ -25,7 +25,7 @@ export function RecommendationCard({ tasks }: RecommendationCardProps) {
           <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">优先列表</h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">系统建议我接下来先做什么？</p>
         </div>
-        <span className="rounded-full bg-white/80 px-4 py-2 text-sm font-semibold text-sky-700 shadow-sm">Top 3</span>
+        <span className="rounded-full bg-white/80 px-4 py-2 text-sm font-semibold text-sky-700 shadow-sm">优先三项</span>
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-3">
