@@ -5,10 +5,10 @@ import { fileURLToPath } from 'node:url';
 const migrationDirectory = new URL('../supabase/migrations/', import.meta.url);
 const migrationPath = fileURLToPath(migrationDirectory);
 const migrationFiles = readdirSync(migrationDirectory)
-  .filter((name) => name.endsWith('.sql') && (name.includes('v2_beta_') || name.includes('legacy_core_additive_baseline') || name === '20260924034628_v2_review_history.sql'))
+  .filter((name) => name.endsWith('.sql') && (name.includes('v2_beta_') || name.includes('legacy_core_additive_baseline') || name === '20260924034628_v2_review_history.sql' || name === '20260924121019_v2_recurring_billing.sql' || name === '20260927101132_billing_service_role_table_privileges.sql'))
   .sort();
 
-if (migrationFiles.length !== 5) throw new Error(`Expected 4 PR E migrations and the PR M REVIEW migration, found ${migrationFiles.length}: ${migrationFiles.join(', ')}`);
+if (migrationFiles.length !== 7) throw new Error(`Expected 4 PR E migrations plus PR M and two PR N migrations, found ${migrationFiles.length}: ${migrationFiles.join(', ')}`);
 
 const stripComments = (sql) => sql.replace(/\/\*[\s\S]*?\*\//g, '').replace(/--.*$/gm, '');
 const combined = migrationFiles.map((name) => stripComments(readFileSync(join(migrationPath, name), 'utf8'))).join('\n').toLowerCase();
@@ -69,10 +69,49 @@ for (const requiredCase of ['anonymous review select is denied', 'forged review 
   if (!reviewRlsTest.includes(requiredCase)) throw new Error(`REVIEW RLS test is missing case: ${requiredCase}`);
 }
 
+const recurring = stripComments(readFileSync(join(migrationPath, '20260924121019_v2_recurring_billing.sql'), 'utf8')).toLowerCase();
+for (const table of ['subscriptions', 'payment_references', 'entitlements']) {
+  if (!recurring.includes(`create table public.${table}`)) throw new Error(`Missing required PR N table ${table}`);
+  if (!recurring.includes(`alter table public.${table} enable row level security`)) throw new Error(`Missing PR N RLS enablement for ${table}`);
+  if (!recurring.includes(`create policy ${table}_select_own`)) throw new Error(`Missing PR N owner SELECT policy for ${table}`);
+  if (new RegExp(`create\\s+policy\\s+\\S+\\s+on\\s+public\\.${table}\\s+for\\s+(?:insert|update|delete)`).test(recurring)) throw new Error(`PR N table ${table} must be server-write-only`);
+}
+for (const contract of [
+  "catalog_version text not null check (catalog_version = 'vd-recurring-v1')",
+  'constraint entitlements_source_key unique (user_id, capability, source_type, source_id)',
+  "subscription.current_period_end + interval '72 hours'",
+  'billing_claim_event',
+  'billing_recover_checkout_payment',
+  'billing_apply_subscription_snapshot',
+  'billing_apply_payment_reference',
+  'billing_rebuild_entitlements',
+  "provider_environment in ('sandbox', 'production', 'legacy_unknown')",
+  "event_source in ('webhook', 'reconciliation', 'migration', 'manual_admin')",
+]) if (!recurring.includes(contract)) throw new Error(`PR N migration is missing billing contract: ${contract}`);
+
+const billingRlsTest = readFileSync(new URL('../supabase/tests/recurring_billing_rls_test.sql', import.meta.url), 'utf8').toLowerCase();
+for (const requiredCase of ['anonymous subscription select is denied', 'owner subscription select is allowed', 'cross-user subscription select returns no rows', 'forged subscription insert is denied', 'authenticated subscription update is denied', 'authenticated subscription delete is denied']) {
+  if (!billingRlsTest.includes(requiredCase)) throw new Error(`PR N RLS test is missing case: ${requiredCase}`);
+}
+
+const billingServiceRolePrivileges = stripComments(readFileSync(join(migrationPath, '20260927101132_billing_service_role_table_privileges.sql'), 'utf8')).toLowerCase();
+for (const table of ['billing_orders', 'membership_grants', 'memberships', 'billing_events', 'subscriptions', 'payment_references', 'entitlements']) {
+  if (!billingServiceRolePrivileges.includes(`public.${table}`)) throw new Error(`Missing service_role privilege grant for ${table}`);
+}
+if (!/grant\s+select,\s*insert,\s*update,\s*delete\s+on\s+table[\s\S]+?to\s+service_role/.test(billingServiceRolePrivileges)) {
+  throw new Error('PR N service_role migration must grant backend CRUD privileges');
+}
+const billingServiceRoleTest = readFileSync(new URL('../supabase/tests/billing_service_role_privileges_test.sql', import.meta.url), 'utf8').toLowerCase();
+for (const table of ['billing_orders', 'membership_grants', 'memberships', 'billing_events', 'subscriptions', 'payment_references', 'entitlements']) {
+  for (const privilege of ['select', 'insert', 'update', 'delete']) {
+    if (!billingServiceRoleTest.includes(`service_role can ${privilege} ${table}`)) throw new Error(`Missing service_role ${privilege} regression assertion for ${table}`);
+  }
+}
+
 for (const deferred of [
   'resource_budgets', 'resource_allocations', 'fixed_commitments', 'operations_plan_versions', 'execution_windows',
-  'execution_events', 'reviews', 'review_entities', 'ai_reports', 'ai_report_refs', 'subscriptions',
-  'payment_references', 'entitlements', 'capture_interpretations', 'capture_candidates',
+  'execution_events', 'reviews', 'review_entities', 'ai_reports', 'ai_report_refs',
+  'capture_interpretations', 'capture_candidates',
 ]) {
   if (new RegExp(`create\\s+table(?:\\s+if\\s+not\\s+exists)?\\s+public\\.${deferred}\\b`).test(combined)) throw new Error(`Deferred table was created: ${deferred}`);
 }
@@ -86,4 +125,4 @@ for (const relationship of [
   if (!combined.includes(relationship)) throw new Error(`Missing same-owner relationship constraint ${relationship}`);
 }
 
-console.log(`PR E/PR M static SQL checks passed for ${migrationFiles.length} additive migrations.`);
+console.log(`PR E/PR M/PR N static SQL checks passed for ${migrationFiles.length} additive migrations.`);

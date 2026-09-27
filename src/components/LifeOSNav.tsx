@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { branding } from '../constants/branding';
 import { supabase } from '../lib/supabaseClient';
-import { getBillingSnapshot, isActiveMembership } from '../services/billing';
+import { getSubscriptionBillingSnapshot } from '../services/billing';
 import type { LifeOSModule, UserProfile } from '../types/task';
 import type { VDNotification } from '../types/notification';
 import { MembershipPanel } from './MembershipPanel';
@@ -66,8 +66,8 @@ export function LifeOSNav({ activeModule, profile, isSignedIn, isCloudLoading, s
         return;
       }
       try {
-        const snapshot = await getBillingSnapshot(session);
-        if (!cancelled) setIsPlus(isActiveMembership(snapshot.membership));
+        const snapshot = await getSubscriptionBillingSnapshot(session);
+        if (!cancelled) setIsPlus(snapshot.entitlement.allowed);
       } catch {
         if (!cancelled) setIsPlus(false);
       }
