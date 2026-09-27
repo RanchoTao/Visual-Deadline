@@ -1,13 +1,15 @@
 import { useEffect, useState, type ChangeEvent } from 'react';
-import type { UserProfile } from '../types/task';
+import type { ReminderSettings, UserProfile } from '../types/task';
 import { DataSafetyPanel } from './DataSafetyPanel';
 import { DeveloperToolsPanel } from './DeveloperToolsPanel';
-import { MembershipPanel } from './MembershipPanel';
 import { uploadAvatar } from '../services/avatarStorage';
 
 interface ProfilePageProps {
   profile: UserProfile;
   onProfileChange: (profile: UserProfile) => void;
+  reminderSettings: ReminderSettings;
+  onReminderSettingsChange: (settings: ReminderSettings) => void;
+  onOpenBilling: () => void;
   isEmailVerified?: boolean;
 }
 
@@ -28,7 +30,7 @@ const systemItems = [
   { title: '未来同步', description: '为账号、认证和多设备同步保留结构。' },
 ];
 
-export function ProfilePage({ profile, onProfileChange, isEmailVerified }: ProfilePageProps) {
+export function ProfilePage({ profile, onProfileChange, reminderSettings, onReminderSettingsChange, onOpenBilling, isEmailVerified }: ProfilePageProps) {
   const [avatarPreview, setAvatarPreview] = useState<string>();
   const [avatarError, setAvatarError] = useState('');
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
@@ -106,8 +108,6 @@ export function ProfilePage({ profile, onProfileChange, isEmailVerified }: Profi
       </div>
       </div>
 
-      <MembershipPanel />
-
       <section className="rounded-[2rem] border border-white/70 bg-white/75 p-5 shadow-xl shadow-slate-200/60 backdrop-blur">
         <p className="text-sm font-semibold text-slate-500">系统与隐私</p>
         <h2 className="mt-1 text-2xl font-semibold text-slate-950">产品化准备</h2>
@@ -118,6 +118,21 @@ export function ProfilePage({ profile, onProfileChange, isEmailVerified }: Profi
               <p className="mt-2 text-xs leading-5 text-slate-500">{item.description}</p>
             </article>
           ))}
+        </div>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <article className="rounded-3xl bg-white/75 p-4 ring-1 ring-white/80">
+            <p className="text-xs font-semibold tracking-[0.22em] text-slate-400">订阅 / 账单</p>
+            <h3 className="mt-2 text-base font-semibold text-slate-900">会员与付款记录</h3>
+            <p className="mt-1 text-xs leading-5 text-slate-500">订阅、历史一次性会员和付款记录统一由 Subscription / Billing 处理；这里不会重复提供支付入口。</p>
+            <button type="button" onClick={onOpenBilling} className="mt-4 rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white">打开 Subscription / Billing</button>
+          </article>
+          <article className="rounded-3xl bg-white/75 p-4 ring-1 ring-white/80">
+            <p className="text-xs font-semibold tracking-[0.22em] text-slate-400">集成 / 提醒</p>
+            <h3 className="mt-2 text-base font-semibold text-slate-900">跨设备提醒偏好</h3>
+            <label className="mt-3 flex items-center justify-between gap-4 text-sm font-medium text-slate-700"><span>启用站内提醒</span><input type="checkbox" checked={reminderSettings.reminderEnabled} onChange={(event) => onReminderSettingsChange({ ...reminderSettings, reminderEnabled: event.target.checked })} /></label>
+            <label className="mt-3 flex items-center justify-between gap-4 text-sm font-medium text-slate-700"><span>每日提醒时间</span><input type="time" value={reminderSettings.reminderTime} onChange={(event) => onReminderSettingsChange({ ...reminderSettings, reminderTime: event.target.value })} className="rounded-lg border border-slate-200 px-2 py-1 text-sm" /></label>
+            <p className="mt-3 text-xs leading-5 text-slate-500">开关和时间会随账号同步；浏览器通知授权属于当前设备，不会被同步或伪造。当前设备权限：{reminderSettings.notificationPermission}。</p>
+          </article>
         </div>
         <div className="mt-4 rounded-3xl bg-white/75 p-4 ring-1 ring-white/80">
           <p className="text-xs font-semibold tracking-[0.22em] text-slate-400">账号 / 邮箱验证</p>
@@ -141,7 +156,7 @@ export function ProfilePage({ profile, onProfileChange, isEmailVerified }: Profi
       </section>
 
       <DataSafetyPanel />
-      <DeveloperToolsPanel />
+      {import.meta.env.DEV ? <DeveloperToolsPanel /> : null}
     </section>
   );
 }

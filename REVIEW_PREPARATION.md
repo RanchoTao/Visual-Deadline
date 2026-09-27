@@ -120,3 +120,39 @@ The pre-existing untracked reviewer artifact `pr136.diff` was not modified or in
 - Paddle's Sandbox webhook simulator then ran a `subscription_renewal` scenario against the real subscription. All seven signed deliveries returned HTTP 200. The processor recorded the expected billing events, marked the payment reference paid, normalized the subscription as active, and projected one active `vd.plus` subscription entitlement with reason `recurring_active`.
 - `PR_N_PROCESSOR_GATE = PASS`. The remaining external acceptance limitation is real Platform notification creation in Paddle Sandbox.
 - Recurring rollout flags remain disabled. This evidence does not treat the external Platform notification anomaly as resolved or claim production readiness.
+
+## PR O — global account surfaces, notifications, and cleanup gates
+
+### Owning surfaces and route contract
+
+- The only primary workspace destinations remain `NOW / TASKS / PLAN / OPS / REVIEW` (`/app`, `/app/tasks`, `/app/plan`, `/app/ops`, `/app/review`).
+- Avatar opens the existing non-primary `/settings` Profile / Account / Settings surface; it now uses the saved avatar or account initial.
+- Membership control opens non-primary `/billing`. Profile no longer renders a duplicate Billing v1 purchase widget; Billing retains the compatible Legacy one-time Billing v1 disclosure.
+- The bell opens non-primary `/notifications`, an authenticated deep-linkable Notifications surface. Its unread indicator is derived from the current account notifications.
+
+### Persistence, cross-device behavior, and security
+
+- No migration was added. PR O consumes existing owner-RLS `profiles.data` and `notifications` rows only.
+- Account reminder enablement, time, and types are persisted with the existing profile payload. Browser notification permission is deliberately device-local and is neither synchronized nor fabricated.
+- Remote notification rows are read for the authenticated owner. A read receipt updates only that owner's row. Local/cloud merging treats `isRead` as monotonic, so a stale device cannot turn a remote-read notification unread.
+- Existing local profile, reminder, and notification caches remain active as rollback-compatible legacy paths. No provider, billing catalog, webhook, Paddle environment, Production secret, or recurring rollout flag was changed.
+
+### Cleanup gating and rollback
+
+- `evaluateLegacyCleanupGate()` requires a matching read/write release, zero unexplained divergence, zero fallback reads, a support runbook, and a completed rollback rehearsal before it permits retirement.
+- PR O supplies the gate/telemetry contract but does not claim its observation window is complete. Legacy reads, writes, exports, and restore paths remain enabled; no deletion occurs in this PR.
+- Rollback is to retain the current global routes and re-enable use of existing local caches. There is no destructive or provider-state rollback action.
+
+### PR O validation evidence
+
+- `npm run test:life-controller`: passed, 284 tests, including five PR O behavioral cases for trigger routing, monotonic notification merge, device-local permission boundaries, cleanup gates, and account/export compatibility.
+- `npm run test:sql:static`: passed: additive migration static lint, Vercel SPA deep-link check, and production browser-source secret-exposure scan.
+- `npm run typecheck`: passed.
+- `npm run build`: passed; existing large-chunk advisory is non-fatal.
+- `git diff --check`: passed.
+- Browser: public home rendered at desktop and 390px mobile without a Vite error overlay. An unauthenticated `/notifications` deep link redirected safely to `/login?next=%2Fnotifications`.
+
+### Known remaining acceptance items
+
+- The local Vite runtime had no usable authenticated Supabase session/configuration, so visual interaction with the authenticated account, billing, and notification content still needs a signed-in desktop/mobile smoke test.
+- The legacy observation window, telemetry evidence, support runbook, and rollback rehearsal are intentionally not complete. They block disabling legacy reads/writes or any deletion, not the additive PR O routing/persistence implementation.
