@@ -8,7 +8,7 @@ const publicRouteTargets = await import('./.compiled/src/domain/public/publicRou
 const source = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 
 test('the app route contract protects only private workspace and account surfaces', () => {
-  for (const path of ['/app', '/app/tasks', '/app/plan', '/app/ops', '/app/review', '/settings', '/billing']) assert.equal(routes.isAuthenticatedPath(path), true);
+  for (const path of ['/app', '/app/tasks', '/app/plan', '/app/ops', '/app/review', '/settings', '/billing', '/notifications']) assert.equal(routes.isAuthenticatedPath(path), true);
   for (const path of ['/', '/login', '/privacy', '/terms', '/auth/callback']) assert.equal(routes.isAuthenticatedPath(path), false);
   assert.equal(routes.safeAuthenticatedNext('/app/tasks'), '/app/tasks');
   assert.equal(routes.safeAuthenticatedNext('//attacker.invalid'), '/app');
@@ -109,6 +109,7 @@ test('the app shell has the frozen five-page primary navigation and global accou
   assert.match(shell, /Notifications/);
   assert.match(shell, /Profile and settings/);
   assert.match(shell, /\/billing/);
+  assert.match(shell, /\/notifications/);
   assert.equal(shell.includes("'ME'"), false);
 });
 

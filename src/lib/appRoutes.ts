@@ -1,4 +1,6 @@
-export const authenticatedPaths = new Set(['/app', '/app/tasks', '/app/plan', '/app/ops', '/app/review', '/settings', '/billing']);
+export const primaryWorkspacePaths = ['/app', '/app/tasks', '/app/plan', '/app/ops', '/app/review'] as const;
+export const globalAccountPaths = ['/settings', '/billing', '/notifications'] as const;
+export const authenticatedPaths = new Set<string>([...primaryWorkspacePaths, ...globalAccountPaths]);
 const authEntryPaths = new Set(['/login', '/auth/callback']);
 
 export function isAuthenticatedPath(pathname: string): boolean {

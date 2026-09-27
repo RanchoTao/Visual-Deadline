@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AchievementToast } from './components/AchievementToast';
 import { AuthPanel } from './components/AuthPanel';
 import { GuestImportPanel } from './components/GuestImportPanel';
@@ -14,6 +14,7 @@ import { TaskPage } from './components/TaskPage';
 import { TermsPage } from './components/TermsPage';
 import { V2AppShell } from './components/V2AppShell';
 import { BillingPage } from './components/BillingPage';
+import { NotificationsPage } from './components/NotificationsPage';
 import { PublicNotFound, PublicSite, isPublicSurface } from './components/PublicSite';
 import { useWorkspaceLocalStorage, WorkspaceOwnerProvider } from './hooks/useLocalStorage';
 import { useWorkspaceOwner } from './hooks/useWorkspaceOwner';
@@ -40,7 +41,7 @@ import {
 import { appendPressureHistoryRecord, createPressureHistoryRecord, normalizePressureHistory, replaceTaskDerivedPressureHistory } from './utils/pressureHistory';
 import { sortActiveTasksByProgress } from './utils/taskDerivedState';
 import { generateDailyQuest } from './utils/dailyQuest';
-import { deleteCloudLifeEvent, loadCloudData, loadCloudLifeEvents, saveCloudGoals, saveCloudPressureHistory, saveCloudProfile, saveCloudReviewState, saveCloudTasks, upsertCloudLifeEvents } from './lib/cloudSync';
+import { deleteCloudLifeEvent, loadCloudData, loadCloudLifeEvents, markCloudNotificationRead, saveCloudGoals, saveCloudPressureHistory, saveCloudProfile, saveCloudReviewState, saveCloudTasks, upsertCloudLifeEvents } from './lib/cloudSync';
 import { assertWorkspaceSessionOwner, browserStorageAdapter, loadValue, mergeAuthenticatedWorkspaceRecords, saveValue, storageKeys, workspaceOnboardingFallback, workspaceOwnerKey } from './storage';
 import { createDefaultLifePreferences, createLifeEvent, deriveLifeState, getLifeEventsForOwner, mergeLifeEvents, planLifeController, setLifeEventsForOwner, undoLatestLifeEvent as removeLatestLifeEvent } from './domain/life-controller';
 import { buildHomeRecommendationComparison } from './domain/execution/homeProjection';
@@ -58,6 +59,8 @@ import { deleteTaskFromOpsState } from './domain/ops/plans';
 import { defaultAISettings } from './services/aiClient';
 import { captureMilestoneLifecycleTransition, captureTaskLifecycleTransition, chooseNewerReviewState, createDefaultReviewState, normalizeReviewState, synchronizeReviewHistory, type ReviewState } from './domain/review';
 import { isAuthenticatedPath, isKnownAuthenticatedEntryPath, legacyRouteRedirect, safeAuthenticatedNext } from './lib/appRoutes';
+import { mergeNotifications, markNotificationRead as markNotificationReadLocally, NotificationReadReceiptQueue } from './domain/account/notifications';
+import { mergeAccountReminderPreferences } from './domain/account/preferences';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const WELCOME_BACK_GAP_MS = 2 * 60 * 60 * 1000;
@@ -395,7 +398,9 @@ function AuthenticatedApp() {
   const [achievements, setAchievements, achievementsReady] = useWorkspaceLocalStorage<Achievement[]>(workspaceOwner, storageKeys.achievements, []);
   const [aiArtifacts, setAIArtifacts, aiArtifactsReady] = useWorkspaceLocalStorage<AIArtifact[]>(workspaceOwner, storageKeys.aiArtifacts, []);
   const [roadmaps, , roadmapsReady] = useWorkspaceLocalStorage<Roadmap[]>(workspaceOwner, storageKeys.roadmaps, []);
-  const [, , notificationsReady] = useWorkspaceLocalStorage<VDNotification[]>(workspaceOwner, storageKeys.notifications, [{ id: 'notification-ia', type: 'SYSTEM', title: '消息中心已启用', summary: '周报、风险提醒与系统建议将统一在这里送达。', content: 'VD 的后台分析结果会写入消息中心，不再占用首页的行动空间。', isRead: false, createdAt: new Date().toISOString() }]);
+  const [notifications, setNotifications, notificationsReady] = useWorkspaceLocalStorage<VDNotification[]>(workspaceOwner, storageKeys.notifications, [{ id: 'notification-ia', type: 'SYSTEM', title: '消息中心已启用', summary: '周报、风险提醒与系统建议将统一在这里送达。', content: 'VD 的后台分析结果会写入消息中心，不再占用首页的行动空间。', isRead: false, createdAt: new Date().toISOString() }]);
+  const notificationReadReceiptQueue = useRef(new NotificationReadReceiptQueue());
+  const notificationReadReceiptFlushInFlight = useRef(false);
   const [profile, setProfile, profileReady] = useWorkspaceLocalStorage<UserProfile>(workspaceOwner, storageKeys.profile, defaultProfile);
   const [socialNodes, setSocialNodes, socialNodesReady] = useWorkspaceLocalStorage<unknown[]>(workspaceOwner, storageKeys.socialNodes, []);
   const [socialLayoutVersion, setSocialLayoutVersion, socialLayoutReady] = useWorkspaceLocalStorage<number>(workspaceOwner, storageKeys.socialLayoutVersion, 0);
@@ -406,7 +411,7 @@ function AuthenticatedApp() {
   const [pressureHistory, setPressureHistory, pressureHistoryReady] = useWorkspaceLocalStorage<PressureHistoryRecord[]>(workspaceOwner, storageKeys.pressureHistory, []);
   const [storedDailyQuest, setStoredDailyQuest, dailyQuestReady] = useWorkspaceLocalStorage<DailyQuest | null>(workspaceOwner, storageKeys.dailyQuest, null);
   const [dailyReview, , dailyReviewReady] = useWorkspaceLocalStorage<DailyReview | null>(workspaceOwner, storageKeys.dailyReview, null);
-  const [, , reminderSettingsReady] = useWorkspaceLocalStorage<ReminderSettings>(workspaceOwner, storageKeys.reminderSettings, defaultReminderSettings);
+  const [reminderSettings, setReminderSettings, reminderSettingsReady] = useWorkspaceLocalStorage<ReminderSettings>(workspaceOwner, storageKeys.reminderSettings, defaultReminderSettings);
   const [lifeEventsByOwner, setLifeEventsByOwner, lifeEventsReady] = useWorkspaceLocalStorage<LifeEventStore>(workspaceOwner, storageKeys.lifeEventsByOwner, {});
   const isWorkspaceReady = isWorkspaceOwnerReady && [tasksReady, goalsReady, opsStateReady, reviewStateReady, achievementsReady, aiArtifactsReady, roadmapsReady, notificationsReady, profileReady, socialNodesReady, socialLayoutReady, onboardingReady, baselinePressureReady, pressureCalibrationReady, pressureHistoryReady, dailyQuestReady, dailyReviewReady, reminderSettingsReady, lifeEventsReady].every(Boolean);
   const [, setViewportWidth] = useState(() => window.innerWidth);
@@ -448,6 +453,8 @@ function AuthenticatedApp() {
     setGuestImportPreview(undefined);
     guestImportPreviewRef.current = undefined;
     isApplyingCloudData.current = false;
+    notificationReadReceiptQueue.current.clear();
+    notificationReadReceiptFlushInFlight.current = false;
     hasCheckedWelcomeBack.current = false;
     hasLoggedHydration.current = false;
     recalibrationOwnerKey.current = undefined;
@@ -471,6 +478,29 @@ function AuthenticatedApp() {
   const normalizedProfile = useMemo(() => normalizeProfile(profile), [profile]);
   const normalizedPressureCalibration = useMemo(() => normalizePressureCalibration(pressureCalibration, legacyReferencePressure), [legacyReferencePressure, pressureCalibration]);
   const normalizedPressureHistory = useMemo(() => normalizePressureHistory(pressureHistory), [pressureHistory]);
+
+  const flushNotificationReadReceipts = useCallback(async (): Promise<void> => {
+    if (!session || !workspaceOwner || !isWorkspaceReady || !isCloudReady || notificationReadReceiptFlushInFlight.current || notificationReadReceiptQueue.current.pending().length === 0) return;
+    const requestOwnerKey = authoritativeOwnerKey;
+    notificationReadReceiptFlushInFlight.current = true;
+    try {
+      const failures = await notificationReadReceiptQueue.current.flush(({ notificationId, readAt }) => markCloudNotificationRead(notificationId, readAt, session, workspaceOwner));
+      if (failures.length > 0 && currentAuthoritativeOwnerKey.current === requestOwnerKey) {
+        const error = failures[0];
+        setCloudError(`通知已在本机标记为已读，但云端同步失败；将自动重试：${error instanceof Error ? error.message : '未知错误'}`);
+      }
+    } finally {
+      notificationReadReceiptFlushInFlight.current = false;
+    }
+  }, [authoritativeOwnerKey, isCloudReady, isWorkspaceReady, session, workspaceOwner]);
+
+  useEffect(() => {
+    if (!isCloudReady) return;
+    void flushNotificationReadReceipts();
+    // Keep failed optimistic read receipts retryable without changing their monotonic true value.
+    const intervalId = window.setInterval(() => { void flushNotificationReadReceipts(); }, 30 * 1000);
+    return () => window.clearInterval(intervalId);
+  }, [flushNotificationReadReceipts, isCloudReady]);
 
   useEffect(() => {
     if (!isWorkspaceReady) return;
@@ -586,6 +616,11 @@ function AuthenticatedApp() {
         if (cloudData.opsState) setOpsState(chooseNewerOpsState(normalizedOpsState, cloudData.opsState));
         if (cloudData.reviewState) setReviewState(chooseNewerReviewState(normalizedReviewState, cloudData.reviewState));
         if (cloudData.profile) setProfile(cloudData.profile);
+        if (cloudData.reminderPreferences) setReminderSettings((current) => mergeAccountReminderPreferences(current, cloudData.reminderPreferences));
+        setNotifications((current) => {
+          notificationReadReceiptQueue.current.enqueueHydratedLocalReads(current, cloudData.notifications, new Date().toISOString());
+          return mergeNotifications(current, cloudData.notifications);
+        });
         if (cloudData.pressureCalibration) setPressureCalibration(cloudData.pressureCalibration);
         if (cloudData.onboardingComplete !== null) setOnboardingComplete(cloudData.onboardingComplete);
         try {
@@ -714,11 +749,11 @@ function AuthenticatedApp() {
   useEffect(() => {
     if (!session || !workspaceOwner || !isWorkspaceReady || !isCloudReady || isApplyingCloudData.current) return;
     let isCurrent = true;
-    saveCloudProfile({ profile: normalizedProfile, pressureCalibration: normalizedPressureCalibration, onboardingComplete, socialNodes, socialLayoutVersion, opsState: normalizedOpsState }, session, workspaceOwner)
+    saveCloudProfile({ profile: normalizedProfile, pressureCalibration: normalizedPressureCalibration, onboardingComplete, socialNodes, socialLayoutVersion, opsState: normalizedOpsState, reminderSettings }, session, workspaceOwner)
       .then(() => { if (isCurrent) setCloudStatus('已同步到云端'); })
       .catch((error) => { if (isCurrent) setCloudError(error instanceof Error ? error.message : '个人设置云同步失败。'); });
     return () => { isCurrent = false; };
-  }, [isCloudReady, isWorkspaceReady, normalizedOpsState, normalizedPressureCalibration, normalizedProfile, onboardingComplete, session, socialLayoutVersion, socialNodes, workspaceOwner]);
+  }, [isCloudReady, isWorkspaceReady, normalizedOpsState, normalizedPressureCalibration, normalizedProfile, onboardingComplete, reminderSettings, session, socialLayoutVersion, socialNodes, workspaceOwner]);
 
   useEffect(() => {
     if (!session || !workspaceOwner || !isWorkspaceReady || !isCloudReady || isApplyingCloudData.current) return;
@@ -1160,7 +1195,17 @@ function AuthenticatedApp() {
     />
   );
 
-  const profileModule = <ProfilePage profile={normalizedProfile} onProfileChange={setProfile} isEmailVerified={Boolean(session?.user.email_confirmed_at)} />;
+  function markNotificationRead(id: string): void {
+    const notification = notifications.find((item) => item.id === id);
+    if (!notification) return;
+    const readAt = new Date().toISOString();
+    if (!notification.isRead) setNotifications((current) => markNotificationReadLocally(current, id));
+    if (!session || !workspaceOwner || notification.userId !== session.user.id) return;
+    notificationReadReceiptQueue.current.enqueue({ notificationId: id, readAt });
+    void flushNotificationReadReceipts();
+  }
+
+  const profileModule = <ProfilePage profile={normalizedProfile} onProfileChange={setProfile} reminderSettings={reminderSettings} onReminderSettingsChange={setReminderSettings} onOpenBilling={() => navigate('/billing')} isEmailVerified={Boolean(session?.user.email_confirmed_at)} />;
 
   if (publicPath === '/privacy' || publicPath === '/privacy.html') {
     return <PrivacyPolicyPage onBack={navigateHome} />;
@@ -1199,8 +1244,10 @@ function AuthenticatedApp() {
           ? <ReviewPage key={authoritativeOwnerKey} ownerKey={authoritativeOwnerKey} tasks={normalizedTasks} goals={normalizedGoals} opsState={normalizedOpsState} pressureHistory={normalizedPressureHistory} reviewState={normalizedReviewState} legacyAIArtifacts={normalizedAIArtifacts} onReviewStateChange={setReviewState} onRecalibrate={openRecalibration} />
           : publicPath === '/settings'
             ? profileModule
-            : publicPath === '/billing'
+          : publicPath === '/billing'
               ? <BillingPage session={session!} />
+              : publicPath === '/notifications'
+                ? <NotificationsPage notifications={notifications} onMarkRead={markNotificationRead} />
               : <section className="max-w-2xl rounded-2xl border border-zinc-200 bg-white p-6"><h1 className="text-2xl font-semibold">页面不存在</h1></section>;
 
   return (
@@ -1256,7 +1303,7 @@ function AuthenticatedApp() {
         </aside>
       ) : null}
 
-      <V2AppShell path={publicPath} onNavigate={navigate} onSignOut={() => { void signOut(); navigate('/'); }} onNotifications={() => setCloudToast('Notifications will appear here when they are ready.')}>
+      <V2AppShell path={publicPath} onNavigate={navigate} onSignOut={() => { void signOut(); navigate('/'); }} profile={normalizedProfile} notifications={notifications}>
         {appContent}
       </V2AppShell>
     </div>
