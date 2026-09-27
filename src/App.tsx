@@ -398,7 +398,7 @@ function AuthenticatedApp() {
   const [achievements, setAchievements, achievementsReady] = useWorkspaceLocalStorage<Achievement[]>(workspaceOwner, storageKeys.achievements, []);
   const [aiArtifacts, setAIArtifacts, aiArtifactsReady] = useWorkspaceLocalStorage<AIArtifact[]>(workspaceOwner, storageKeys.aiArtifacts, []);
   const [roadmaps, , roadmapsReady] = useWorkspaceLocalStorage<Roadmap[]>(workspaceOwner, storageKeys.roadmaps, []);
-  const [notifications, setNotifications, notificationsReady] = useWorkspaceLocalStorage<VDNotification[]>(workspaceOwner, storageKeys.notifications, [{ id: 'notification-ia', type: 'SYSTEM', title: '消息中心已启用', summary: '周报、风险提醒与系统建议将统一在这里送达。', content: 'VD 的后台分析结果会写入消息中心，不再占用首页的行动空间。', isRead: false, createdAt: new Date().toISOString() }]);
+  const [notifications, setNotifications, notificationsReady] = useWorkspaceLocalStorage<VDNotification[]>(workspaceOwner, storageKeys.notifications, [{ id: 'notification-ia', type: 'SYSTEM', title: '通知中心已启用', summary: '周报、风险提醒与系统建议将统一在这里送达。', content: 'VD 的后台分析结果会写入通知中心，不再占用首页的行动空间。', isRead: false, createdAt: new Date().toISOString() }]);
   const notificationReadReceiptQueue = useRef(new NotificationReadReceiptQueue());
   const notificationReadReceiptFlushInFlight = useRef(false);
   const [profile, setProfile, profileReady] = useWorkspaceLocalStorage<UserProfile>(workspaceOwner, storageKeys.profile, defaultProfile);

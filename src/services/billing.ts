@@ -49,8 +49,8 @@ export type RecurringPlanCode = 'vd.plus.monthly.v1' | 'vd.plus.annual.v1';
 export type PortalAction = 'overview' | 'update_payment' | 'cancel';
 
 export const RECURRING_PLANS = [
-  { code: 'vd.plus.monthly.v1' as const, label: 'Plus 月付', intervalLabel: '每月自动续费' },
-  { code: 'vd.plus.annual.v1' as const, label: 'Plus 年付', intervalLabel: '每年自动续费' },
+  { code: 'vd.plus.monthly.v1' as const, label: '高级版月付', intervalLabel: '每月自动续费' },
+  { code: 'vd.plus.annual.v1' as const, label: '高级版年付', intervalLabel: '每年自动续费' },
 ] as const;
 
 interface CheckoutResponse {
