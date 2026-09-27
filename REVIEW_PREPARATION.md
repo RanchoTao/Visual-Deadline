@@ -92,8 +92,10 @@ Reconciliation events are therefore distinguishable from Paddle-delivered webhoo
 - `src/domain/billing/contracts.ts`
 - `src/services/billing.ts`
 - `supabase/migrations/20260924121019_v2_recurring_billing.sql`
+- `supabase/migrations/20260927101132_billing_service_role_table_privileges.sql`
 - `supabase/tests/recurring_billing_lifecycle_test.sql`
 - `supabase/tests/recurring_billing_rls_test.sql`
+- `supabase/tests/billing_service_role_privileges_test.sql`
 - `tests/recurringBilling.test.mjs`
 - `REVIEW_PREPARATION.md`
 
@@ -109,4 +111,12 @@ The pre-existing untracked reviewer artifact `pr136.diff` was not modified or in
 - Representative Billing v1 fixture upgrade: passed. Original order, grant, membership, note, periods, and event outcome were retained; legacy environment/source classification and the corresponding provider-independent entitlement were verified.
 - `git diff --check`: run immediately before commit; result recorded in the commit handoff.
 
-Real Paddle Sandbox acceptance was not run because usable sandbox credentials/catalog are not present in this checkout. Recurring rollout flags remain disabled; this document does not claim the provider acceptance gate or merge readiness.
+## Sandbox acceptance evidence
+
+- Live Sandbox checkout exposed a PostgreSQL privilege defect: the `service_role` backend could bypass RLS but lacked ordinary table privileges for `payment_references` and related billing tables. The resulting server error was `permission denied for table payment_references`.
+- The additive `20260927101132_billing_service_role_table_privileges.sql` migration grants `service_role` explicit `SELECT`, `INSERT`, `UPDATE`, and `DELETE` on the seven billing-owned tables, without expanding `anon` or `authenticated` write access or disabling RLS.
+- The migration has been applied to the remote Supabase project. The linked remote migration chain now includes it, and remote service-role CRUD was verified for all seven covered tables.
+- A real Paddle Sandbox transaction completed and its subscription became active. Paddle generated the expected platform events, but the provider created zero notification entities for its active, subscribed Platform destination. This is an external Paddle Sandbox platform-notification creation anomaly, not a VD processor failure.
+- Paddle's Sandbox webhook simulator then ran a `subscription_renewal` scenario against the real subscription. All seven signed deliveries returned HTTP 200. The processor recorded the expected billing events, marked the payment reference paid, normalized the subscription as active, and projected one active `vd.plus` subscription entitlement with reason `recurring_active`.
+- `PR_N_PROCESSOR_GATE = PASS`. The remaining external acceptance limitation is real Platform notification creation in Paddle Sandbox.
+- Recurring rollout flags remain disabled. This evidence does not treat the external Platform notification anomaly as resolved or claim production readiness.

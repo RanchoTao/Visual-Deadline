@@ -5,10 +5,10 @@ import { fileURLToPath } from 'node:url';
 const migrationDirectory = new URL('../supabase/migrations/', import.meta.url);
 const migrationPath = fileURLToPath(migrationDirectory);
 const migrationFiles = readdirSync(migrationDirectory)
-  .filter((name) => name.endsWith('.sql') && (name.includes('v2_beta_') || name.includes('legacy_core_additive_baseline') || name === '20260924034628_v2_review_history.sql' || name === '20260924121019_v2_recurring_billing.sql'))
+  .filter((name) => name.endsWith('.sql') && (name.includes('v2_beta_') || name.includes('legacy_core_additive_baseline') || name === '20260924034628_v2_review_history.sql' || name === '20260924121019_v2_recurring_billing.sql' || name === '20260927101132_billing_service_role_table_privileges.sql'))
   .sort();
 
-if (migrationFiles.length !== 6) throw new Error(`Expected 4 PR E migrations plus PR M and PR N migrations, found ${migrationFiles.length}: ${migrationFiles.join(', ')}`);
+if (migrationFiles.length !== 7) throw new Error(`Expected 4 PR E migrations plus PR M and two PR N migrations, found ${migrationFiles.length}: ${migrationFiles.join(', ')}`);
 
 const stripComments = (sql) => sql.replace(/\/\*[\s\S]*?\*\//g, '').replace(/--.*$/gm, '');
 const combined = migrationFiles.map((name) => stripComments(readFileSync(join(migrationPath, name), 'utf8'))).join('\n').toLowerCase();
@@ -92,6 +92,20 @@ for (const contract of [
 const billingRlsTest = readFileSync(new URL('../supabase/tests/recurring_billing_rls_test.sql', import.meta.url), 'utf8').toLowerCase();
 for (const requiredCase of ['anonymous subscription select is denied', 'owner subscription select is allowed', 'cross-user subscription select returns no rows', 'forged subscription insert is denied', 'authenticated subscription update is denied', 'authenticated subscription delete is denied']) {
   if (!billingRlsTest.includes(requiredCase)) throw new Error(`PR N RLS test is missing case: ${requiredCase}`);
+}
+
+const billingServiceRolePrivileges = stripComments(readFileSync(join(migrationPath, '20260927101132_billing_service_role_table_privileges.sql'), 'utf8')).toLowerCase();
+for (const table of ['billing_orders', 'membership_grants', 'memberships', 'billing_events', 'subscriptions', 'payment_references', 'entitlements']) {
+  if (!billingServiceRolePrivileges.includes(`public.${table}`)) throw new Error(`Missing service_role privilege grant for ${table}`);
+}
+if (!/grant\s+select,\s*insert,\s*update,\s*delete\s+on\s+table[\s\S]+?to\s+service_role/.test(billingServiceRolePrivileges)) {
+  throw new Error('PR N service_role migration must grant backend CRUD privileges');
+}
+const billingServiceRoleTest = readFileSync(new URL('../supabase/tests/billing_service_role_privileges_test.sql', import.meta.url), 'utf8').toLowerCase();
+for (const table of ['billing_orders', 'membership_grants', 'memberships', 'billing_events', 'subscriptions', 'payment_references', 'entitlements']) {
+  for (const privilege of ['select', 'insert', 'update', 'delete']) {
+    if (!billingServiceRoleTest.includes(`service_role can ${privilege} ${table}`)) throw new Error(`Missing service_role ${privilege} regression assertion for ${table}`);
+  }
 }
 
 for (const deferred of [
