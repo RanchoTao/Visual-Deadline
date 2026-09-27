@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AchievementToast } from './components/AchievementToast';
 import { AuthPanel } from './components/AuthPanel';
 import { GuestImportPanel } from './components/GuestImportPanel';
@@ -59,7 +59,7 @@ import { deleteTaskFromOpsState } from './domain/ops/plans';
 import { defaultAISettings } from './services/aiClient';
 import { captureMilestoneLifecycleTransition, captureTaskLifecycleTransition, chooseNewerReviewState, createDefaultReviewState, normalizeReviewState, synchronizeReviewHistory, type ReviewState } from './domain/review';
 import { isAuthenticatedPath, isKnownAuthenticatedEntryPath, legacyRouteRedirect, safeAuthenticatedNext } from './lib/appRoutes';
-import { mergeNotifications, markNotificationRead as markNotificationReadLocally } from './domain/account/notifications';
+import { mergeNotifications, markNotificationRead as markNotificationReadLocally, NotificationReadReceiptQueue } from './domain/account/notifications';
 import { mergeAccountReminderPreferences } from './domain/account/preferences';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -399,6 +399,8 @@ function AuthenticatedApp() {
   const [aiArtifacts, setAIArtifacts, aiArtifactsReady] = useWorkspaceLocalStorage<AIArtifact[]>(workspaceOwner, storageKeys.aiArtifacts, []);
   const [roadmaps, , roadmapsReady] = useWorkspaceLocalStorage<Roadmap[]>(workspaceOwner, storageKeys.roadmaps, []);
   const [notifications, setNotifications, notificationsReady] = useWorkspaceLocalStorage<VDNotification[]>(workspaceOwner, storageKeys.notifications, [{ id: 'notification-ia', type: 'SYSTEM', title: '消息中心已启用', summary: '周报、风险提醒与系统建议将统一在这里送达。', content: 'VD 的后台分析结果会写入消息中心，不再占用首页的行动空间。', isRead: false, createdAt: new Date().toISOString() }]);
+  const notificationReadReceiptQueue = useRef(new NotificationReadReceiptQueue());
+  const notificationReadReceiptFlushInFlight = useRef(false);
   const [profile, setProfile, profileReady] = useWorkspaceLocalStorage<UserProfile>(workspaceOwner, storageKeys.profile, defaultProfile);
   const [socialNodes, setSocialNodes, socialNodesReady] = useWorkspaceLocalStorage<unknown[]>(workspaceOwner, storageKeys.socialNodes, []);
   const [socialLayoutVersion, setSocialLayoutVersion, socialLayoutReady] = useWorkspaceLocalStorage<number>(workspaceOwner, storageKeys.socialLayoutVersion, 0);
@@ -451,6 +453,8 @@ function AuthenticatedApp() {
     setGuestImportPreview(undefined);
     guestImportPreviewRef.current = undefined;
     isApplyingCloudData.current = false;
+    notificationReadReceiptQueue.current.clear();
+    notificationReadReceiptFlushInFlight.current = false;
     hasCheckedWelcomeBack.current = false;
     hasLoggedHydration.current = false;
     recalibrationOwnerKey.current = undefined;
@@ -474,6 +478,29 @@ function AuthenticatedApp() {
   const normalizedProfile = useMemo(() => normalizeProfile(profile), [profile]);
   const normalizedPressureCalibration = useMemo(() => normalizePressureCalibration(pressureCalibration, legacyReferencePressure), [legacyReferencePressure, pressureCalibration]);
   const normalizedPressureHistory = useMemo(() => normalizePressureHistory(pressureHistory), [pressureHistory]);
+
+  const flushNotificationReadReceipts = useCallback(async (): Promise<void> => {
+    if (!session || !workspaceOwner || !isWorkspaceReady || !isCloudReady || notificationReadReceiptFlushInFlight.current || notificationReadReceiptQueue.current.pending().length === 0) return;
+    const requestOwnerKey = authoritativeOwnerKey;
+    notificationReadReceiptFlushInFlight.current = true;
+    try {
+      const failures = await notificationReadReceiptQueue.current.flush(({ notificationId, readAt }) => markCloudNotificationRead(notificationId, readAt, session, workspaceOwner));
+      if (failures.length > 0 && currentAuthoritativeOwnerKey.current === requestOwnerKey) {
+        const error = failures[0];
+        setCloudError(`通知已在本机标记为已读，但云端同步失败；将自动重试：${error instanceof Error ? error.message : '未知错误'}`);
+      }
+    } finally {
+      notificationReadReceiptFlushInFlight.current = false;
+    }
+  }, [authoritativeOwnerKey, isCloudReady, isWorkspaceReady, session, workspaceOwner]);
+
+  useEffect(() => {
+    if (!isCloudReady) return;
+    void flushNotificationReadReceipts();
+    // Keep failed optimistic read receipts retryable without changing their monotonic true value.
+    const intervalId = window.setInterval(() => { void flushNotificationReadReceipts(); }, 30 * 1000);
+    return () => window.clearInterval(intervalId);
+  }, [flushNotificationReadReceipts, isCloudReady]);
 
   useEffect(() => {
     if (!isWorkspaceReady) return;
@@ -590,7 +617,10 @@ function AuthenticatedApp() {
         if (cloudData.reviewState) setReviewState(chooseNewerReviewState(normalizedReviewState, cloudData.reviewState));
         if (cloudData.profile) setProfile(cloudData.profile);
         if (cloudData.reminderPreferences) setReminderSettings((current) => mergeAccountReminderPreferences(current, cloudData.reminderPreferences));
-        setNotifications((current) => mergeNotifications(current, cloudData.notifications));
+        setNotifications((current) => {
+          notificationReadReceiptQueue.current.enqueueHydratedLocalReads(current, cloudData.notifications, new Date().toISOString());
+          return mergeNotifications(current, cloudData.notifications);
+        });
         if (cloudData.pressureCalibration) setPressureCalibration(cloudData.pressureCalibration);
         if (cloudData.onboardingComplete !== null) setOnboardingComplete(cloudData.onboardingComplete);
         try {
@@ -1167,13 +1197,12 @@ function AuthenticatedApp() {
 
   function markNotificationRead(id: string): void {
     const notification = notifications.find((item) => item.id === id);
-    if (!notification || notification.isRead) return;
+    if (!notification) return;
     const readAt = new Date().toISOString();
-    setNotifications((current) => markNotificationReadLocally(current, id));
+    if (!notification.isRead) setNotifications((current) => markNotificationReadLocally(current, id));
     if (!session || !workspaceOwner || notification.userId !== session.user.id) return;
-    void markCloudNotificationRead(id, readAt, session, workspaceOwner).catch((error) => {
-      setCloudError(`通知已在本机标记为已读，但云端同步失败：${error instanceof Error ? error.message : '未知错误'}`);
-    });
+    notificationReadReceiptQueue.current.enqueue({ notificationId: id, readAt });
+    void flushNotificationReadReceipts();
   }
 
   const profileModule = <ProfilePage profile={normalizedProfile} onProfileChange={setProfile} reminderSettings={reminderSettings} onReminderSettingsChange={setReminderSettings} onOpenBilling={() => navigate('/billing')} isEmailVerified={Boolean(session?.user.email_confirmed_at)} />;

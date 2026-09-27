@@ -1,7 +1,7 @@
 import type { Goal, PressureCalibrationSnapshot, PressureHistoryRecord, Task, UserProfile } from '../types/task';
 import type { ReminderSettings } from '../types/task';
 import type { VDNotification } from '../types/notification';
-import { notificationFromRow, type NotificationRow } from '../domain/account/notifications';
+import { collectNotificationRows, notificationFromRow, type NotificationRow } from '../domain/account/notifications';
 import { toAccountReminderPreferences, type AccountReminderPreferences } from '../domain/account/preferences';
 import type { LifeEvent } from '../types/lifeController';
 import { normalizeLifeEvents } from '../domain/life-controller';
@@ -152,7 +152,7 @@ export async function loadCloudData(session: SupabaseSession, owner: WorkspaceOw
       loadAllReviewRows<ReviewEventRow>('review_events', 'id,user_id,data', 'id.asc', session),
       loadAllReviewRows<ReviewArchiveEventRow>('review_archive_events', 'id,user_id,data', 'id.asc', session),
       loadAllReviewRows<ReviewTombstoneRow>('review_tombstones', 'review_id,user_id,deleted_at', 'review_id.asc', session),
-      supabase.rest<NotificationRow[]>(`notifications?select=id,user_id,type,title,summary,content,metadata,is_read,read_at,created_at,related_entity_type,related_entity_id&user_id=eq.${encode(session.user.id)}&order=created_at.desc`, { method: 'GET' }, session),
+      loadAllNotificationRows(session),
     ]);
     const profileData = profiles[0]?.data;
     const rowReviewState = normalizeReviewState({ schemaVersion: 3, defaultWindowDays: 7, reviews: reviewRecords.map((row) => row.data), events: reviewEvents.map((row) => row.data), reviewArchiveEvents: reviewArchiveEvents.map((row) => row.data), reviewTombstones: reviewTombstones.map((row) => ({ id: row.review_id, deletedAt: row.deleted_at })), updatedAt: [...reviewRecords.map((row) => row.data.updatedAt), ...reviewEvents.map((row) => row.data.recordedAt), ...reviewArchiveEvents.map((row) => row.data.changedAt), ...reviewTombstones.map((row) => row.deleted_at)].sort().at(-1) ?? new Date(0).toISOString() });
@@ -261,6 +261,11 @@ export async function markCloudNotificationRead(notificationId: string, readAt: 
 
 async function loadAllReviewRows<T>(table: 'review_records' | 'review_events' | 'review_archive_events' | 'review_tombstones', select: string, order: string, session: SupabaseSession): Promise<T[]> {
   return collectReviewRowPages((offset) => supabase.restPage<T[]>(`${table}?select=${select}&user_id=eq.${encode(session.user.id)}&order=${order}&limit=${REVIEW_PAGE_SIZE}&offset=${offset}`, { method: 'GET' }, session));
+}
+
+async function loadAllNotificationRows(session: SupabaseSession): Promise<NotificationRow[]> {
+  const select = 'id,user_id,type,title,summary,content,metadata,is_read,read_at,created_at,related_entity_type,related_entity_id';
+  return collectNotificationRows((offset) => supabase.restPage<NotificationRow[]>(`notifications?select=${select}&user_id=eq.${encode(session.user.id)}&order=created_at.desc,id.desc&limit=${REVIEW_PAGE_SIZE}&offset=${offset}`, { method: 'GET' }, session));
 }
 
 export async function saveCloudProfile(input: { profile: UserProfile; pressureCalibration: PressureCalibrationSnapshot; onboardingComplete: boolean; socialNodes: unknown[]; socialLayoutVersion: number; opsState: OpsState; reminderSettings: ReminderSettings }, session: SupabaseSession, owner: WorkspaceOwner): Promise<void> {
