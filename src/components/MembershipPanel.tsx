@@ -140,7 +140,7 @@ export function MembershipPanel() {
       return;
     }
     if (!isPaddleClientConfigured()) {
-      setError('支付前端尚未配置 Paddle Client-side Token。');
+      setError('支付前端尚未配置 Paddle 客户端令牌。');
       return;
     }
 
@@ -167,7 +167,7 @@ export function MembershipPanel() {
     <section className="rounded-[2rem] border border-white/75 bg-white/80 p-5 shadow-xl shadow-slate-200/60 backdrop-blur md:p-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div>
-          <p className="text-sm font-semibold tracking-[0.22em] text-slate-400">VD MEMBERSHIP</p>
+          <p className="text-sm font-semibold tracking-[0.22em] text-slate-400">VD 会员</p>
           <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">大会员</h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">首版采用固定期限会员：一次购买一个自然月或一个自然年，不自动续费。支付与会员权限分离，Paddle 只是当前支付通道。</p>
         </div>
@@ -217,7 +217,7 @@ export function MembershipPanel() {
       </div>
 
       {!isPaddleClientConfigured() ? (
-        <p className="mt-4 rounded-2xl bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-700 ring-1 ring-amber-100">支付 UI 已接入，但当前部署还缺少 Paddle Client-side Token；完成环境变量配置后即可打开真实或 Sandbox Checkout。</p>
+        <p className="mt-4 rounded-2xl bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-700 ring-1 ring-amber-100">支付界面已接入，但当前部署还缺少 Paddle 客户端令牌；完成环境变量配置后即可打开真实结账或沙盒结账。</p>
       ) : null}
       {message ? <p role="status" className="mt-4 rounded-2xl bg-sky-50 px-4 py-3 text-xs leading-5 text-sky-700 ring-1 ring-sky-100">{message}</p> : null}
       {error ? <p role="alert" className="mt-4 rounded-2xl bg-rose-50 px-4 py-3 text-xs font-semibold leading-5 text-rose-700 ring-1 ring-rose-100">{error}</p> : null}

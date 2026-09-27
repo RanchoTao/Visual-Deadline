@@ -108,8 +108,8 @@ test('account settings hide developer controls in production while retaining exp
   const dataSafety = source('src/components/DataSafetyPanel.tsx');
   assert.match(profile, /import\.meta\.env\.DEV \? <DeveloperToolsPanel \/> : null/);
   assert.equal(profile.includes('<MembershipPanel'), false);
-  assert.match(profile, /打开 Subscription \/ Billing/);
-  assert.match(billing, /Legacy one-time Billing v1/);
+  assert.match(profile, /打开订阅与账单/);
+  assert.match(billing, /旧版一次性会员（兼容）/);
   assert.match(dataSafety, /导出数据/);
   assert.match(dataSafety, /导入数据/);
 });

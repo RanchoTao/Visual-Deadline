@@ -100,11 +100,11 @@ function formatCloudSyncError(error: unknown): Error {
   console.error('[Visual Deadline cloud sync error]', error);
 
   if (/review_(?:records|events|archive_events|tombstones)/i.test(details) && TABLE_OR_COLUMN_MISSING_PATTERNS.some((pattern) => pattern.test(details))) {
-    return new Error('REVIEW 云端表尚未初始化，请应用 additive migration supabase/migrations/20260924034628_v2_review_history.sql。');
+    return new Error('回顾云端表尚未初始化，请应用补充迁移 supabase/migrations/20260924034628_v2_review_history.sql。');
   }
 
   if (TABLE_OR_COLUMN_MISSING_PATTERNS.some((pattern) => pattern.test(details))) {
-    return new Error('数据库结构尚未初始化，请应用对应的 supabase/migrations additive migration。');
+    return new Error('数据库结构尚未初始化，请应用对应的 supabase/migrations 补充迁移。');
   }
 
   if (RLS_DENIED_PATTERNS.some((pattern) => pattern.test(details)) || (error instanceof SupabaseRestError && [401, 403].includes(error.status))) {
@@ -209,7 +209,7 @@ export async function loadCloudLifeEvents(session: SupabaseSession, owner: Works
       : error instanceof Error ? error.message : '';
     if (TABLE_OR_COLUMN_MISSING_PATTERNS.some((pattern) => pattern.test(details))) {
       console.error('[Visual Deadline Life Controller cloud sync error]', error);
-      throw new Error('Life Controller migration 尚未应用，请执行 supabase/migrations/20260905133915_life_controller_alpha_0_1.sql。');
+      throw new Error('生活记录迁移尚未应用，请执行 supabase/migrations/20260905133915_life_controller_alpha_0_1.sql。');
     }
     throw formatCloudSyncError(error);
   }

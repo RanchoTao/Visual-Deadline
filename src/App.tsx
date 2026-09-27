@@ -398,7 +398,7 @@ function AuthenticatedApp() {
   const [achievements, setAchievements, achievementsReady] = useWorkspaceLocalStorage<Achievement[]>(workspaceOwner, storageKeys.achievements, []);
   const [aiArtifacts, setAIArtifacts, aiArtifactsReady] = useWorkspaceLocalStorage<AIArtifact[]>(workspaceOwner, storageKeys.aiArtifacts, []);
   const [roadmaps, , roadmapsReady] = useWorkspaceLocalStorage<Roadmap[]>(workspaceOwner, storageKeys.roadmaps, []);
-  const [notifications, setNotifications, notificationsReady] = useWorkspaceLocalStorage<VDNotification[]>(workspaceOwner, storageKeys.notifications, [{ id: 'notification-ia', type: 'SYSTEM', title: '消息中心已启用', summary: '周报、风险提醒与系统建议将统一在这里送达。', content: 'VD 的后台分析结果会写入消息中心，不再占用首页的行动空间。', isRead: false, createdAt: new Date().toISOString() }]);
+  const [notifications, setNotifications, notificationsReady] = useWorkspaceLocalStorage<VDNotification[]>(workspaceOwner, storageKeys.notifications, [{ id: 'notification-ia', type: 'SYSTEM', title: '通知中心已启用', summary: '周报、风险提醒与系统建议将统一在这里送达。', content: 'VD 的后台分析结果会写入通知中心，不再占用首页的行动空间。', isRead: false, createdAt: new Date().toISOString() }]);
   const notificationReadReceiptQueue = useRef(new NotificationReadReceiptQueue());
   const notificationReadReceiptFlushInFlight = useRef(false);
   const [profile, setProfile, profileReady] = useWorkspaceLocalStorage<UserProfile>(workspaceOwner, storageKeys.profile, defaultProfile);
@@ -523,7 +523,7 @@ function AuthenticatedApp() {
   const lifePlan = useMemo(() => planLifeController({ currentTime: new Date(pressureClock), lifeState, lifePreferences, availableTasks: [] }), [lifePreferences, lifeState, pressureClock]);
 
   const lifeEventSyncStatus = session
-    ? (lifeEventCloudError || (isLifeEventCloudReady ? '生活记录已启用用户隔离云同步。' : '生活记录保存在本机，正在检查云端 migration。'))
+    ? (lifeEventCloudError || (isLifeEventCloudReady ? '生活记录已启用用户隔离云同步。' : '生活记录保存在本机，正在检查云端迁移。'))
     : '访客记录仅保存在当前浏览器。';
 
   useEffect(() => {
@@ -635,7 +635,7 @@ function AuthenticatedApp() {
         } catch (error) {
           if (!isMounted) return;
           setIsLifeEventCloudReady(false);
-          setLifeEventCloudError(`生活记录云同步未启用：${error instanceof Error ? error.message : '请先应用 Life Controller migration。'}`);
+          setLifeEventCloudError(`生活记录云同步未启用：${error instanceof Error ? error.message : '请先应用生活记录迁移。'}`);
         }
         if (!isMounted) return;
         setIsCloudReady(true);
@@ -759,8 +759,8 @@ function AuthenticatedApp() {
     if (!session || !workspaceOwner || !isWorkspaceReady || !isCloudReady || isApplyingCloudData.current) return;
     let isCurrent = true;
     saveCloudReviewState(normalizedReviewState, session, workspaceOwner)
-      .then(() => { if (isCurrent) setCloudStatus('REVIEW 历史已同步到云端'); })
-      .catch((error) => { if (isCurrent) setCloudError(error instanceof Error ? error.message : 'REVIEW 历史云同步失败。'); });
+      .then(() => { if (isCurrent) setCloudStatus('回顾历史已同步到云端'); })
+      .catch((error) => { if (isCurrent) setCloudError(error instanceof Error ? error.message : '回顾历史云同步失败。'); });
     return () => { isCurrent = false; };
   }, [isCloudReady, isWorkspaceReady, normalizedReviewState, session, workspaceOwner]);
 
@@ -1141,7 +1141,7 @@ function AuthenticatedApp() {
 
   async function materializeCapture(capture: CaptureInput, interpretation: CaptureInterpretation, model?: string): Promise<void> {
     if (!session?.user.id || capture.ownerKey !== `user:${session.user.id}` || currentAuthoritativeOwnerKey.current !== capture.ownerKey) throw new Error('工作区已切换，请重新开始本次整理。');
-    if (!beginCaptureMaterialization(session.user.id, capture.id)) throw new Error('这次 Capture 已经确认或正在保存。');
+    if (!beginCaptureMaterialization(session.user.id, capture.id)) throw new Error('这次整理已经确认或正在保存。');
     try {
       const plan = buildCaptureMaterializationPlan(interpretation, normalizedTasks, normalizedGoals);
       const goalIds = new Map<string, string>();
@@ -1153,8 +1153,8 @@ function AuthenticatedApp() {
       // All IDs and edges are validated before the first workspace write.
       setGoals([...finalizedGoals, ...normalizedGoals]);
       setTasks([...finalizedTasks, ...normalizedTasks]);
-      if (finalizedTasks.length) recordPressureSnapshot('task_created', [...finalizedTasks, ...normalizedTasks], `Capture 整理新增 ${finalizedTasks.length} 个任务。`);
-      saveAIArtifact({ kind: 'task-intake', title: 'Capture 整理已确认', content: `已确认 ${finalizedGoals.length} 个目标和 ${finalizedTasks.length} 个任务。`, relatedTaskIds: finalizedTasks.map((task) => task.id), relatedGoalIds: finalizedGoals.map((goal) => goal.id), model, metadata: { captureId: capture.id, goalCount: finalizedGoals.length, taskCount: finalizedTasks.length, commitmentCount: plan.skippedCommitments.length, duplicateWarnings: plan.duplicateWarnings } });
+      if (finalizedTasks.length) recordPressureSnapshot('task_created', [...finalizedTasks, ...normalizedTasks], `整理新增 ${finalizedTasks.length} 个任务。`);
+      saveAIArtifact({ kind: 'task-intake', title: '整理已确认', content: `已确认 ${finalizedGoals.length} 个目标和 ${finalizedTasks.length} 个任务。`, relatedTaskIds: finalizedTasks.map((task) => task.id), relatedGoalIds: finalizedGoals.map((goal) => goal.id), model, metadata: { captureId: capture.id, goalCount: finalizedGoals.length, taskCount: finalizedTasks.length, commitmentCount: plan.skippedCommitments.length, duplicateWarnings: plan.duplicateWarnings } });
       consumeCaptureTransfer(session.user.id, capture.id); setPendingCapture(undefined);
     } catch (error) {
       abortCaptureMaterialization(session.user.id, capture.id);

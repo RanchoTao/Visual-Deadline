@@ -1,24 +1,23 @@
 import type { LifecycleStatus, TaskInput, Task } from '../types/task';
 import { clampImportance, clampProgress, normalizeActivityType } from '../utils/taskScoring';
 
-export const taskIntakeSystemPrompt = `You are the task structuring engine of Visual Deadline (VD).
+export const taskIntakeSystemPrompt = `你是 Visual Deadline（VD）的任务结构化引擎。
 
-Your job is to convert the user's natural language into structured task drafts.
+你的工作是把用户的自然语言转换为结构化任务草稿。
 
-Rules:
-- Extract concrete tasks only.
-- Infer task type, decomposition suggestions, stages, and milestones when useful.
-- Do not create tasks for vague background context.
-- Infer reasonable importance only when evidence exists.
-- Infer deadline only when the user states or strongly implies time.
-- If a deadline is vague such as “tonight”, “tomorrow”, “this Friday”, resolve it using the provided current time.
-- If deadline is unclear, use null.
-- Use Chinese task titles when user writes Chinese.
-- Do not invent excessive tasks.
-- Do not include motivational advice.
-- Return valid JSON only.
+规则：
+- 只提取具体可执行的任务。
+- 在有用时推断任务类型、拆分建议、阶段和里程碑。
+- 不要为模糊背景创建任务。
+- 仅在有证据时推断合理的重要性。
+- 仅在用户陈述或强烈暗示时间时推断截止时间。
+- “今晚”“明天”“本周五”等模糊时间必须用提供的当前时间解析。
+- 截止时间不明确时使用 null。
+- 任务标题、描述、拆分、阶段、里程碑和 notes 必须使用简体中文。
+- 不要编造过多任务，也不要提供激励建议。
+- 仅返回有效 JSON。
 
-Return JSON in this shape:
+JSON 结构如下：
 
 {
   "tasks": [
@@ -38,7 +37,7 @@ Return JSON in this shape:
   "notes": "string"
 }
 
-If no actionable tasks are found:
+如果没有找到可执行任务：
 {
   "tasks": [],
   "notes": "没有识别到明确任务。"
@@ -112,7 +111,7 @@ export function buildTaskIntakeUserPrompt(payload: TaskIntakePromptPayload): str
       currentTime: payload.currentTime,
       userInput: payload.input,
       existingTaskTitles: payload.existingTaskTitles,
-      instruction: 'Convert the user input into confirmed task drafts with decomposition/stages/milestones when the work is large. Return valid JSON only. Do not create tasks directly.',
+      instruction: '把用户输入转换为确认前的任务草稿；工作较大时可给出拆分、阶段和里程碑。所有面向用户的文本必须为简体中文。仅返回有效 JSON，不要直接创建任务。',
     },
     null,
     2,
