@@ -11,6 +11,18 @@ const migrationFiles = readdirSync(migrationDirectory)
 if (migrationFiles.length !== 7) throw new Error(`Expected 4 PR E migrations plus PR M and two PR N migrations, found ${migrationFiles.length}: ${migrationFiles.join(', ')}`);
 
 const stripComments = (sql) => sql.replace(/\/\*[\s\S]*?\*\//g, '').replace(/--.*$/gm, '');
+const adminFiles = readdirSync(migrationDirectory).filter(name=>name.includes('_admin_v1_')).sort();
+if(adminFiles.length!==2) throw new Error('Expected both Admin v1 additive migrations');
+const adminSql=adminFiles.map(name=>stripComments(readFileSync(join(migrationPath,name),'utf8'))).join('\n').toLowerCase();
+for(const pattern of [/\bdrop\s+table\b/,/\btruncate\b/,/\bdisable\s+row\s+level\s+security\b/,/\bdrop\s+policy\b/,/\b(?:update|delete\s+from)\s+public\.subscriptions\b/]) {
+ if(pattern.test(adminSql)) throw new Error('Admin migration would destroy state, weaken RLS, or mutate subscription records');
+}
+for(const name of ['admin_operator_roles','admin_audit_events','admin_command_receipts','admin_access_grants','ai_quota_policies','ai_quota_overrides','ai_usage_ledger','ai_quota_resets','account_controls','beta_cohorts','beta_applications','invite_codes','invite_redemptions','beta_allow_grants','email_outbox','beta_application_rate_buckets']) {
+ if(!adminSql.includes('create table public.'+name)||!adminSql.includes("'"+name+"'")) throw new Error('Missing Admin table/RLS inventory '+name);
+}
+for(const rule of ['enable row level security','revoke all on public.%i from public,anon,authenticated,service_role','as restrictive','unique(actor_user_id,request_id)','pg_advisory_xact_lock','pgp_sym_encrypt','operator_grant',"set search_path=''",'admin_audit_immutable','admin_receipt_immutable']) {
+ if(!adminSql.includes(rule)) throw new Error('Missing Admin authority rule '+rule);
+}
 const combined = migrationFiles.map((name) => stripComments(readFileSync(join(migrationPath, name), 'utf8'))).join('\n').toLowerCase();
 
 const forbidden = [
@@ -126,3 +138,4 @@ for (const relationship of [
 }
 
 console.log(`PR E/PR M/PR N static SQL checks passed for ${migrationFiles.length} additive migrations.`);
+console.log(`Admin static authority checks passed for ${adminFiles.length} additive migrations.`);

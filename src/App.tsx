@@ -375,7 +375,7 @@ function createAchievement(id: string): Achievement | undefined {
 
 function AuthenticatedApp() {
   const [publicPath, setPublicPath] = useState(() => window.location.pathname);
-  const { session, isLoading: isAuthLoading, error: authError, status: authStatus, authDebugInfo, isConfigured: isSupabaseConfigured, featureFlags: authFeatureFlags, signIn, signUp, resendVerificationEmail, signOut, signInWithOAuth, requestPhoneOtp, verifyPhoneOtp, verifyEmailOtp, phoneResendRemainingMs, emailResendRemainingMs } = useSupabaseAuth();
+  const { session, accountStatus, isLoading: isAuthLoading, error: authError, status: authStatus, authDebugInfo, isConfigured: isSupabaseConfigured, featureFlags: authFeatureFlags, signIn, signUp, resendVerificationEmail, signOut, signInWithOAuth, requestPhoneOtp, verifyPhoneOtp, verifyEmailOtp, phoneResendRemainingMs, emailResendRemainingMs } = useSupabaseAuth();
   const { owner: workspaceOwner, isReady: isWorkspaceOwnerReady } = useWorkspaceOwner(session?.user.id, !isAuthLoading);
   const authoritativeOwnerKey = workspaceOwner ? workspaceOwnerKey(workspaceOwner) : undefined;
   const currentAuthoritativeOwnerKey = useRef<string | undefined>(authoritativeOwnerKey);
@@ -1253,6 +1253,7 @@ function AuthenticatedApp() {
   return (
     <WorkspaceOwnerProvider owner={workspaceOwner}>
     <div className="min-h-screen bg-[#fafafa] text-zinc-900">
+      {session && accountStatus !== 'normal' && <div role="status" className="border-b border-amber-200 bg-amber-50 px-6 py-3 text-sm text-amber-900">{accountStatus === 'unknown' ? '云端账号状态尚未确认。离线数据仍可查看；云端操作由服务端校验。' : '账号当前受限：云端写入与 AI 请求已暂停。本地数据和导出保留。'}</div>}
       {taskFormOverlay}
       {isRecalibrationOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/15 px-4 backdrop-blur-sm">

@@ -9,6 +9,7 @@ function getEmailRedirectTo(): string { return getAuthCallbackUrl(); }
 
 export function useSupabaseAuth() {
   const [session, setSession] = useState<SupabaseSession | null>(null);
+  const [accountStatus, setAccountStatus] = useState<'normal' | 'restricted' | 'suspended' | 'banned' | 'unknown'>('unknown');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | undefined>();
   const [status, setStatus] = useState<string | undefined>();
@@ -17,6 +18,15 @@ export function useSupabaseAuth() {
   const emailCooldown = useRef(new OtpResendCooldown());
   const [phoneResendRemainingMs, setPhoneResendRemainingMs] = useState(0);
   const [emailResendRemainingMs, setEmailResendRemainingMs] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    setAccountStatus('unknown');
+    if (session) void supabase.rest<{ accountStatus: string }>('rpc/account_bootstrap', { method: 'POST', body: '{}' }, session)
+      .then((state) => { if (active && ['normal', 'restricted', 'suspended', 'banned'].includes(state.accountStatus)) setAccountStatus(state.accountStatus as 'normal' | 'restricted' | 'suspended' | 'banned'); })
+      .catch(() => { /* Offline or migration pending remains unknown. RLS enforces cloud writes independently. */ });
+    return () => { active = false; };
+  }, [session]);
 
   useEffect(() => {
     let isMounted = true;
@@ -155,5 +165,5 @@ export function useSupabaseAuth() {
     return nextSession;
   }, []);
 
-  return { session, isLoading, error: error ?? supabase.configError, status, authDebugInfo, isConfigured: supabase.isConfigured, featureFlags: authFeatureFlags, signUp, signIn, resendVerificationEmail, requestPasswordReset, signOut, signInWithOAuth, requestPhoneOtp, verifyPhoneOtp, verifyEmailOtp, phoneResendRemainingMs, emailResendRemainingMs };
+  return { session, accountStatus, isLoading, error: error ?? supabase.configError, status, authDebugInfo, isConfigured: supabase.isConfigured, featureFlags: authFeatureFlags, signUp, signIn, resendVerificationEmail, requestPasswordReset, signOut, signInWithOAuth, requestPhoneOtp, verifyPhoneOtp, verifyEmailOtp, phoneResendRemainingMs, emailResendRemainingMs };
 }

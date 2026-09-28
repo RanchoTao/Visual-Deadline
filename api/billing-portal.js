@@ -1,4 +1,5 @@
 import { createPaddleClient } from '../server/billing/paddle.js';
+import {assertAccountNormal,ApiError} from '../server/admin/runtime.js';
 import { createBillingRepository } from '../server/billing/repository.js';
 import { authenticateUser, recurringRuntime, sendJson, supabaseRuntime } from '../server/billing/runtime.js';
 
@@ -30,6 +31,7 @@ export default async function handler(request, response) {
   }
 
   try {
+    await assertAccountNormal(user.id);
     const repository = createBillingRepository(storage);
     const subscriptions = await repository.listUserSubscriptions(user.id, runtime.environment);
     const requestedId = typeof request.body?.subscriptionId === 'string' ? request.body.subscriptionId : null;
@@ -44,6 +46,7 @@ export default async function handler(request, response) {
     if (!url) throw new Error('Paddle did not return the requested portal link.');
     return sendJson(response, 200, { ok: true, url });
   } catch (error) {
+    if(error instanceof ApiError) return sendJson(response,error.status,{ok:false,code:error.code,error:'账号或权限服务当前不允许此操作。'});
     console.error('[VD_BILLING_PORTAL_FAILED]', { userId: user.id, message: error instanceof Error ? error.message : String(error) });
     return sendJson(response, 502, { ok: false, code: 'BILLING_PORTAL_FAILED', error: '暂时无法打开订阅管理，请稍后重试。' });
   }

@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import {assertAccountNormal,ApiError} from '../server/admin/runtime.js';
 import { normalizeProviderEnvironment } from '../server/billing/domain.js';
 
 const PLAN_CATALOG = {
@@ -95,6 +96,7 @@ export default async function handler(request, response) {
 
   const user = token ? await getUser(supabaseUrl, anonKey, token).catch(() => null) : null;
   if (!user?.id) return send(response, 401, { ok: false, code: 'AUTH_REQUIRED', error: '请先登录 VD 后再开通会员。' });
+  try {await assertAccountNormal(user.id);} catch(error) {return send(response,error instanceof ApiError?error.status:503,{ok:false,code:error instanceof ApiError?error.code:'AUTHORITY_UNAVAILABLE',error:'账号或权限服务当前不允许此操作。'});}
 
   const planCode = typeof request.body?.planCode === 'string' ? request.body.planCode : '';
   const plan = PLAN_CATALOG[planCode];

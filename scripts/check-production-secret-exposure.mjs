@@ -1,7 +1,8 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 const roots = ['src', 'public'];
+if (existsSync('dist')) roots.push('dist');
 const files = [];
 function visit(path) {
   for (const entry of readdirSync(path, { withFileTypes: true })) {
@@ -17,6 +18,10 @@ const forbiddenBrowserEnvironmentNames = [
   'VITE_PADDLE_API_KEY',
   'VITE_PADDLE_WEBHOOK_SECRET',
   'VITE_CRON_SECRET',
+  'VD_ADMIN_API_TOKEN',
+  'VD_ADMIN_RECEIPT_KEY',
+  'TURNSTILE_SECRET_KEY',
+  'VD_BETA_RATE_KEY',
 ];
 
 for (const file of files) {

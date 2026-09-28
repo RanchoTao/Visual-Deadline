@@ -23,6 +23,10 @@ A pressure-aware, visualization-driven life operating system for deadlines, prio
 
 ## What is VD?
 
+### Internal Admin backend v1
+
+The independent Admin-1 console remains contract-tested. This repository now provides the authoritative Admin API, transactional audits, Free / Plus / Pro operator grants, durable beta AI quota, account controls and invitation/email outbox infrastructure. Production Admin requires Supabase MFA/AAL2. No production operational write, deployment or email sender is enabled by this change; isolated Supabase acceptance and server configuration are required. See the [implementation report](docs/admin/VD_ADMIN_V1_IMPLEMENTATION_REPORT.md), [security review](docs/admin/VD_ADMIN_V1_SECURITY_REVIEW.md) and [rollback guide](docs/admin/VD_ADMIN_V1_ROLLBACK.md).
+
 **Visual Deadline (VD)** is not a traditional todo list. It is a **life operating system** that makes invisible pressure visible.
 
 Most task apps ask: “What do you need to do?” VD asks a deeper question:
