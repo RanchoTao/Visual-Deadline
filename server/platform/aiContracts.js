@@ -94,4 +94,3 @@ export function validateProviderOutput(payload, choice) {
   }
   return content;
 }
-
