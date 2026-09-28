@@ -16,3 +16,19 @@ export async function grantEntitlement(context, requestId, input) {
 }
 export async function revokeEntitlement(context, requestId, grantId, reason) { const grant = await serviceJson('/rest/v1/rpc/beta_revoke_entitlement', { method: 'POST', body: JSON.stringify({ p_actor: context.user.id, p_request: requestId, p_grant: grantId, p_reason: String(reason || 'admin_revoke').slice(0, 500) }) }); return { grant, effective: await effectiveEntitlement(grant.user_id) }; }
 export async function createInvite(context, requestId, input) { const code = makeInviteCode(); const invite = await serviceJson('/rest/v1/rpc/beta_create_invite', { method: 'POST', body: JSON.stringify({ p_actor: context.user.id, p_request: requestId, p_hash: sha256(code), p_prefix: code.slice(0, 7), p_cohort: input.cohortId || null, p_uses: Number.isInteger(input.maxUses) ? input.maxUses : 1, p_expires: input.expiresAt || null, p_note: typeof input.note === 'string' ? input.note.slice(0, 1000) : null }) }); return { invite: { ...invite, code }, requestId }; }
+export async function grantQuota(context, requestId, input) {
+  const unlimited = input.unlimited === true;
+  if (!input.userId || (!unlimited && (!Number.isInteger(input.amount) || input.amount < 0))) throw new Error('ADMIN_INPUT_INVALID');
+  return serviceJson('/rest/v1/rpc/beta_grant_quota', { method: 'POST', body: JSON.stringify({
+    p_actor: context.user.id, p_request: requestId, p_user: input.userId, p_amount: unlimited ? null : input.amount,
+    p_unlimited: unlimited, p_from: input.validFrom || new Date().toISOString(), p_until: input.validUntil || null,
+    p_reason: String(input.reason || 'admin_quota_grant').slice(0, 500),
+  }) });
+}
+export async function resetQuota(context, requestId, input) {
+  if (!input.userId) throw new Error('ADMIN_INPUT_INVALID');
+  // The database owns the current policy boundary; client-supplied dates/amounts cannot extend reset compensation.
+  return serviceJson('/rest/v1/rpc/beta_reset_quota', { method: 'POST', body: JSON.stringify({
+    p_actor: context.user.id, p_request: requestId, p_user: input.userId, p_reason: String(input.reason || 'admin_quota_reset').slice(0, 500),
+  }) });
+}

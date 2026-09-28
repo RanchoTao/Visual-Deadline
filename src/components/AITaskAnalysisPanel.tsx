@@ -2,7 +2,7 @@ import { useMemo, useState, type FormEvent } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { storageKeys } from '../storage';
 import type { AIArtifactInput, PressureBreakdown, Task } from '../types/task';
-import { defaultAISettings, getAIConnectionLabel, getProviderDefaults, isDeveloperAIKeyMode, normalizeAISettings, requestChatCompletion, type AIProvider, type AISettings } from '../services/aiClient';
+import { defaultAISettings, getAIConnectionLabel, getProviderDefaults, isDeveloperAIKeyMode, normalizeAISettings, requestChatCompletionWithProvenance, type AIProvider, type AISettings } from '../services/aiClient';
 import { buildTaskAnalysisUserPrompt, createTaskAnalysisPayload, taskAnalysisSystemPrompt } from '../services/taskAnalysisPrompt';
 import { AIReportRenderer } from './AIReportRenderer';
 import { ModalPortal } from './ModalPortal';
@@ -61,18 +61,18 @@ export function AITaskAnalysisPanel({ tasks, pressure, onAIConnected, onAIReport
     try {
       const payload = createTaskAnalysisPayload(tasks, pressure);
       const userPrompt = buildTaskAnalysisUserPrompt(payload);
-      const result = await requestChatCompletion(settings, taskAnalysisSystemPrompt, userPrompt, { mode: 'pressure_analysis', context: { tasks, pressure } });
-      setReport(result);
+      const result = await requestChatCompletionWithProvenance(settings, taskAnalysisSystemPrompt, userPrompt, { mode: 'pressure_analysis', context: { tasks, pressure } });
+      setReport(result.content);
       setAnalysisState('success');
       onAIReportGenerated?.({
         kind: 'task-analysis',
         title: '认知压力报告',
-        content: result,
+        content: result.content,
         relatedTaskIds: tasks.map((task) => task.id),
         relatedGoalIds: [],
         pressure: pressure?.rawPressure,
-        model: settings.model,
-        metadata: { provider: settings.provider, taskCount: tasks.length },
+        model: result.model,
+        metadata: { provider: result.provider, generatedAt: result.generatedAt, taskCount: tasks.length },
       });
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'AI 分析请求失败，请稍后重试。');

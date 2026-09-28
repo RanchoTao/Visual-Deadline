@@ -171,3 +171,39 @@ See `CLOSED_BETA_READINESS_REPORT.md` for exact control semantics and remaining 
 - Database runtime: isolated native PostgreSQL 17.9 + pgTAP 1.3.4. Auth/Storage base objects use the documented test bootstrap, not a running GoTrue/SMTP stack. No remote project was mutated. No actual DeepSeek/Cloudflare/email provider call is claimed.
 - Validation commands: `npm test`, `npm run typecheck`, `npm run build`, `git diff --check`, `node scripts/test-closed-beta-postgres.mjs`, local `supabase db advisors --type security --level error --fail-on error`. Final command results are recorded in the readiness report and PR handoff.
 - Remaining deployment/product gates: staging Auth/SMTP/Turnstile and durable limiter setup; Paddle environment-isolation acceptance; Aliyun SMS timeout; authenticated mobile overflow. Review-fix validation does not remove those gates or authorize merge/rollout.
+
+## PR #139 re-review — two P1 follow-up fixes
+
+### AI flow and evidence
+
+1. Browser sends a mode, bounded user input/context and an optional allowlisted contract variant, never authoritative systemInstructions. Developer-local provider mode stays compatible.
+2. /api/ai validates the contract before quota reservation. The server supplies canonical feature-specific system instructions in the actual provider system role. Historical review, legacy review and goal-roadmap variants are explicitly allowlisted for their modes.
+3. Capture/goal decomposition (and the existing goal roadmap) use DeepSeek JSON object response mode plus server JSON/shape validation. Decomposition IDs, dates, milestones, categories, importance and dependency cycles are checked. Invalid or truncated output is rejected before successful usage/artifact creation; text review/analysis remains unchanged Markdown.
+4. Server provenance comes from the provider response model (configured request model only when the provider omits its model), server completion timestamp and actual provider. Usage finalization records the returned model. Capture passes provenance through interpretation/review/confirmation; Plan and compatible report artifacts also persist it. No browser-default model is substituted.
+5. Tests inspect the exact outbound provider request for five modes and three retained variants, exercise the real JSON parsers and run the actual browser Capture -> API -> provider-fixture -> artifact-provenance path. No live model acceptance is claimed.
+
+Reference: [DeepSeek JSON mode](https://api-docs.deepseek.com/guides/json_mode/).
+
+### Quota and audit transaction
+
+- Additive migration: `20260928061948_closed_beta_ai_contracts_quota_periods.sql`. No existing migration was changed in this follow-up.
+- Canonical period: configured ai_quota_policies.period_interval, UTC [start,end), anchor 2000-01-01. Fixed durations, months, years and positive mixed calendar intervals are supported; session timezone/DST cannot alter boundaries.
+- Reset inserts/updates one finite period_reset compensation record equal to current used count and expiring exactly at period end. Repeated resets do not stack. Period matching prevents old reset compensation applying after policy changes; manual grants and explicit unlimited access remain separate.
+- Grant/reset/consume share a user advisory transaction lock. Service-only beta_grant_quota/beta_reset_quota recheck actor permissions and commit mutation + audit together. Audit failure rolls back both new grants and reset inserts/updates. Existing RLS, owner reads, browser mutation denial and function grants are preserved.
+
+### Changed files in this follow-up
+
+- Server/API: `api/ai.js`, `api/admin.js`, `server/platform/aiContracts.js`, `server/platform/admin.js`, `server/platform/repository.js`.
+- Browser provenance/contract wiring: `src/services/aiClient.ts`, `src/domain/capture/interpreter.ts`, `src/App.tsx`; CaptureIntakePanel, PlanPage, ReviewPage, AIReviewPanel, AITaskAnalysisPanel and GoalRoadmapPanel.
+- Database/validation: new migration above; `supabase/tests/closed_beta_quota_periods_test.sql`; `scripts/test-closed-beta-postgres.mjs`, `scripts/check-v2-migrations.mjs`; closedBetaPlatform, captureFirst and reviewWorkspace test files.
+- Evidence: `CLOSED_BETA_READINESS_REPORT.md`, this document and PR #139 body. No local environment files, billing/provider code, Production settings or unrelated files are included.
+
+### Executed validation
+
+- `npm test`: **339/339**, including 22 new behavior cases; additive static lint (10 migrations), SPA routing and 187-browser-file secret scan pass.
+- `npm run typecheck`, `npm run build`, `git diff --check`: pass; existing non-fatal bundle-size advisory remains.
+- `node scripts/test-closed-beta-postgres.mjs`: fresh empty local database, **15-migration chain** and **314 pgTAP assertions** pass (114 Closed Beta + 56 quota periods + 77 billing privileges + 32 recurring RLS + 21 lifecycle + 14 legacy).
+- Real independent PostgreSQL connections: duplicate AI request admitted once; simultaneous resets produce one compensation row; reset/consumption serialize without lost or compounded quota.
+- Local `supabase db advisors --type security --level error --fail-on error`: no issues.
+- The prior verified evidence was 317/317, 14 migrations and 258 assertions. This follow-up supersedes those totals. The PR body no longer says SQL/pgTAP was not executed.
+- No remote migration, live DeepSeek/Turnstile/SMTP request, Paddle operation or Production deployment was performed. Local validation does not remove staging/provider/product gates or authorize merge.

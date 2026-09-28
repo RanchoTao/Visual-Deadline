@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { AIArtifactInput, Goal, GoalInput, GoalMilestone, Task, TaskInput } from '../types/task.js';
 import { buildGoalDecompositionMaterializationPlan, goalDecompositionSystemPrompt, parseGoalDecomposition, type GoalDecompositionDraft } from '../domain/plan/decomposition.js';
 import { getUnassignedGoalTasks, normalizeGoalMilestones, projectGoalPlanProgress, selectGoalTasks, validatePlanHierarchy, type GoalMilestoneUpdate } from '../domain/plan/hierarchy.js';
-import { defaultAISettings, requestChatCompletion } from '../services/aiClient.js';
+import { aiArtifactProvenance, defaultAISettings, requestChatCompletionWithProvenance, type AICompletionProvenance } from '../services/aiClient.js';
 import { getLifecycleStatusLabel } from '../utils/taskScoring.js';
 
 const milestoneStatusLabels: Record<GoalMilestone['status'], string> = { planned: '计划中', ready: '就绪', in_progress: '进行中', completed: '已完成', blocked: '受阻', skipped: '已跳过', archived: '已归档' };
@@ -59,6 +59,7 @@ export function PlanPage(props: Props) {
   const [editingMilestoneId, setEditingMilestoneId] = useState<string | undefined>();
   const [addingMilestone, setAddingMilestone] = useState(false);
   const [draft, setDraft] = useState<GoalDecompositionDraft | undefined>();
+  const [draftProvenance, setDraftProvenance] = useState<AICompletionProvenance>();
   const [aiError, setAiError] = useState<string | undefined>();
   const [isGenerating, setIsGenerating] = useState(false);
   const [existingTaskId, setExistingTaskId] = useState<string | undefined>();
@@ -66,19 +67,19 @@ export function PlanPage(props: Props) {
   const selectedGoal = props.goals.find((goal) => goal.id === selectedGoalId) ?? props.goals[0];
   const hierarchyWarnings = useMemo(() => validatePlanHierarchy(props.goals, props.tasks).warnings, [props.goals, props.tasks]);
 
-  useEffect(() => { setSelectedGoalId(undefined); setEditingGoal(false); setEditingMilestoneId(undefined); setAddingMilestone(false); setDraft(undefined); setAiError(undefined); setIsGenerating(false); setExistingTaskId(undefined); setExistingTaskMilestoneId(undefined); }, [props.ownerKey]);
+  useEffect(() => { setSelectedGoalId(undefined); setEditingGoal(false); setEditingMilestoneId(undefined); setAddingMilestone(false); setDraft(undefined); setDraftProvenance(undefined); setAiError(undefined); setIsGenerating(false); setExistingTaskId(undefined); setExistingTaskMilestoneId(undefined); }, [props.ownerKey]);
   useEffect(() => { if (selectedGoalId && !props.goals.some((goal) => goal.id === selectedGoalId)) setSelectedGoalId(undefined); }, [props.goals, selectedGoalId]);
   useEffect(() => { setExistingTaskId(undefined); setExistingTaskMilestoneId(undefined); }, [selectedGoal?.id]);
 
   async function generateDraft() {
     if (!selectedGoal) return;
-    setIsGenerating(true); setAiError(undefined); setDraft(undefined);
+    setIsGenerating(true); setAiError(undefined); setDraft(undefined); setDraftProvenance(undefined);
     try {
       const selectedGoalTasks = selectGoalTasks(props.tasks, selectedGoal.id);
-      const response = await requestChatCompletion(defaultAISettings, goalDecompositionSystemPrompt, JSON.stringify({ goal: { id: selectedGoal.id, title: selectedGoal.title, description: selectedGoal.description, category: selectedGoal.category, priority: selectedGoal.priority, successCriteria: selectedGoal.successCriteria, targetDate: selectedGoal.targetDate }, existingMilestones: normalizeGoalMilestones(selectedGoal.milestones), tasks: selectedGoalTasks.map((task) => ({ id: task.id, title: task.title, description: task.description, importance: task.importance, deadline: task.deadline, lifecycleStatus: task.lifecycleStatus, estimatedDuration: task.estimatedDuration, milestoneId: task.milestoneId, dependencyIds: task.dependencyIds })), legacyRoadmapSuggestions: selectedGoal.roadmapSuggestions }), { mode: 'goal_decompose', context: { goals: [selectedGoal], tasks: selectedGoalTasks } });
-      const parsed = parseGoalDecomposition(response, selectedGoalTasks, normalizeGoalMilestones(selectedGoal.milestones).map((milestone) => milestone.title));
+      const response = await requestChatCompletionWithProvenance(defaultAISettings, goalDecompositionSystemPrompt, JSON.stringify({ goal: { id: selectedGoal.id, title: selectedGoal.title, description: selectedGoal.description, category: selectedGoal.category, priority: selectedGoal.priority, successCriteria: selectedGoal.successCriteria, targetDate: selectedGoal.targetDate }, existingMilestones: normalizeGoalMilestones(selectedGoal.milestones), tasks: selectedGoalTasks.map((task) => ({ id: task.id, title: task.title, description: task.description, importance: task.importance, deadline: task.deadline, lifecycleStatus: task.lifecycleStatus, estimatedDuration: task.estimatedDuration, milestoneId: task.milestoneId, dependencyIds: task.dependencyIds })), legacyRoadmapSuggestions: selectedGoal.roadmapSuggestions }), { mode: 'goal_decompose', context: { goals: [selectedGoal], tasks: selectedGoalTasks } });
+      const parsed = parseGoalDecomposition(response.content, selectedGoalTasks, normalizeGoalMilestones(selectedGoal.milestones).map((milestone) => milestone.title));
       if (!parsed.ok) throw new Error(parsed.error);
-      setDraft(parsed.value);
+      setDraft(parsed.value); setDraftProvenance(response);
     } catch (error) { setAiError(error instanceof Error ? error.message : 'AI 分解失败，请重试。'); } finally { setIsGenerating(false); }
   }
 
@@ -87,8 +88,8 @@ export function PlanPage(props: Props) {
     try {
       buildGoalDecompositionMaterializationPlan(selectedGoal, draft);
       const materializedTaskIds = props.onMaterializeDecomposition(selectedGoal, draft);
-      props.onRecordArtifact({ kind: 'goal-roadmap', title: `${selectedGoal.title} 的计划分解`, content: `已确认 ${draft.milestones.filter((item) => item.included).length} 个里程碑和 ${draft.tasks.filter((item) => item.included).length} 个任务。`, relatedGoalIds: [selectedGoal.id], relatedTaskIds: materializedTaskIds, metadata: { milestoneCount: draft.milestones.filter((item) => item.included).length, taskCount: materializedTaskIds.length, decomposition: 'goal_decompose' } });
-      setDraft(undefined);
+      props.onRecordArtifact({ kind: 'goal-roadmap', title: `${selectedGoal.title} 的计划分解`, content: `已确认 ${draft.milestones.filter((item) => item.included).length} 个里程碑和 ${draft.tasks.filter((item) => item.included).length} 个任务。`, relatedGoalIds: [selectedGoal.id], relatedTaskIds: materializedTaskIds, model: draftProvenance?.model, metadata: { ...(draftProvenance ? aiArtifactProvenance(draftProvenance).metadata : {}), milestoneCount: draft.milestones.filter((item) => item.included).length, taskCount: materializedTaskIds.length, decomposition: 'goal_decompose' } });
+      setDraft(undefined); setDraftProvenance(undefined);
     } catch (error) { setAiError(error instanceof Error ? error.message : '请修正草稿后再确认。'); }
   }
 

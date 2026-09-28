@@ -76,7 +76,7 @@ test('session reload hydrates retained text and links while marking binary attac
 test('capture UI contracts fully reset cancel state, render review-only sections, and provide URL feedback', () => {
   const panel = readFileSync(new URL('../src/components/CaptureIntakePanel.tsx', import.meta.url), 'utf8');
   const composer = readFileSync(new URL('../src/components/MultimodalComposer.tsx', import.meta.url), 'utf8');
-  assert.match(panel, /function cancel\(\).*setCapture\(undefined\).*setReview\(undefined\).*setError\(undefined\).*setModel\(undefined\).*setState\('idle'\)/s);
+  assert.match(panel, /function cancel\(\).*setCapture\(undefined\).*setReview\(undefined\).*setError\(undefined\).*setProvenance\(undefined\).*setState\('idle'\)/s);
   assert.match(panel, /capture-review-commitments/); assert.match(panel, /capture-review-context/); assert.match(panel, /capture-review-ambiguities/);
   assert.match(composer, /setLinkNotice\('请输入有效的 http\/https URL。'\)/); assert.match(composer, /setLinkNotice\('该 URL 已添加。'\)/); assert.match(composer, /setLinkNotice\('最多可添加 10 个 URL。'\)/);
   assert.doesNotMatch(composer, /assets\.forEach\(\(asset\).*URL\.revokeObjectURL/s); assert.match(composer, /disposeActiveRecorder\(\)/);

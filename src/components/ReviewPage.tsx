@@ -64,7 +64,7 @@ export function ReviewPage(props: Props) {
     try {
       const inputFingerprint = await fingerprintReviewAnalysisInput(provenanceInput);
       if (id !== requestRef.current || ownerRef.current !== requestOwner || !inputsRemainCurrent() || requestSignature !== currentSnapshot(new Date().toISOString()).signature) return;
-      const result = await requestChatCompletionWithProvenance(defaultAISettings, reviewAnalysisSystemPrompt, JSON.stringify(snapshot.analysisInput), { mode: 'pressure_analysis', context: aiContext });
+      const result = await requestChatCompletionWithProvenance(defaultAISettings, reviewAnalysisSystemPrompt, JSON.stringify(snapshot.analysisInput), { mode: 'pressure_analysis', contract: 'review_history', context: aiContext });
       if (id !== requestRef.current || ownerRef.current !== requestOwner || !inputsRemainCurrent() || requestSignature !== currentSnapshot(new Date().toISOString()).signature) return;
       setAiDraft({ ...result, content: result.content.trim(), inputFingerprint, windowIdentity: reviewWindowIdentity(snapshot.window) }); setAiDraftWindow(snapshot.window); setAiDraftMetrics(snapshot.metrics); setAiDraftSignature(requestSignature); setAiStatus('idle');
     } catch { if (id === requestRef.current && ownerRef.current === requestOwner && inputsRemainCurrent()) setAiStatus('error'); }

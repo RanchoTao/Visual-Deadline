@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import type { AIArtifactInput, Goal, GoalInput, Task } from '../types/task';
-import { defaultAISettings, normalizeAISettings, requestChatCompletion, type AISettings } from '../services/aiClient';
+import { defaultAISettings, normalizeAISettings, requestChatCompletionWithProvenance, type AISettings } from '../services/aiClient';
 import { buildGoalRoadmapUserPrompt, goalRoadmapSystemPrompt, parseGoalRoadmapResponse } from '../services/goals/roadmapPrompt';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { storageKeys } from '../storage';
@@ -134,8 +134,8 @@ export function GoalRoadmapPanel({ goals, tasks, onSaveGoal, onDeleteGoal, onRoa
     setExpandedGoalId(goal.id);
     setRoadmapState({ loadingGoalId: goal.id });
     try {
-      const content = await requestChatCompletion(settings, goalRoadmapSystemPrompt, buildGoalRoadmapUserPrompt(goal, tasks), { mode: 'daily_plan', context: { goals: [goal], tasks } });
-      const result = parseGoalRoadmapResponse(content);
+      const content = await requestChatCompletionWithProvenance(settings, goalRoadmapSystemPrompt, buildGoalRoadmapUserPrompt(goal, tasks), { mode: 'daily_plan', contract: 'goal_roadmap', context: { goals: [goal], tasks } });
+      const result = parseGoalRoadmapResponse(content.content);
       onSaveGoal({ ...createGoalInput(goal), roadmapSuggestions: result.roadmapSuggestions }, goal.id);
       onRoadmapGenerated?.({
         kind: 'goal-roadmap',
@@ -143,8 +143,8 @@ export function GoalRoadmapPanel({ goals, tasks, onSaveGoal, onDeleteGoal, onRoa
         content: result.roadmapSuggestions.join('\n'),
         relatedTaskIds: tasks.filter((task) => goal.linkedTaskIds.includes(task.id) || task.linkedGoalIds?.includes(goal.id)).map((task) => task.id),
         relatedGoalIds: [goal.id],
-        model: settings.model,
-        metadata: { provider: settings.provider, goalTitle: goal.title, notes: result.notes },
+        model: content.model,
+        metadata: { provider: content.provider, generatedAt: content.generatedAt, goalTitle: goal.title, notes: result.notes },
       });
       setRoadmapState({});
     } catch (error) {

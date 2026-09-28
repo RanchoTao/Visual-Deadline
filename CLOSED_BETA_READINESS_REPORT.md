@@ -8,7 +8,7 @@
 
 ## Required external setup before production enablement
 
-1. Review and deploy both Closed Beta migrations to non-production staging first. Local PostgreSQL execution is complete; no remote deployment was performed during these review fixes.
+1. Review and deploy all three Closed Beta migrations to non-production staging first. Local PostgreSQL execution is complete; no remote deployment was performed during these review fixes.
 2. Configure server-only Supabase service role, DeepSeek, Turnstile secret, and an external rate-limit provider.
 3. Configure the browser Turnstile site key and validate Turnstile in the production hostname.
 4. Seed the initial owner `admin_roles` row and beta cohorts/invites through a controlled operator runbook.
@@ -69,4 +69,19 @@ Reproduce with an empty loopback database and pgTAP 1.3.4: install `embedded-pos
 4. Durable production rate limiting is required: production protected APIs deliberately return `RATE_LIMIT_UNAVAILABLE` rather than use the development in-memory limiter.
 5. Staging GoTrue creation/confirmation/resend + SMTP delivery, real Turnstile hostname/challenge, owner provisioning, operational recovery for uncertain registration outcomes, and full invite-registration acceptance remain to be exercised. No live email or live challenge was performed by mocked behavioral tests.
 
-FINAL_GATE: review-fix code/database validation PASS; public/production beta readiness HOLD pending the external gates above.
+## PR #139 re-review — AI output authority and quota periods
+
+- Server authority: `server/platform/aiContracts.js` selects canonical system instructions by mode. Browser prompts are not provider system instructions. Old open clients' envelopes are unwrapped only to recover userRequest; systemInstructions is discarded.
+- `task_advice` and `daily_plan` return concise Chinese Markdown. Pressure/task analysis, historical REVIEW, and compatible older review reports keep their existing Markdown section contracts. A bounded, server-validated contract selector preserves historical review and goal-roadmap variants without accepting arbitrary browser prompts.
+- Capture and goal decomposition require raw JSON only, DeepSeek `response_format: {type:"json_object"}`, a bounded output budget and server validation. Invalid JSON, malformed objects, duplicate IDs, invalid decomposition dates/dependencies/cycles and truncated output fail with 502 and failed usage, not a falsely successful artifact. The existing goal-roadmap JSON contract is retained.
+- Exact outbound request tests cover all five modes and each retained contract variant. Returned JSON is exercised with the real Capture, goal-decomposition and goal-roadmap parsers. No live DeepSeek request is claimed. Provider JSON-mode reference: https://api-docs.deepseek.com/guides/json_mode/.
+- Actual response model, server generatedAt and server provider are returned by /api/ai. The usage ledger records the returned model. Capture interpretation/confirmation and Plan/analysis/legacy review/goal-roadmap artifacts persist that provenance rather than default browser settings. REVIEW keeps its existing provenance/fingerprint path.
+- The new additive migration is `20260928061948_closed_beta_ai_contracts_quota_periods.sql`, created with Supabase CLI. Existing applied migrations were not edited in this follow-up.
+- The authoritative policy period is UTC, half-open [start,end), anchored at 2000-01-01. Positive calendar-month/year/mixed policy intervals use UTC calendar arithmetic; fixed intervals use date_bin. Invalid intervals fail closed. Both consumption and reset use the same policy snapshot, not a hard-coded monthly count.
+- Reset is finite period compensation for used requests. Its validUntil is always the current policy boundary. One uniquely keyed compensation row per user/period is updated on repeated reset; matching period metadata prevents an old reset applying after a policy-period change. Explicit manual finite/unlimited grants remain separate and compatible.
+- `beta_grant_quota` and `beta_reset_quota` recheck the admin actor, lock the same user key as consume_ai_quota, mutate and insert audit within one SQL transaction. Public/anon/authenticated EXECUTE is revoked; existing RLS and table ACLs remain intact. Real audit trigger failure proves rollback for a grant INSERT, first reset INSERT and subsequent reset UPDATE.
+- Fresh empty local PostgreSQL 17.9 database: all **15 migrations** executed; **314 pgTAP assertions** passed (existing 258 + 56 quota-period/security/rollback assertions). Two independent connections also verified concurrent resets create one compensation row and serialize with consumption.
+- Latest validation: `npm test` **339/339**, `npm run typecheck`, `npm run build`, `git diff --check`, 10-file additive migration lint, SPA routing and 187-file browser secret scan all pass. Local PostgreSQL security advisor reports no error-level issues. The prior verified milestone was 317 tests / 14 migrations / 258 assertions, not 297 tests or unexecuted SQL.
+- Native PostgreSQL uses the existing minimal Supabase Auth/Storage bootstrap. This is real SQL/RLS/transaction testing, not live GoTrue/SMTP, hosted deployment, Cloudflare or provider acceptance. No Production/Paddle settings, provider keys, rollout flags, remote database or routes were changed.
+
+FINAL_GATE: both re-review P1 fixes pass local code/database validation; external reviewer verification and staging/public-beta gates remain HOLD. Do not merge or enable rollout based on these local results.
