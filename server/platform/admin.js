@@ -1,34 +1,37 @@
 import { randomBytes } from 'node:crypto';
 import { assertAccountMayOperate, assertAdminRole, assertOwner } from './domain.js';
 import { appendAudit, findActiveAccountControl, findAdminRole } from './repository.js';
-import { requireAuthenticatedUser, serviceJson, sha256 } from './runtime.js';
+import { requireAuthenticatedUser, serviceJson } from './runtime.js';
 
 export async function requireAdmin(request, allowed) { const user = await requireAuthenticatedUser(request); const role = await findAdminRole(user.id); assertAdminRole(role, allowed); assertAccountMayOperate(await findActiveAccountControl(user.id)); return { user, role }; }
 export async function requireOwner(request) { const context = await requireAdmin(request, ['owner']); assertOwner(context.role); return context; }
 export function makeInviteCode() { return `VD-${randomBytes(16).toString('hex').toUpperCase()}`; }
 export async function audit(context, requestId, action, targetType, targetId, after, reason, before) { await appendAudit({ actor_user_id: context.user.id, action, target_type: targetType, target_id: String(targetId), reason: reason || null, before_json: before || null, after_json: after || null, request_id: requestId }); }
 export async function effectiveEntitlement(userId, at = new Date().toISOString()) { const rows = await serviceJson(`/rest/v1/entitlements?user_id=eq.${encodeURIComponent(userId)}&capability=eq.vd.plus&status=eq.active&valid_from=lte.${encodeURIComponent(at)}&or=(valid_until.is.null,valid_until.gt.${encodeURIComponent(at)})&order=valid_until.desc.nullsfirst`); return { allowed: Array.isArray(rows) && rows.length > 0, capability: 'vd.plus', sources: rows || [], validUntil: rows?.[0]?.valid_until || undefined }; }
-export async function grantEntitlement(context, requestId, input) {
-  const userId = typeof input.userId === 'string' ? input.userId : ''; const validFrom = typeof input.validFrom === 'string' ? input.validFrom : new Date().toISOString(); const durationDays = [1, 7, 30, 90].includes(input.durationDays) ? input.durationDays : undefined; const validUntil = input.permanent ? null : typeof input.validUntil === 'string' ? input.validUntil : durationDays ? new Date(Date.parse(validFrom) + durationDays * 86_400_000).toISOString() : ''; if (input.permanent) assertOwner(context.role); if (!userId || (!input.permanent && !validUntil)) throw new Error('ADMIN_INPUT_INVALID');
-  const grantType = ['beta', 'compensation', 'promotion', 'manual', 'testing'].includes(input.grantType) ? input.grantType : 'manual';
-  const result = await serviceJson('/rest/v1/rpc/beta_grant_entitlement', { method: 'POST', body: JSON.stringify({ p_actor: context.user.id, p_request: requestId, p_user: userId, p_from: validFrom, p_until: validUntil || null, p_type: grantType, p_reason: String(input.reason || 'admin_grant').slice(0, 500), p_note: typeof input.note === 'string' ? input.note.slice(0, 2000) : null }) });
-  return { ...result, effective: await effectiveEntitlement(userId) };
+export async function executeAdminCommand(context, requestId, action, input) {
+  // Send stable submitted data. The transaction resolves dates/randomness after replay lookup.
+  return serviceJson('/rest/v1/rpc/beta_admin_command', { method: 'POST', body: JSON.stringify({
+    p_actor: context.user.id, p_request: requestId, p_action: action, p_input: input,
+  }) });
 }
-export async function revokeEntitlement(context, requestId, grantId, reason) { const grant = await serviceJson('/rest/v1/rpc/beta_revoke_entitlement', { method: 'POST', body: JSON.stringify({ p_actor: context.user.id, p_request: requestId, p_grant: grantId, p_reason: String(reason || 'admin_revoke').slice(0, 500) }) }); return { grant, effective: await effectiveEntitlement(grant.user_id) }; }
-export async function createInvite(context, requestId, input) { const code = makeInviteCode(); const invite = await serviceJson('/rest/v1/rpc/beta_create_invite', { method: 'POST', body: JSON.stringify({ p_actor: context.user.id, p_request: requestId, p_hash: sha256(code), p_prefix: code.slice(0, 7), p_cohort: input.cohortId || null, p_uses: Number.isInteger(input.maxUses) ? input.maxUses : 1, p_expires: input.expiresAt || null, p_note: typeof input.note === 'string' ? input.note.slice(0, 1000) : null }) }); return { invite: { ...invite, code }, requestId }; }
+export async function grantEntitlement(context, requestId, input) {
+  if (input.permanent) assertOwner(context.role);
+  if (!input.userId || (!input.permanent && !input.validUntil && ![1,7,30,90].includes(input.durationDays))) throw new Error('ADMIN_INPUT_INVALID');
+  return executeAdminCommand(context, requestId, 'grant_entitlement', input);
+}
+export async function revokeEntitlement(context, requestId, grantId, reason) {
+  return executeAdminCommand(context, requestId, 'revoke_entitlement', { grantId, reason });
+}
+export async function createInvite(context, requestId, input) {
+  return executeAdminCommand(context, requestId, 'create_invite', input);
+}
 export async function grantQuota(context, requestId, input) {
   const unlimited = input.unlimited === true;
   if (!input.userId || (!unlimited && (!Number.isInteger(input.amount) || input.amount < 0))) throw new Error('ADMIN_INPUT_INVALID');
-  return serviceJson('/rest/v1/rpc/beta_grant_quota', { method: 'POST', body: JSON.stringify({
-    p_actor: context.user.id, p_request: requestId, p_user: input.userId, p_amount: unlimited ? null : input.amount,
-    p_unlimited: unlimited, p_from: input.validFrom || new Date().toISOString(), p_until: input.validUntil || null,
-    p_reason: String(input.reason || 'admin_quota_grant').slice(0, 500),
-  }) });
+  return (await executeAdminCommand(context, requestId, 'grant_quota', input)).grant;
 }
 export async function resetQuota(context, requestId, input) {
   if (!input.userId) throw new Error('ADMIN_INPUT_INVALID');
   // The database owns the current policy boundary; client-supplied dates/amounts cannot extend reset compensation.
-  return serviceJson('/rest/v1/rpc/beta_reset_quota', { method: 'POST', body: JSON.stringify({
-    p_actor: context.user.id, p_request: requestId, p_user: input.userId, p_reason: String(input.reason || 'admin_quota_reset').slice(0, 500),
-  }) });
+  return (await executeAdminCommand(context, requestId, 'reset_quota', input)).grant;
 }

@@ -5,10 +5,10 @@ import { fileURLToPath } from 'node:url';
 const migrationDirectory = new URL('../supabase/migrations/', import.meta.url);
 const migrationPath = fileURLToPath(migrationDirectory);
 const migrationFiles = readdirSync(migrationDirectory)
-  .filter((name) => name.endsWith('.sql') && (name.includes('v2_beta_') || name.includes('legacy_core_additive_baseline') || name === '20260924034628_v2_review_history.sql' || name === '20260924121019_v2_recurring_billing.sql' || name === '20260927101132_billing_service_role_table_privileges.sql' || name === '20260927174808_closed_beta_platform.sql' || name === '20260928023311_closed_beta_review_hardening.sql' || name === '20260928061948_closed_beta_ai_contracts_quota_periods.sql'))
+  .filter((name) => name.endsWith('.sql') && (name.includes('v2_beta_') || name.includes('legacy_core_additive_baseline') || name === '20260924034628_v2_review_history.sql' || name === '20260924121019_v2_recurring_billing.sql' || name === '20260927101132_billing_service_role_table_privileges.sql' || name === '20260927174808_closed_beta_platform.sql' || name === '20260928023311_closed_beta_review_hardening.sql' || name === '20260928061948_closed_beta_ai_contracts_quota_periods.sql' || name === '20260928141713_closed_beta_admin_command_hardening.sql'))
   .sort();
 
-if (migrationFiles.length !== 10) throw new Error(`Expected 10 additive V2/billing/closed-Beta migrations; found ${migrationFiles.length}: ${migrationFiles.join(', ')}`);
+if (migrationFiles.length !== 11) throw new Error(`Expected 11 additive V2/billing/closed-Beta migrations; found ${migrationFiles.length}: ${migrationFiles.join(', ')}`);
 
 const stripComments = (sql) => sql.replace(/\/\*[\s\S]*?\*\//g, '').replace(/--.*$/gm, '');
 const combined = migrationFiles.map((name) => stripComments(readFileSync(join(migrationPath, name), 'utf8'))).join('\n').toLowerCase();
@@ -162,4 +162,8 @@ for (const contract of ['beta_ai_quota_period', 'beta_ai_quota_snapshot', 'beta_
   if (!quotaHardening.includes(contract)) throw new Error(`Quota period/transaction hardening missing: ${contract}`);
 }
 if (/drop\s+table|truncate|disable\s+row\s+level\s+security/.test(quotaHardening)) throw new Error('Quota hardening must preserve data and RLS');
+const commandHardening = stripComments(readFileSync(join(migrationPath, '20260928141713_closed_beta_admin_command_hardening.sql'), 'utf8')).toLowerCase();
+for (const contract of ['admin_command_receipts', 'primary key(actor_user_id,request_id)', 'command_hash', 'idempotency_key_reused', 'vd_admin_private', 'beta_admin_command', 'beta_disable_invite', 'beta_review_application', 'ai_quota_supported_beta_tiers', 'cost_status', 'pricing_version']) {
+  if (!commandHardening.includes(contract)) throw new Error(`Missing final command hardening: ${contract}`);
+}
 console.log(`V2, recurring billing, and Closed Beta static SQL checks passed for ${migrationFiles.length} additive migrations.`);

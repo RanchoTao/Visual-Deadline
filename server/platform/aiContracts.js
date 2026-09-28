@@ -11,6 +11,12 @@ export const AI_CONTRACTS = Object.freeze({
   goal_decompose: { format: 'json', prompt: "You decompose ONE existing goal into an editable plan. Return JSON only, no Markdown.\nSchema:\n{\n  \"milestones\": [{\"id\":\"milestone-1\",\"title\":\"...\",\"description\":null,\"targetDate\":null,\"successCriteria\":null,\"status\":\"planned\"}],\n  \"tasks\": [{\"id\":\"task-1\",\"title\":\"...\",\"description\":null,\"importance\":5,\"deadline\":null,\"estimatedDuration\":60,\"category\":\"research\",\"milestoneDraftId\":\"milestone-1\",\"dependencyDraftIds\":[]}],\n  \"ambiguities\": [],\n  \"notes\": []\n}\nCreate 1-10 meaningful outcome/stage milestones when the goal merits decomposition. importance is 1-10 and is NOT urgency. A deadline needs evidence; use null if uncertain. estimatedDuration is minutes; use null if uncertain. Use only prerequisite dependencies, never cycles. Activity categories: task, schedule, entertainment, recovery, study, research, fitness, exercise, work, life, social, other. Do not schedule time, allocate resources, invent a root goal, produce checklist spam, motivation prose, or claim completion." },
 });
 const variants = { pressure_analysis: ['review_history', 'legacy_review'], daily_plan: ['goal_roadmap'] };
+const features = {
+  task_advice: 'task_analysis', daily_plan: 'daily_plan', pressure_analysis: 'pressure_analysis',
+  capture_interpret: 'capture_interpret', goal_decompose: 'goal_decompose',
+  goal_roadmap: 'goal_roadmap', review_history: 'review', legacy_review: 'review',
+};
+export function selectAIUsageFeature(payload) { return features[selectAIContract(payload).key]; }
 export function selectAIContract(payload) {
   if (!Object.hasOwn(AI_CONTRACTS, payload.mode) || (payload.contract !== undefined && !(variants[payload.mode] || []).includes(payload.contract))) throw new Error('AI_CONTRACT_INVALID');
   return { ...AI_CONTRACTS[payload.contract || payload.mode], key: payload.contract || payload.mode };

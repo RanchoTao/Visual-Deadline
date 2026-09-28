@@ -207,3 +207,28 @@ Reference: [DeepSeek JSON mode](https://api-docs.deepseek.com/guides/json_mode/)
 - Local `supabase db advisors --type security --level error --fail-on error`: no issues.
 - The prior verified evidence was 317/317, 14 migrations and 258 assertions. This follow-up supersedes those totals. The PR body no longer says SQL/pgTAP was not executed.
 - No remote migration, live DeepSeek/Turnstile/SMTP request, Paddle operation or Production deployment was performed. Local validation does not remove staging/provider/product gates or authorize merge.
+
+## PR #139 final hardening — four P1 and two P2 follow-ups
+
+### Implemented authority boundary
+
+- New additive migration: `20260928141713_closed_beta_admin_command_hardening.sql`, created via Supabase CLI. No earlier migration is edited in this follow-up.
+- All ten admin mutations now use one service-only `beta_admin_command` dispatcher. Actor/key receipt uniqueness, canonical SHA-256 action/input fingerprint and advisory transaction lock provide exact committed-result replay, with HTTP 409 `IDEMPOTENCY_KEY_REUSED` for different action/payload. Defaults, relative periods, IDs and invite randomness are resolved only on first execution. Replays recheck current actor authority and do not recompute effective access from later state.
+- Domain mutation, audit, receipt and private invite result commit together. Invite disable/application review acquire row locks, preserve before/after evidence, validate statuses and record database-authored reviewer/time. Audit, receipt and private-secret fault injection verifies rollback; failed commands do not poison their retry keys.
+- Invite plaintext is absent from audit/general receipts. Only a non-Data-API private schema stores the narrowly scoped replay secret. No application role, even service_role, can browse it; the dispatcher retrieves it for the matching authorized actor/key. Trusted DB owners/backups must treat it as sensitive. Direct worker execution is revoked to prevent receipt bypass. See `docs/ADMIN_API_CONTRACT.md` for retention/security assumptions and client retry contract.
+- Pro option A: explicitly unsupported for Closed Beta. Free + Plus remain authoritative; reserved Pro policy is disabled and cannot be accidentally enabled. No new capability, billing/provider logic, routes or rollout changes.
+- Canonical AI contract determines usage feature: roadmap is goal_roadmap, both review variants are review, plain pressure_analysis remains pressure_analysis, decomposition is goal_decompose. Provider/model/output/provenance authority from the earlier fix is preserved.
+- Central `aiPricing.js` uses optional versioned, server-only pricing configuration and provider token evidence. It distinguishes cached input and records estimates for the actual returned model. Missing/invalid pricing or insufficient usage stays NULL/unknown, not zero; explicit priced zero is tested separately. Existing default-zero rows with no pricing provenance are classified unknown. No actual tariff, pricing config or provider charge is invented/configured. Admin usage projection preserves unknown/zero/version distinctions.
+
+### Changed files
+
+`api/admin.js`, `api/ai.js`; `server/platform/admin.js`, `aiContracts.js`, new `aiPricing.js`, `repository.js`, `runtime.js`; new migration above; new `closed_beta_admin_commands_test.sql`, adapted existing platform/quota pgTAP suites; `scripts/test-closed-beta-postgres.mjs`, `scripts/check-v2-migrations.mjs`; `tests/closedBetaPlatform.test.mjs`; `docs/ADMIN_API_CONTRACT.md`; this document and `CLOSED_BETA_READINESS_REPORT.md`.
+
+### Executed validation — supersedes earlier totals
+
+- `npm test`: **356/356** pass, including 17 new HTTP retry/cost cases and expanded exact outbound provider feature/cost assertions. Static SQL lint covers 11 additive V2/billing/beta migrations; SPA routing and 187-file production browser secret scan pass.
+- `npm run typecheck`, `npm run build`, `git diff --check`: pass. Existing non-fatal bundle-size advisory remains.
+- Full empty local PostgreSQL 17.9 + pgTAP 1.3.4 chain: **16/16 migrations** applied; pre-beta admission preserved. All **13 pgTAP suites / 554 assertions** pass, including 146 new command/security/rollback assertions, existing billing, REVIEW, legacy coexistence, schema/owner RLS and quota periods.
+- Real two-connection PostgreSQL tests cover create_invite, grant_entitlement, grant_quota, reset_quota, account control, feature flag, invite disable and application review. A first open transaction forces the other connection to wait before commit; both return the original result, one receipt/audit, and reject changed payload/action. Actual runtime.sha256 of the returned invite matches its persisted hash and redeems successfully through the existing registration RPC. AI replay and consume/reset concurrency also pass.
+- The harness now discovers all root `*_test.sql` suites. Historical owner-RLS fixtures receive rolled-back pre-beta admission through a test-only Auth insert trigger, not disabled RLS; Closed Beta admission suites receive no bypass. All tests execute actual PostgreSQL ACL/RLS/locks, with the existing minimal Supabase Auth/Storage bootstrap, not live GoTrue.
+- Local error-level Supabase security advisor: no issues. No remote database migration, live provider request, secret/configuration change, Paddle/Production operation or merge performed. Reviewer verification and staging/public-beta acceptance remain HOLD.

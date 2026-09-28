@@ -1,12 +1,12 @@
 import { assertRateLimit, publicError, readEnv, readJson, requestId, requireAuthenticatedUser, sendJson } from '../server/platform/runtime.js';
 import { assertAccountMayOperate } from '../server/platform/domain.js';
 import { assertWorkspaceAdmission, consumeAIQuota, finalizeAIUsage, findActiveAccountControl } from '../server/platform/repository.js';
-import { buildProviderRequest, selectAIContract, validateProviderOutput } from '../server/platform/aiContracts.js';
+import { buildProviderRequest, selectAIContract, selectAIUsageFeature, validateProviderOutput } from '../server/platform/aiContracts.js';
+import { estimateAIUsageCost } from '../server/platform/aiPricing.js';
 
 const MAX_MESSAGE_LENGTH = 12_000;
 const MAX_CONTEXT_LENGTH = 60_000;
 const SUPPORTED_MODES = new Set(['task_advice', 'daily_plan', 'pressure_analysis', 'capture_interpret', 'goal_decompose']);
-const MODE_FEATURE = { task_advice: 'task_analysis', daily_plan: 'daily_plan', pressure_analysis: 'pressure_analysis', capture_interpret: 'capture_interpret', goal_decompose: 'goal_roadmap' };
 
 function validatePayload(payload) {
   if (!payload || typeof payload !== 'object') return '请求体必须是 JSON 对象。';
@@ -36,9 +36,9 @@ export default async function handler(request, response) {
   let user; let quotaReserved = false; const startedAt = Date.now(); let config;
   try {
     user = await requireAuthenticatedUser(request); await assertWorkspaceAdmission(user.id); assertAccountMayOperate(await findActiveAccountControl(user.id)); const payload = await readJson(request); const validation = validatePayload(payload); if (validation) return sendJson(response, 400, { ok: false, error: validation }, id);
-    assertRateLimit({ key: `ai:${user.id}`, limit: 30, windowMs: 60 * 60 * 1000 }); config = providerConfig(); quotaReserved = (await consumeAIQuota({ p_user_id: user.id, p_request_id: id, p_provider: config.provider, p_model: config.model, p_feature: MODE_FEATURE[payload.mode] })) === true;
+    assertRateLimit({ key: `ai:${user.id}`, limit: 30, windowMs: 60 * 60 * 1000 }); config = providerConfig(); quotaReserved = (await consumeAIQuota({ p_user_id: user.id, p_request_id: id, p_provider: config.provider, p_model: config.model, p_feature: selectAIUsageFeature(payload) })) === true;
     if (!quotaReserved) return sendJson(response, 429, { ok: false, error: '本周期 AI 使用额度已用完。' }, id);
-    const result = await callDeepSeek(payload, config); const usage = result.usage; await finalizeAIUsage({ userId: user.id, requestId: id, status: 'succeeded', model: result.model, inputTokens: Number(usage.prompt_tokens) || 0, cachedInputTokens: Number(usage.prompt_cache_hit_tokens) || 0, outputTokens: Number(usage.completion_tokens) || 0, totalTokens: Number(usage.total_tokens) || 0, latencyMs: Date.now() - startedAt });
+    const result = await callDeepSeek(payload, config); const usage = result.usage; await finalizeAIUsage({ userId: user.id, requestId: id, status: 'succeeded', model: result.model, cost: estimateAIUsageCost({ provider: config.provider, model: result.model, usage }, readEnv('VD_AI_PRICING_JSON')), inputTokens: Number(usage.prompt_tokens) || 0, cachedInputTokens: Number(usage.prompt_cache_hit_tokens) || 0, outputTokens: Number(usage.completion_tokens) || 0, totalTokens: Number(usage.total_tokens) || 0, latencyMs: Date.now() - startedAt });
     return sendJson(response, 200, { ok: true, content: result.content, generatedAt: result.generatedAt, model: result.model, provider: config.provider }, id);
   } catch (error) {
     if (user && quotaReserved) await finalizeAIUsage({ userId: user.id, requestId: id, status: 'failed', latencyMs: Date.now() - startedAt, errorCode: error instanceof Error ? error.message.slice(0, 120) : 'UNKNOWN' }).catch(() => undefined);

@@ -1,5 +1,5 @@
 import { MUTATING_ADMIN_ROLES } from '../server/platform/domain.js';
-import { audit, createInvite, effectiveEntitlement, grantEntitlement, grantQuota, resetQuota, requireAdmin, requireOwner, revokeEntitlement } from '../server/platform/admin.js';
+import { executeAdminCommand, createInvite, effectiveEntitlement, grantEntitlement, grantQuota, resetQuota, requireAdmin, requireOwner } from '../server/platform/admin.js';
 import { publicError, readJson, requestId, sendJson, serviceJson } from '../server/platform/runtime.js';
 
 const list = (path) => serviceJson(`/rest/v1/${path}`);
@@ -21,14 +21,11 @@ export default async function handler(request, response) {
       throw new Error('ADMIN_INPUT_INVALID');
     }
     if (action === 'grant_entitlement') return sendJson(response, 200, { ok: true, ...(await grantEntitlement(context, id, input) ) }, id);
-    if (action === 'revoke_entitlement') return sendJson(response, 200, { ok: true, ...(await revokeEntitlement(context, id, input.grantId, input.reason)) }, id);
+    if (action === 'revoke_entitlement') return sendJson(response, 200, { ok: true, ...(await executeAdminCommand(context, id, action, input)) }, id);
     if (action === 'create_invite') return sendJson(response, 201, { ok: true, ...(await createInvite(context, id, input)) }, id);
-    if (action === 'disable_invite') { const rows = await serviceJson(`/rest/v1/invite_codes?id=eq.${encodeURIComponent(input.inviteId)}`, { method: 'PATCH', body: JSON.stringify({ enabled: false }) }); await audit(context, id, 'invite_disable', 'invite_code', input.inviteId, rows?.[0], input.reason); return sendJson(response, 200, { ok: true }, id); }
-    if (action === 'review_application') { const rows = await serviceJson(`/rest/v1/beta_applications?id=eq.${encodeURIComponent(input.applicationId)}`, { method: 'PATCH', body: JSON.stringify({ status: input.status, review_note: input.reviewNote || null, reviewed_at: new Date().toISOString(), reviewed_by: context.user.id }) }); await audit(context, id, 'application_review', 'beta_application', input.applicationId, rows?.[0], input.reviewNote); return sendJson(response, 200, { ok: true }, id); }
-    if (action === 'set_account_control' || action === 'unban') { const control = await serviceJson('/rest/v1/rpc/beta_transition_account', { method: 'POST', body: JSON.stringify({ p_actor: context.user.id, p_request: id, p_user: input.userId, p_status: action === 'unban' ? 'active' : input.status, p_reason: input.reason || null, p_reason_code: input.reasonCode || 'manual', p_note: input.note || null, p_expires: input.expiresAt || null }) }); return sendJson(response, 200, { ok: true, control }, id); }
+    if (action === 'disable_invite' || action === 'review_application' || action === 'set_account_control' || action === 'unban' || action === 'set_feature_flag') return sendJson(response, 200, { ok: true, ...(await executeAdminCommand(context, id, action, input)) }, id);
     if (action === 'grant_quota') return sendJson(response, 201, { ok: true, grant: await grantQuota(context, id, input) }, id);
     if (action === 'reset_quota') return sendJson(response, 201, { ok: true, grant: await resetQuota(context, id, input) }, id);
-    if (action === 'set_feature_flag') { const flag = await serviceJson('/rest/v1/rpc/beta_set_feature_flag', { method: 'POST', body: JSON.stringify({ p_actor: context.user.id, p_request: id, p_key: input.key, p_scope: input.scopeType || 'global', p_scope_id: input.scopeId || null, p_enabled: Boolean(input.enabled), p_reason: input.reason || null }) }); return sendJson(response, 200, { ok: true, flag }, id); }
     throw new Error('ADMIN_INPUT_INVALID');
-  } catch (error) { if (error instanceof Error && error.message === 'ADMIN_INPUT_INVALID') return sendJson(response, 400, { ok: false, error: '管理员请求参数无效。' }, id); const [status, message] = publicError(error); return sendJson(response, status, { ok: false, error: message }, id); }
+  } catch (error) { if (error instanceof Error && error.message === 'ADMIN_INPUT_INVALID') return sendJson(response, 400, { ok: false, error: '管理员请求参数无效。' }, id); const [status, message] = publicError(error); return sendJson(response, status, { ok: false, error: message, ...(error?.message === 'IDEMPOTENCY_KEY_REUSED' ? { code: 'IDEMPOTENCY_KEY_REUSED' } : {}) }, id); }
 }

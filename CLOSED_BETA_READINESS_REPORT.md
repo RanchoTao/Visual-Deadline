@@ -85,3 +85,20 @@ Reproduce with an empty loopback database and pgTAP 1.3.4: install `embedded-pos
 - Native PostgreSQL uses the existing minimal Supabase Auth/Storage bootstrap. This is real SQL/RLS/transaction testing, not live GoTrue/SMTP, hosted deployment, Cloudflare or provider acceptance. No Production/Paddle settings, provider keys, rollout flags, remote database or routes were changed.
 
 FINAL_GATE: both re-review P1 fixes pass local code/database validation; external reviewer verification and staging/public-beta gates remain HOLD. Do not merge or enable rollout based on these local results.
+
+## PR #139 final hardening follow-up
+
+Four additional P1 fixes are implemented without expanding provider/product scope:
+
+- Actor-scoped exact-result idempotency for all admin mutations via service-only `beta_admin_command`. Canonical payload hash rejects key reuse for a different command. Mutation, audit, receipt and sensitive invite replay secret commit atomically; retries cannot duplicate grants/invites/audits or undo subsequent state.
+- Transactional invite disable and application review: target row locks, actor/status validation, before/after audit, server-authored reviewer/time and receipt. Audit/receipt/private-secret fault injection proves full rollback.
+- Closed Beta supports Free + Plus only. Reserved Pro seed remains present but disabled, with a constraint preventing accidental enablement; no vd.pro entitlement or provider expansion.
+- Private invite replay table is outside the Data API and has no application role privileges, even service_role. Current actor authorization is required to retrieve the matching code through the dispatcher. Codes are not in audit/general receipts. DB owners/backups remain a sensitive-data trust boundary.
+
+Both P2 follow-ups are also implemented: canonical contract feature attribution, and centralized versioned cached-token-aware cost estimates. Unconfigured/invalid/unmatched pricing is NULL/unknown, never fabricated zero. Admin API returns estimate status/version and distinguishes explicit zero; no actual provider tariff or cost configuration was assumed.
+
+New CLI-created additive migration: `20260928141713_closed_beta_admin_command_hardening.sql`. Prior migrations and billing/provider/Production settings are unchanged. The earlier worker RPCs are now internal-only; only the dispatcher can perform supported service-role admin mutations.
+
+Latest executed evidence (supersedes prior totals): `npm test` **356/356**; typecheck/build/diff/static routing/migration/secret checks pass. Full fresh isolated PostgreSQL 17.9 chain **16/16**; all 13 pgTAP suites **554/554**; real forced-lock-wait duplicate command tests for eight actions plus existing AI/quota concurrency pass. Returned invite code is checked with the real registration hash helper and successfully redeemed in SQL. Local error-level database security advisor reports no issues. Auth/Storage bootstrap is minimal test infrastructure; this is not hosted GoTrue/SMTP/provider acceptance. Detailed flow/commands/security assumptions are in `REVIEW_PREPARATION.md` and `docs/ADMIN_API_CONTRACT.md`.
+
+FINAL_GATE: local code/database hardening PASS; staging/provider/limiter/mobile gates and external reviewer verification remain HOLD. No remote migration was executed. Do not merge or activate rollout.
