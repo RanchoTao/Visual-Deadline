@@ -3,8 +3,8 @@ import { readFileSync } from 'node:fs';
 
 const config = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'));
 assert.deepEqual(config.rewrites, [
-  { source:'/api/v1/admin/:resource/actions',destination:'/api/admin-v1?vdResource=:resource&vdOperation=actions' },
-  { source:'/api/v1/admin/:resource',destination:'/api/admin-v1?vdResource=:resource' },
+  { source:'/api/v1/admin/:resource/actions',destination:'/api/admin?vdAdminV1=true&vdResource=:resource&vdOperation=actions' },
+  { source:'/api/v1/admin/:resource',destination:'/api/admin?vdAdminV1=true&vdResource=:resource' },
   { source:'/(.*)',destination:'/index.html' },
 ], 'Internal admin routing must precede the unchanged Vite SPA fallback.');
 

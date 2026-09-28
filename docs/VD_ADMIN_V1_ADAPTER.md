@@ -1,13 +1,14 @@
 # vd-admin-v1 跨仓库适配层
 
-本层把 Admin 的传输 DTO 映射到 PR #139 既有权威域；不复制授权、会员、额度或计费规则。未合并，未部署，未执行远程迁移，公开内测仍 HOLD。
+本层把 Admin 的传输 DTO 映射到 PR #139 既有权威域；不复制授权、会员、额度或计费规则。未合并，未执行远程迁移，公开内测仍 HOLD。Preview 构建证据见 PR 描述，不等同于已配置的可信双服务验收。
 
 ## 契约来源与连接方式
 
 - 只读核对 `RanchoTao/Visual-Deadline-Admin` 的 `docs/VD_ADMIN_CONTRACT.md`、contracts、catalog、projection、RBAC 与真实 gateway。
 - 基线提交：`f60840138af153d552c7bcb84b7ca605b225e4f0`。`tests/fixtures/vd-admin-v1-contract.json` 固定契约、源码 SHA-256（LF 规范化）及可供 Admin 测试消费的代表性 JSON 响应。没有修改 Admin 仓库或向其中复制业务规则。
 - Admin 的 `VD_ADMIN_API_URL` 应为 `https://<VD-host>/api/`，**包括 `/api/`**；其网关在此基址后拼接 `v1/admin/{resource}`。这是连接说明，不是已配置的部署。
-- `GET /api/v1/admin/{resource}`；`POST /api/v1/admin/{resource}/actions`。Vercel 两条显式 rewrite 指向同一个 `api/admin-v1.js`，排在原有 SPA fallback 前；其余 API、客户端路由与 billing cron 不变。
+- `GET /api/v1/admin/{resource}`；`POST /api/v1/admin/{resource}/actions`。Vercel 两条显式 rewrite 指向既有 `api/admin.js`，分别附带 `vdAdminV1=true&vdResource=:resource` 和额外的 `vdOperation=actions`，排在原有 SPA fallback 前；其余 API、客户端路由与 billing cron 不变。没有独立的 `api/admin-v1.js`，物理 API 入口共 12 个。
+- 共享入口只负责分发，不混合业务逻辑。原始 v1 路径或带显式标记及 `X-Admin-Contract: vd-admin-v1` 的 rewritten 请求进入内部适配器；普通 `/api/admin?action=...` 保留原有 Supabase 用户鉴权。标记不是秘密，也不证明来自 rewrite，伪造标记及契约仍无法绕过内部令牌、actor 与数据库角色验证。缺失/重复/数组/冲突标记不能意外激活 v1。Admin 网关无需知道这些内部参数。
 - 仅 VD 服务端读取 `VD_ADMIN_INTERNAL_TOKEN`；Admin 服务端使用同一个内部凭据。`.env.example` 只有空占位，不配置、打印或提交实际凭据，不使用 VITE/browser storage。浏览器构建秘密扫描覆盖此名称。
 
 ## 双重授权

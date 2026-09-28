@@ -1,9 +1,15 @@
 import { MUTATING_ADMIN_ROLES } from '../server/platform/domain.js';
 import { executeAdminCommand, createInvite, effectiveEntitlement, grantEntitlement, grantQuota, resetQuota, requireAdmin, requireOwner } from '../server/platform/admin.js';
 import { publicError, readJson, requestId, sendJson, serviceJson } from '../server/platform/runtime.js';
+import adminV1Handler, { isAdminV1Request } from '../server/platform/adminV1.js';
 
 const list = (path) => serviceJson(`/rest/v1/${path}`);
 export default async function handler(request, response) {
+  if (isAdminV1Request(request)) return adminV1Handler(request, response);
+  return legacyAdminHandler(request, response);
+}
+
+async function legacyAdminHandler(request, response) {
   const id = requestId(request);
   if (!['GET', 'POST'].includes(request.method)) { response.setHeader('Allow', 'GET, POST'); return sendJson(response, 405, { ok: false, error: '请求方法不受支持。' }, id); }
   try {

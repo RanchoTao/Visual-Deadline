@@ -7,6 +7,19 @@ export function header(request, name) {
   const key = Object.keys(request.headers || {}).find((item) => item.toLowerCase() === name.toLowerCase());
   return typeof request.headers?.[key] === 'string' ? request.headers[key] : '';
 }
+// The rewrite marker selects a protocol, not an authentication boundary. The
+// delegated handler still requires the internal token, contract, actor and DB role.
+export function isAdminV1Request(request) {
+  const url = new URL(request.url, 'http://internal.invalid');
+  if (/^\/api\/v1\/admin\/([a-z-]+)(\/actions)?$/.test(url.pathname)) return true;
+  if (url.pathname !== '/api/admin' || header(request, 'x-admin-contract') !== CONTRACT) return false;
+  const values = url.searchParams.getAll('vdAdminV1');
+  const value = request.query?.vdAdminV1;
+  if (values.length > 1 || Array.isArray(value)) return false;
+  if (value !== undefined && typeof value !== 'string') return false;
+  if (values.length && value !== undefined && values[0] !== value) return false;
+  return (value ?? values[0]) === 'true';
+}
 export function authenticateInternal(request) {
   const match = header(request,'authorization').match(/^Bearer ([^\s]+)$/i);
   if (!match) throw new AdminV1Error(401,'INTERNAL_AUTH_REQUIRED','需要内部服务凭据。');
@@ -31,10 +44,13 @@ function parseRoute(request) {
   }
   const match = url.pathname.match(/^\/api\/v1\/admin\/([a-z-]+)(\/actions)?$/);
   if (match) return {resource:match[1],actions:Boolean(match[2]),query:url.searchParams};
-  if (url.pathname !== '/api/admin-v1') throw new AdminV1Error(404,'ADMIN_RESOURCE_UNSUPPORTED');
+  // Keep the former internal parser shape for contract fixtures; it is no longer
+  // a deployed physical function. The shared entrypoint needs the explicit marker.
+  if (url.pathname !== '/api/admin-v1' && !(url.pathname === '/api/admin' && isAdminV1Request(request))) throw new AdminV1Error(404,'ADMIN_RESOURCE_UNSUPPORTED');
   const single = (key) => {
     const value = request.query?.[key] ?? url.searchParams.get(key);
     if (Array.isArray(value) || url.searchParams.getAll(key).length>1) throw new AdminV1Error(400,'ADMIN_INPUT_INVALID');
+    if (request.query?.[key] !== undefined && url.searchParams.has(key) && request.query[key] !== url.searchParams.get(key)) throw new AdminV1Error(400,'ADMIN_INPUT_INVALID');
     return value;
   };
   const resource=single('vdResource');

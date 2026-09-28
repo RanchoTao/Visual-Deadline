@@ -6,7 +6,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
 import ts from 'typescript';
-import handler from '../server/platform/adminV1.js';
+import handler from '../api/admin.js';
 
 const root=process.env.VD_TEST_ADMIN_REPO;
 if(!root)throw new Error('VD_TEST_ADMIN_REPO must point to the pinned, read-only Admin checkout');
@@ -60,7 +60,13 @@ try {
     finally{await client.query('reset role');client.release();}
   };
   const transport=async(url,init)=>{
-    const request={url:new URL(url).pathname+new URL(url).search,method:init.method||'GET',headers:Object.fromEntries(new Headers(init.headers)),body:init.body?JSON.parse(init.body):undefined};
+    const parsed = new URL(url);
+    const route = parsed.pathname.match(/^\/api\/v1\/admin\/([a-z-]+)(\/actions)?$/);
+    assert.ok(route, 'Actual Admin gateway must retain its public v1 route');
+    parsed.searchParams.set('vdAdminV1','true');
+    parsed.searchParams.set('vdResource',route[1]);
+    if(route[2]) parsed.searchParams.set('vdOperation','actions');
+    const request={url:'/api/admin?'+parsed.searchParams,method:init.method||'GET',headers:Object.fromEntries(new Headers(init.headers)),body:init.body?JSON.parse(init.body):undefined};
     const response={headers:{},status(code){this.statusCode=code;return this;},setHeader(k,v){this.headers[k]=v;return this;},end(body){this.body=body;}};
     await handler(request,response);assert.equal(response.headers['Cache-Control'],'no-store');
     return new Response(response.body,{status:response.statusCode,headers:response.headers});
