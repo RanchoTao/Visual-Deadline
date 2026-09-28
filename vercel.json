@@ -3,6 +3,8 @@
     { "path": "/api/billing-reconcile", "schedule": "17 3 * * *" }
   ],
   "rewrites": [
+    { "source": "/api/v1/admin/:resource/actions", "destination": "/api/admin-v1?vdResource=:resource&vdOperation=actions" },
+    { "source": "/api/v1/admin/:resource", "destination": "/api/admin-v1?vdResource=:resource" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

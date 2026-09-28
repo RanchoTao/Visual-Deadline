@@ -5,10 +5,10 @@ import { fileURLToPath } from 'node:url';
 const migrationDirectory = new URL('../supabase/migrations/', import.meta.url);
 const migrationPath = fileURLToPath(migrationDirectory);
 const migrationFiles = readdirSync(migrationDirectory)
-  .filter((name) => name.endsWith('.sql') && (name.includes('v2_beta_') || name.includes('legacy_core_additive_baseline') || name === '20260924034628_v2_review_history.sql' || name === '20260924121019_v2_recurring_billing.sql' || name === '20260927101132_billing_service_role_table_privileges.sql' || name === '20260927174808_closed_beta_platform.sql' || name === '20260928023311_closed_beta_review_hardening.sql' || name === '20260928061948_closed_beta_ai_contracts_quota_periods.sql' || name === '20260928141713_closed_beta_admin_command_hardening.sql'))
+  .filter((name) => name.endsWith('.sql') && (name.includes('v2_beta_') || name.includes('legacy_core_additive_baseline') || name === '20260924034628_v2_review_history.sql' || name === '20260924121019_v2_recurring_billing.sql' || name === '20260927101132_billing_service_role_table_privileges.sql' || name === '20260927174808_closed_beta_platform.sql' || name === '20260928023311_closed_beta_review_hardening.sql' || name === '20260928061948_closed_beta_ai_contracts_quota_periods.sql' || name === '20260928141713_closed_beta_admin_command_hardening.sql' || name === '20260928150104_closed_beta_admin_v1_adapter.sql'))
   .sort();
 
-if (migrationFiles.length !== 11) throw new Error(`Expected 11 additive V2/billing/closed-Beta migrations; found ${migrationFiles.length}: ${migrationFiles.join(', ')}`);
+if (migrationFiles.length !== 12) throw new Error(`Expected 12 additive V2/billing/closed-Beta migrations; found ${migrationFiles.length}: ${migrationFiles.join(', ')}`);
 
 const stripComments = (sql) => sql.replace(/\/\*[\s\S]*?\*\//g, '').replace(/--.*$/gm, '');
 const combined = migrationFiles.map((name) => stripComments(readFileSync(join(migrationPath, name), 'utf8'))).join('\n').toLowerCase();
@@ -166,4 +166,9 @@ const commandHardening = stripComments(readFileSync(join(migrationPath, '2026092
 for (const contract of ['admin_command_receipts', 'primary key(actor_user_id,request_id)', 'command_hash', 'idempotency_key_reused', 'vd_admin_private', 'beta_admin_command', 'beta_disable_invite', 'beta_review_application', 'ai_quota_supported_beta_tiers', 'cost_status', 'pricing_version']) {
   if (!commandHardening.includes(contract)) throw new Error(`Missing final command hardening: ${contract}`);
 }
+const adapter = stripComments(readFileSync(join(migrationPath, '20260928150104_closed_beta_admin_v1_adapter.sql'), 'utf8')).toLowerCase();
+for (const contract of ['adapter_command', 'beta_admin_v1_authorize', 'beta_admin_v1_read', 'beta_admin_v1_audit_receipt', 'beta_admin_command', 'pg_advisory_xact_lock', 'idempotency_key_reused', 'audit_receipt_missing', 'pro_not_supported', 'order by r.id limit $5']) {
+  if (!adapter.includes(contract)) throw new Error(`Missing Admin v1 contract: ${contract}`);
+}
+if (/grant\s+(?:all|execute|select|insert|update|delete).*\bto\s+(?:anon|authenticated|public)\b/.test(adapter)) throw new Error('Admin adapter exposes client privileges');
 console.log(`V2, recurring billing, and Closed Beta static SQL checks passed for ${migrationFiles.length} additive migrations.`);

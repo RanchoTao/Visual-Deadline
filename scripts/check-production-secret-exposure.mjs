@@ -17,6 +17,7 @@ const forbiddenBrowserEnvironmentNames = [
   'VITE_PADDLE_API_KEY',
   'VITE_PADDLE_WEBHOOK_SECRET',
   'VITE_CRON_SECRET',
+  'VD_ADMIN_INTERNAL_TOKEN',
 ];
 
 for (const file of files) {
