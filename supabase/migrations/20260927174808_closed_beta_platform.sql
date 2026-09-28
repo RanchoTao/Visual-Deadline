@@ -125,7 +125,7 @@ create table public.ai_quota_grants (
   revoked_at timestamptz,
   revoked_by uuid references auth.users(id) on delete set null,
   constraint ai_quota_grants_period_check check (valid_until is null or valid_until > valid_from),
-  constraint ai_quota_grants_amount_check check (unlimited or amount is not null)
+  constraint ai_quota_grants_amount_required_check check (unlimited or amount is not null)
 );
 
 create table public.ai_usage_events (

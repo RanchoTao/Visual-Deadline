@@ -1,6 +1,6 @@
 import { assertRateLimit, publicError, readEnv, readJson, requestId, requireAuthenticatedUser, sendJson } from '../server/platform/runtime.js';
 import { assertAccountMayOperate } from '../server/platform/domain.js';
-import { consumeAIQuota, finalizeAIUsage, findActiveAccountControl } from '../server/platform/repository.js';
+import { assertWorkspaceAdmission, consumeAIQuota, finalizeAIUsage, findActiveAccountControl } from '../server/platform/repository.js';
 
 const MAX_MESSAGE_LENGTH = 12_000;
 const MAX_CONTEXT_LENGTH = 60_000;
@@ -32,8 +32,8 @@ export default async function handler(request, response) {
   const id = requestId(request); if (request.method !== 'POST') { response.setHeader('Allow', 'POST'); return sendJson(response, 405, { ok: false, error: '只支持 POST 请求。' }, id); }
   let user; let quotaReserved = false; const startedAt = Date.now(); let config;
   try {
-    user = await requireAuthenticatedUser(request); assertAccountMayOperate(await findActiveAccountControl(user.id)); const payload = await readJson(request); const validation = validatePayload(payload); if (validation) return sendJson(response, 400, { ok: false, error: validation }, id);
-    assertRateLimit({ key: `ai:${user.id}`, limit: 30, windowMs: 60 * 60 * 1000 }); config = providerConfig(); quotaReserved = await consumeAIQuota({ p_user_id: user.id, p_request_id: id, p_provider: config.provider, p_model: config.model, p_feature: MODE_FEATURE[payload.mode] });
+    user = await requireAuthenticatedUser(request); await assertWorkspaceAdmission(user.id); assertAccountMayOperate(await findActiveAccountControl(user.id)); const payload = await readJson(request); const validation = validatePayload(payload); if (validation) return sendJson(response, 400, { ok: false, error: validation }, id);
+    assertRateLimit({ key: `ai:${user.id}`, limit: 30, windowMs: 60 * 60 * 1000 }); config = providerConfig(); quotaReserved = (await consumeAIQuota({ p_user_id: user.id, p_request_id: id, p_provider: config.provider, p_model: config.model, p_feature: MODE_FEATURE[payload.mode] })) === true;
     if (!quotaReserved) return sendJson(response, 429, { ok: false, error: '本周期 AI 使用额度已用完。' }, id);
     const result = await callDeepSeek(payload, config); const usage = result.usage; await finalizeAIUsage({ userId: user.id, requestId: id, status: 'succeeded', inputTokens: Number(usage.prompt_tokens) || 0, cachedInputTokens: Number(usage.prompt_cache_hit_tokens) || 0, outputTokens: Number(usage.completion_tokens) || 0, totalTokens: Number(usage.total_tokens) || 0, latencyMs: Date.now() - startedAt });
     return sendJson(response, 200, { ok: true, content: result.content, model: config.model, provider: config.provider }, id);

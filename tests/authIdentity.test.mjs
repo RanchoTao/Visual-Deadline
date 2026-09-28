@@ -22,10 +22,14 @@ test('providers default off, X uses the x identifier, and action gates reject be
   assert.throws(() => assertPhoneEnabled(disabled), /AUTH_PHONE_DISABLED/);
   assert.throws(() => assertEmailSignupEnabled(disabled), /AUTH_EMAIL_SIGNUP_DISABLED/);
   const enabled = createAuthFeatureFlags({ VITE_AUTH_X_ENABLED: 'true', VITE_AUTH_PHONE_ENABLED: 'true', VITE_AUTH_EMAIL_SIGNUP_ENABLED: 'true' });
-  assert.doesNotThrow(() => assertOAuthProviderEnabled(enabled, 'x'));
+  assert.throws(() => assertOAuthProviderEnabled(enabled, 'x'), /AUTH_OAUTH_DISABLED:x/);
   assert.doesNotThrow(() => assertPhoneEnabled(enabled));
   assert.doesNotThrow(() => assertEmailSignupEnabled(enabled));
   assert.equal('twitter' in enabled, false);
+  const oauthRequested = createAuthFeatureFlags({ VITE_AUTH_GOOGLE_ENABLED: 'true', VITE_AUTH_GITHUB_ENABLED: 'true', VITE_AUTH_X_ENABLED: 'true' });
+  for (const provider of ['google', 'github', 'x']) assert.throws(() => assertOAuthProviderEnabled(oauthRequested, provider), /AUTH_OAUTH_DISABLED/);
+  assert.equal(nextModeAfterEmailSignup({ requiresEmailVerification: true, verificationSent: false }), 'email-otp');
+  assert.equal(nextModeAfterEmailSignup({ requiresEmailVerification: true, verificationSent: true }), 'email-otp');
 });
 
 test('E.164 validation and resend cooldown are deterministic', () => {

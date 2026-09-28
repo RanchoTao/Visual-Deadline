@@ -71,9 +71,11 @@ export function useSupabaseAuth() {
     const response = await fetch('/api/beta-register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password, inviteCode }) });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(typeof body?.error === 'string' ? body.error : '注册暂时不可用，请稍后再试。');
-    emailCooldown.current.request();
-    setEmailResendRemainingMs(emailCooldown.current.remainingMs());
-    return null;
+    if (body.verificationSent) {
+      emailCooldown.current.request();
+      setEmailResendRemainingMs(emailCooldown.current.remainingMs());
+    }
+    return { requiresEmailVerification: true, verificationSent: body.verificationSent === true };
   }, []);
 
   const signIn = useCallback(async (email: string, password: string) => {

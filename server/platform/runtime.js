@@ -42,11 +42,14 @@ export function assertRateLimit({ key, limit, windowMs }) {
 export async function verifyTurnstile(token, remoteIp) {
   const secret = readEnv('TURNSTILE_SECRET_KEY');
   if (!secret) { if (isProductionRuntime()) throw new Error('TURNSTILE_REQUIRED'); if (readEnv('VD_ALLOW_TURNSTILE_BYPASS') !== 'true') throw new Error('TURNSTILE_REQUIRED'); return; }
+  if (!token) throw new Error('TURNSTILE_INVALID');
   const params = new URLSearchParams({ secret, response: token || '' }); if (remoteIp) params.set('remoteip', remoteIp);
   const result = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: params });
   const verdict = await result.json(); if (!result.ok || !verdict?.success) throw new Error('TURNSTILE_INVALID');
 }
 export function publicError(error) {
+  if (error?.message === 'AI_REQUEST_REPLAY') return [409, '该 AI 请求已提交，请勿重复发送。'];
+  if (error?.message === 'BETA_INVITE_REQUIRED') return [403, '请先使用邀请码完成内测注册。'];
   const messages = { AUTH_REQUIRED: [401, '请先登录。'], PLATFORM_STORAGE_NOT_CONFIGURED: [503, '服务端数据存储尚未配置。'], RATE_LIMITED: [429, '请求过于频繁，请稍后再试。'], RATE_LIMIT_UNAVAILABLE: [503, '服务端保护尚未配置，请稍后再试。'], TURNSTILE_REQUIRED: [503, '人机验证尚未配置，请稍后再试。'], TURNSTILE_INVALID: [400, '人机验证未通过，请重试。'], INVITE_INVALID: [400, '邀请码无效。'], INVITE_DISABLED: [400, '当前邀请码已停用。'], INVITE_EXPIRED: [400, '邀请码已过期。'], INVITE_EXHAUSTED: [400, '邀请码使用次数已满。'], INVITE_ALREADY_REDEEMED: [409, '该账户已兑换过邀请码。'], ACCOUNT_BLOCKED: [403, '当前账户无法执行此操作。'], ADMIN_REQUIRED: [403, '需要管理员权限。'], OWNER_REQUIRED: [403, '需要所有者权限。'] };
   const code = error instanceof Error ? error.message : ''; return messages[code] || [500, '服务暂时不可用，请稍后再试。'];
 }

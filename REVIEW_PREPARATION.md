@@ -156,3 +156,18 @@ The pre-existing untracked reviewer artifact `pr136.diff` was not modified or in
 
 - The local Vite runtime had no usable authenticated Supabase session/configuration, so visual interaction with the authenticated account, billing, and notification content still needs a signed-in desktop/mobile smoke test.
 - The legacy observation window, telemetry evidence, support runbook, and rollback rehearsal are intentionally not complete. They block disabling legacy reads/writes or any deletion, not the additive PR O routing/persistence implementation.
+
+## PR #139 — closed-beta HOLD review hardening
+
+See `CLOSED_BETA_READINESS_REPORT.md` for exact control semantics and remaining pre-beta gates.
+
+- Replay rejection is in `consume_ai_quota`; `api/ai.js` only calls DeepSeek after a fresh boolean reservation. Four prior-status tests, HTTP processor/concurrent replay tests, and real two-connection PostgreSQL locking evidence cover the authority boundary.
+- `server/platform/registration.js` owns prevalidate/create/redeem/dispatch and checks ambiguous redemption commits before compensation. Repository dispatch uses supported signup resend; UI explicitly distinguishes sent/unsent. OAuth action gates, phone existing-only OTP, Auth creation trigger and restrictive workspace RLS jointly enforce invite authority.
+- Browser Turnstile includes render/token/error/expiry/reset/cleanup; both client/server dev bypasses are explicit and unavailable in production.
+- Account transitions, admin grant/revoke, invite creation and flag changes each call a service-only SQL RPC. Actor checks, mutations and audit are transactional. Account history is superseded, not deleted; backend audit UPDATE/DELETE is revoked. Grant/revoke does not mutate Paddle subscriptions or unrelated entitlements.
+- New migration: `20260928023311_closed_beta_review_hardening.sql`. Real chain execution also required renaming a conflicting constraint in the original, not-yet-deployed Closed Beta migration. Existing deployed billing migrations were not edited.
+- Scope: platform/API registration/admin/AI boundaries; auth/Turnstile UI; two Closed Beta SQL files; pgTAP and behavior tests; isolated local PostgreSQL harness; static lint; `.env.example` explicit browser bypass default OFF; review/readiness documentation. No routes, billing provider rules, Production settings, secrets, or unrelated local files changed.
+- Executed database evidence: 14-migration empty-database chain; pre-beta account preservation; 258 passing pgTAP assertions (Closed Beta 114); actual concurrent replay; grant/revoke/invite/account audit-failure rollback; existing billing RLS/lifecycle/legacy preservation. Security advisor reports no error-level issues on the local database.
+- Database runtime: isolated native PostgreSQL 17.9 + pgTAP 1.3.4. Auth/Storage base objects use the documented test bootstrap, not a running GoTrue/SMTP stack. No remote project was mutated. No actual DeepSeek/Cloudflare/email provider call is claimed.
+- Validation commands: `npm test`, `npm run typecheck`, `npm run build`, `git diff --check`, `node scripts/test-closed-beta-postgres.mjs`, local `supabase db advisors --type security --level error --fail-on error`. Final command results are recorded in the readiness report and PR handoff.
+- Remaining deployment/product gates: staging Auth/SMTP/Turnstile and durable limiter setup; Paddle environment-isolation acceptance; Aliyun SMS timeout; authenticated mobile overflow. Review-fix validation does not remove those gates or authorize merge/rollout.
