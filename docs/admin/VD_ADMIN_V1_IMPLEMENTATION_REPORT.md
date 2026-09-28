@@ -2,7 +2,9 @@
 
 ## Status and boundaries
 
-Implemented from main `aeb969352b125e9c1a173abadf5c1f5a60c3149a` on `codex/vd-admin-v1`. Consumer is the independent Admin-1 console at `f60840138af153d552c7bcb84b7ca605b225e4f0`. The console remains contract-tested; this PR adds VD-owned SQL authority and local integration evidence. No remote migration, production operational write, deployment, real email, Paddle Production action, or merge has occurred.
+Implemented from main `aeb969352b125e9c1a173abadf5c1f5a60c3149a` on `codex/vd-admin-v1`. Consumer is the independent Admin-1 console at `f60840138af153d552c7bcb84b7ca605b225e4f0`. The console remains contract-tested; this PR adds VD-owned SQL authority and local integration evidence. No remote migration, production operational write, manual deployment, real email, Paddle Production action, or merge has occurred.
+
+Operational correction: the first authorized branch push triggered the repository's existing automatic Vercel Preview integration. Preview `dpl_FtboXA7iCN8xwLcKvkga2t4Ex8gD` was identified as preview-only, removed, and verified absent. No runtime/data requests were made to it. `git.deploymentEnabled["codex/vd-admin-v1"]=false` now prevents subsequent automatic branch deployments, following the [Vercel Git configuration](https://vercel.com/docs/project-configuration/git-configuration). Production was not promoted or changed. The first Linux CI install also exposed two missing optional peer entries in the inherited lockfile; the lock was repaired without changing direct dependencies.
 
 The existing `codex/closed-beta-platform` checkout and its three unpushed commits were preserved. Its proposed schema must be reconciled explicitly if that work lands before this PR.
 

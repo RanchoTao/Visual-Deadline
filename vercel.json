@@ -1,4 +1,5 @@
 {
+  "git": { "deploymentEnabled": { "codex/vd-admin-v1": false } },
   "crons": [{ "path": "/api/billing-reconcile", "schedule": "17 3 * * *" }],
   "rewrites": [
     {

@@ -2,7 +2,7 @@
 
 ## No deployment in this PR
 
-Review and merge are separate user decisions. This work has neither deployed nor applied migrations to a remote project. Admin-1 remains a contract-tested separate console; this VD API is its next authoritative dependency. Free/Plus/Pro is the target tier model; production Admin requires AAL2. Billing stays in its existing Sandbox acceptance scope.
+Review and merge are separate user decisions. No manual deployment or remote migration was performed. The first branch push triggered an existing automatic Vercel Preview; it was removed and verified absent, and this branch now disables automatic deployments in vercel.json. Production was unchanged. Admin-1 remains a contract-tested separate console; this VD API is its next authoritative dependency. Free/Plus/Pro is the target tier model; production Admin requires AAL2. Billing stays in its existing Sandbox acceptance scope.
 
 ## Staging adoption order
 
