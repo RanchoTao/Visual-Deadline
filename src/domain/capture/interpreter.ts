@@ -1,5 +1,5 @@
 import type { Goal, Task } from '../../types/task.js';
-import { requestChatCompletion, type AISettings } from '../../services/aiClient.js';
+import { requestChatCompletionWithProvenance, type AICompletionProvenance, type AISettings } from '../../services/aiClient.js';
 import { parseCaptureInterpretation } from './parser.js';
 import type { CaptureInput, CaptureInterpretation } from './types.js';
 
@@ -7,7 +7,7 @@ export const captureInterpretSystemPrompt = `Return JSON only in this exact shap
 export function buildCaptureInterpretUserPrompt(capture: CaptureInput, tasks: Task[], goals: Goal[], now: Date, timezone: string): string {
   return JSON.stringify({ capture: { text: capture.text, links: capture.links, assets: capture.assets.map(({ id, kind, name, mimeType, size, durationSeconds, availability, semanticCoverage }) => ({ id, kind, name, mimeType, size, durationSeconds, availability, semanticCoverage })) }, activeTasks: tasks.slice(0, 40).map(({ id, title, deadline }) => ({ id, title, deadline })), activeGoals: goals.slice(0, 30).map(({ id, title }) => ({ id, title })), currentDateTime: now.toISOString(), timezone }, null, 2);
 }
-export async function interpretCapture(settings: AISettings, capture: CaptureInput, tasks: Task[], goals: Goal[], now: Date, timezone: string): Promise<{ interpretation: CaptureInterpretation; model?: string }> {
-  const content = await requestChatCompletion(settings, captureInterpretSystemPrompt, buildCaptureInterpretUserPrompt(capture, tasks, goals, now, timezone), { mode: 'capture_interpret', context: { tasks: tasks.slice(0, 40), goals: goals.slice(0, 30) } });
-  return { interpretation: parseCaptureInterpretation(content, capture), model: settings.model };
+export async function interpretCapture(settings: AISettings, capture: CaptureInput, tasks: Task[], goals: Goal[], now: Date, timezone: string): Promise<{ interpretation: CaptureInterpretation; provenance: AICompletionProvenance }> {
+  const result = await requestChatCompletionWithProvenance(settings, captureInterpretSystemPrompt, buildCaptureInterpretUserPrompt(capture, tasks, goals, now, timezone), { mode: 'capture_interpret', context: { tasks: tasks.slice(0, 40), goals: goals.slice(0, 30) } });
+  return { interpretation: parseCaptureInterpretation(result.content, capture), provenance: { model: result.model, provider: result.provider, generatedAt: result.generatedAt } };
 }

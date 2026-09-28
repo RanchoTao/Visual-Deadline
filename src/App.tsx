@@ -14,6 +14,7 @@ import { TaskPage } from './components/TaskPage';
 import { TermsPage } from './components/TermsPage';
 import { V2AppShell } from './components/V2AppShell';
 import { BillingPage } from './components/BillingPage';
+import { BetaApplyPage } from './components/BetaApplyPage';
 import { NotificationsPage } from './components/NotificationsPage';
 import { PublicNotFound, PublicSite, isPublicSurface } from './components/PublicSite';
 import { useWorkspaceLocalStorage, WorkspaceOwnerProvider } from './hooks/useLocalStorage';
@@ -56,7 +57,7 @@ import { buildGoalDecompositionMaterializationPlan, type GoalDecompositionDraft 
 import { chooseNewerOpsState, normalizeOpsState } from './domain/ops/normalization';
 import { createDefaultOpsState, type OpsState } from './domain/ops/types';
 import { deleteTaskFromOpsState } from './domain/ops/plans';
-import { defaultAISettings } from './services/aiClient';
+import { aiArtifactProvenance, defaultAISettings, type AICompletionProvenance } from './services/aiClient';
 import { captureMilestoneLifecycleTransition, captureTaskLifecycleTransition, chooseNewerReviewState, createDefaultReviewState, normalizeReviewState, synchronizeReviewHistory, type ReviewState } from './domain/review';
 import { isAuthenticatedPath, isKnownAuthenticatedEntryPath, legacyRouteRedirect, safeAuthenticatedNext } from './lib/appRoutes';
 import { mergeNotifications, markNotificationRead as markNotificationReadLocally, NotificationReadReceiptQueue } from './domain/account/notifications';
@@ -1139,7 +1140,7 @@ function AuthenticatedApp() {
     setPublicPath(window.location.pathname);
   }
 
-  async function materializeCapture(capture: CaptureInput, interpretation: CaptureInterpretation, model?: string): Promise<void> {
+  async function materializeCapture(capture: CaptureInput, interpretation: CaptureInterpretation, provenance?: AICompletionProvenance): Promise<void> {
     if (!session?.user.id || capture.ownerKey !== `user:${session.user.id}` || currentAuthoritativeOwnerKey.current !== capture.ownerKey) throw new Error('工作区已切换，请重新开始本次整理。');
     if (!beginCaptureMaterialization(session.user.id, capture.id)) throw new Error('这次整理已经确认或正在保存。');
     try {
@@ -1154,7 +1155,7 @@ function AuthenticatedApp() {
       setGoals([...finalizedGoals, ...normalizedGoals]);
       setTasks([...finalizedTasks, ...normalizedTasks]);
       if (finalizedTasks.length) recordPressureSnapshot('task_created', [...finalizedTasks, ...normalizedTasks], `整理新增 ${finalizedTasks.length} 个任务。`);
-      saveAIArtifact({ kind: 'task-intake', title: '整理已确认', content: `已确认 ${finalizedGoals.length} 个目标和 ${finalizedTasks.length} 个任务。`, relatedTaskIds: finalizedTasks.map((task) => task.id), relatedGoalIds: finalizedGoals.map((goal) => goal.id), model, metadata: { captureId: capture.id, goalCount: finalizedGoals.length, taskCount: finalizedTasks.length, commitmentCount: plan.skippedCommitments.length, duplicateWarnings: plan.duplicateWarnings } });
+      saveAIArtifact({ kind: 'task-intake', title: '整理已确认', content: `已确认 ${finalizedGoals.length} 个目标和 ${finalizedTasks.length} 个任务。`, relatedTaskIds: finalizedTasks.map((task) => task.id), relatedGoalIds: finalizedGoals.map((goal) => goal.id), model: provenance?.model, metadata: { ...(provenance ? aiArtifactProvenance(provenance).metadata : {}), captureId: capture.id, goalCount: finalizedGoals.length, taskCount: finalizedTasks.length, commitmentCount: plan.skippedCommitments.length, duplicateWarnings: plan.duplicateWarnings } });
       consumeCaptureTransfer(session.user.id, capture.id); setPendingCapture(undefined);
     } catch (error) {
       abortCaptureMaterialization(session.user.id, capture.id);
@@ -1220,7 +1221,7 @@ function AuthenticatedApp() {
   }
 
   if (publicPath === '/login') {
-    return <AuthPanel isConfigured={isSupabaseConfigured} isLoading={isAuthLoading} error={authError} status={authStatus} authDebugInfo={authDebugInfo} featureFlags={authFeatureFlags} onSignIn={(email, password) => { capturePreAuthGuestSource(); return signIn(email, password); }} onSignUp={(email, password) => { capturePreAuthGuestSource(); return signUp(email, password); }} onResendVerification={resendVerificationEmail} onVerifyEmailOtp={verifyEmailOtp} onOAuth={(provider) => { capturePreAuthGuestSource(); return signInWithOAuth(provider); }} onRequestPhoneOtp={(phone) => { capturePreAuthGuestSource(); return requestPhoneOtp(phone); }} onVerifyPhoneOtp={(phone, token) => { capturePreAuthGuestSource(); return verifyPhoneOtp(phone, token); }} phoneResendRemainingMs={phoneResendRemainingMs} emailResendRemainingMs={emailResendRemainingMs} />;
+    return <AuthPanel isConfigured={isSupabaseConfigured} isLoading={isAuthLoading} error={authError} status={authStatus} authDebugInfo={authDebugInfo} featureFlags={authFeatureFlags} onSignIn={(email, password) => { capturePreAuthGuestSource(); return signIn(email, password); }} onSignUp={(email, password, inviteCode) => { capturePreAuthGuestSource(); return signUp(email, password, inviteCode); }} onResendVerification={resendVerificationEmail} onVerifyEmailOtp={verifyEmailOtp} onOAuth={(provider) => { capturePreAuthGuestSource(); return signInWithOAuth(provider); }} onRequestPhoneOtp={(phone) => { capturePreAuthGuestSource(); return requestPhoneOtp(phone); }} onVerifyPhoneOtp={(phone, token) => { capturePreAuthGuestSource(); return verifyPhoneOtp(phone, token); }} phoneResendRemainingMs={phoneResendRemainingMs} emailResendRemainingMs={emailResendRemainingMs} />;
   }
 
   if (isAuthenticatedPath(publicPath) && !session) {
@@ -1330,6 +1331,7 @@ function App() {
     setPath(window.location.pathname);
   }
 
+  if (path === '/beta/apply') return <BetaApplyPage onNavigate={navigate} />;
   if (isPublicSurface(path)) return <PublicSite path={path} onNavigate={navigate} />;
   if (!isKnownAuthenticatedEntryPath(path)) return <PublicNotFound onNavigate={navigate} />;
   return <AuthenticatedApp />;

@@ -5,10 +5,10 @@ import { fileURLToPath } from 'node:url';
 const migrationDirectory = new URL('../supabase/migrations/', import.meta.url);
 const migrationPath = fileURLToPath(migrationDirectory);
 const migrationFiles = readdirSync(migrationDirectory)
-  .filter((name) => name.endsWith('.sql') && (name.includes('v2_beta_') || name.includes('legacy_core_additive_baseline') || name === '20260924034628_v2_review_history.sql' || name === '20260924121019_v2_recurring_billing.sql' || name === '20260927101132_billing_service_role_table_privileges.sql'))
+  .filter((name) => name.endsWith('.sql') && (name.includes('v2_beta_') || name.includes('legacy_core_additive_baseline') || name === '20260924034628_v2_review_history.sql' || name === '20260924121019_v2_recurring_billing.sql' || name === '20260927101132_billing_service_role_table_privileges.sql' || name === '20260927174808_closed_beta_platform.sql' || name === '20260928023311_closed_beta_review_hardening.sql' || name === '20260928061948_closed_beta_ai_contracts_quota_periods.sql' || name === '20260928141713_closed_beta_admin_command_hardening.sql' || name === '20260928150104_closed_beta_admin_v1_adapter.sql'))
   .sort();
 
-if (migrationFiles.length !== 7) throw new Error(`Expected 4 PR E migrations plus PR M and two PR N migrations, found ${migrationFiles.length}: ${migrationFiles.join(', ')}`);
+if (migrationFiles.length !== 12) throw new Error(`Expected 12 additive V2/billing/closed-Beta migrations; found ${migrationFiles.length}: ${migrationFiles.join(', ')}`);
 
 const stripComments = (sql) => sql.replace(/\/\*[\s\S]*?\*\//g, '').replace(/--.*$/gm, '');
 const combined = migrationFiles.map((name) => stripComments(readFileSync(join(migrationPath, name), 'utf8'))).join('\n').toLowerCase();
@@ -23,7 +23,8 @@ const forbidden = [
   [/\balter\s+table\s+public\.(?:tasks|goals|pressure_logs)\s+(?:alter|drop|rename)\b/, 'incompatible legacy ALTER'],
 ];
 
-for (const [pattern, label] of forbidden) if (pattern.test(combined)) throw new Error(`PR E migration lint rejected ${label}`);
+const preClosedBetaCombined = migrationFiles.filter((name) => !name.includes('closed_beta_')).map((name) => stripComments(readFileSync(join(migrationPath, name), 'utf8'))).join('\n').toLowerCase();
+for (const [pattern, label] of forbidden) if (pattern.test(preClosedBetaCombined)) throw new Error(`PR E migration lint rejected ${label}`);
 
 const baseline = stripComments(readFileSync(join(migrationPath, '20260726000000_legacy_core_additive_baseline.sql'), 'utf8')).toLowerCase();
 for (const requiredValidation of [
@@ -108,6 +109,37 @@ for (const table of ['billing_orders', 'membership_grants', 'memberships', 'bill
   }
 }
 
+const closedBeta = stripComments(readFileSync(join(migrationPath, '20260927174808_closed_beta_platform.sql'), 'utf8')).toLowerCase();
+for (const [pattern, label] of forbidden.filter(([pattern]) => !String(pattern).includes('update'))) if (pattern.test(closedBeta)) throw new Error(`Closed Beta migration lint rejected ${label}`);
+for (const table of ['beta_cohorts', 'beta_applications', 'invite_codes', 'invite_redemptions', 'admin_roles', 'admin_audit_log', 'admin_access_grants', 'ai_quota_policies', 'ai_quota_grants', 'ai_usage_events', 'account_controls', 'moderation_cases', 'user_feedback', 'feature_flags', 'email_events']) {
+  if (!closedBeta.includes(`create table public.${table}`)) throw new Error(`Missing Closed Beta table ${table}`);
+  if (!closedBeta.includes(`'${table}'`) || !closedBeta.includes("alter table public.%i enable row level security")) throw new Error(`Missing Closed Beta RLS enablement for ${table}`);
+}
+for (const requiredContract of [
+  'create function public.redeem_beta_invite',
+  'pg_advisory_xact_lock',
+  "raise exception 'invite_exhausted'",
+  'grant execute on function public.redeem_beta_invite(text, uuid, text, text) to service_role',
+  'create function public.consume_ai_quota',
+  'constraint ai_quota_grants_amount_required_check',
+  'grant execute on function public.consume_ai_quota(uuid, uuid, text, text, text) to service_role',
+]) if (!closedBeta.includes(requiredContract)) throw new Error(`Closed Beta migration is missing contract: ${requiredContract}`);
+if (/grant\s+(?:select,\s*)?insert(?:,\s*update)?(?:,\s*delete)?\s+on\s+table\s+public\.(?:beta_applications|invite_codes|admin_roles|admin_audit_log)\s+to\s+(?:anon|authenticated)/.test(closedBeta)) {
+  throw new Error('Closed Beta operational tables must remain server-write-only');
+}
+const closedBetaRlsTest = readFileSync(new URL('../supabase/tests/closed_beta_platform_rls_test.sql', import.meta.url), 'utf8').toLowerCase();
+for (const requiredCase of ['anonymous beta application insert is denied', 'authenticated admin role select is denied', 'owner ai usage select is allowed', 'cross-user account control select returns no rows', 'service role can mutate closed beta operational tables']) {
+  if (!closedBetaRlsTest.includes(requiredCase)) throw new Error(`Closed Beta RLS test is missing case: ${requiredCase}`);
+}
+
+const hardening = stripComments(readFileSync(join(migrationPath, '20260928023311_closed_beta_review_hardening.sql'), 'utf8')).toLowerCase();
+for (const contract of ["raise exception 'ai_request_replay'", 'as restrictive for insert', 'as restrictive for update', 'as restrictive for delete', 'superseded_at', 'beta_guard_auth_creation', 'beta_transition_account', 'beta_grant_entitlement', 'beta_revoke_entitlement', 'beta_create_invite', 'beta_set_feature_flag', 'on conflict (key,scope_type,scope_id)', 'revoke update, delete on public.admin_audit_log from service_role']) {
+  if (!hardening.includes(contract)) throw new Error(`Closed Beta hardening missing: ${contract}`);
+}
+for (const forbiddenHardening of [/\bdrop\s+table\b/, /\btruncate\b/, /\bdelete\s+from\b/, /\bdisable\s+row\s+level\s+security\b/]) {
+  if (forbiddenHardening.test(hardening)) throw new Error('Closed Beta hardening must preserve data and RLS');
+}
+
 for (const deferred of [
   'resource_budgets', 'resource_allocations', 'fixed_commitments', 'operations_plan_versions', 'execution_windows',
   'execution_events', 'reviews', 'review_entities', 'ai_reports', 'ai_report_refs',
@@ -125,4 +157,18 @@ for (const relationship of [
   if (!combined.includes(relationship)) throw new Error(`Missing same-owner relationship constraint ${relationship}`);
 }
 
-console.log(`PR E/PR M/PR N static SQL checks passed for ${migrationFiles.length} additive migrations.`);
+const quotaHardening = stripComments(readFileSync(join(migrationPath, '20260928061948_closed_beta_ai_contracts_quota_periods.sql'), 'utf8')).toLowerCase();
+for (const contract of ['beta_ai_quota_period', 'beta_ai_quota_snapshot', 'beta_grant_quota', 'beta_reset_quota', 'ai_quota_reset_period_key', 'quota_period_end', 'date_bin', "at time zone 'utc'", "'ai-quota:'", 'insert into public.admin_audit_log', 'from public, anon, authenticated']) {
+  if (!quotaHardening.includes(contract)) throw new Error(`Quota period/transaction hardening missing: ${contract}`);
+}
+if (/drop\s+table|truncate|disable\s+row\s+level\s+security/.test(quotaHardening)) throw new Error('Quota hardening must preserve data and RLS');
+const commandHardening = stripComments(readFileSync(join(migrationPath, '20260928141713_closed_beta_admin_command_hardening.sql'), 'utf8')).toLowerCase();
+for (const contract of ['admin_command_receipts', 'primary key(actor_user_id,request_id)', 'command_hash', 'idempotency_key_reused', 'vd_admin_private', 'beta_admin_command', 'beta_disable_invite', 'beta_review_application', 'ai_quota_supported_beta_tiers', 'cost_status', 'pricing_version']) {
+  if (!commandHardening.includes(contract)) throw new Error(`Missing final command hardening: ${contract}`);
+}
+const adapter = stripComments(readFileSync(join(migrationPath, '20260928150104_closed_beta_admin_v1_adapter.sql'), 'utf8')).toLowerCase();
+for (const contract of ['adapter_command', 'beta_admin_v1_authorize', 'beta_admin_v1_read', 'beta_admin_v1_audit_receipt', 'beta_admin_command', 'pg_advisory_xact_lock', 'idempotency_key_reused', 'audit_receipt_missing', 'pro_not_supported', 'order by r.id limit $5']) {
+  if (!adapter.includes(contract)) throw new Error(`Missing Admin v1 contract: ${contract}`);
+}
+if (/grant\s+(?:all|execute|select|insert|update|delete).*\bto\s+(?:anon|authenticated|public)\b/.test(adapter)) throw new Error('Admin adapter exposes client privileges');
+console.log(`V2, recurring billing, and Closed Beta static SQL checks passed for ${migrationFiles.length} additive migrations.`);

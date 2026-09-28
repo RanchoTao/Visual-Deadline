@@ -1,218 +1,51 @@
+import { assertRateLimit, publicError, readEnv, readJson, requestId, requireAuthenticatedUser, sendJson } from '../server/platform/runtime.js';
+import { assertAccountMayOperate } from '../server/platform/domain.js';
+import { assertWorkspaceAdmission, consumeAIQuota, finalizeAIUsage, findActiveAccountControl } from '../server/platform/repository.js';
+import { buildProviderRequest, selectAIContract, selectAIUsageFeature, validateProviderOutput } from '../server/platform/aiContracts.js';
+import { estimateAIUsageCost } from '../server/platform/aiPricing.js';
+
 const MAX_MESSAGE_LENGTH = 12_000;
 const MAX_CONTEXT_LENGTH = 60_000;
-const MAX_REQUESTS_PER_USER_PER_DAY = 20;
-const MAX_AUTH_HEADER_LENGTH = 8_500;
-const DEEPSEEK_PROVIDER = 'deepseek';
 const SUPPORTED_MODES = new Set(['task_advice', 'daily_plan', 'pressure_analysis', 'capture_interpret', 'goal_decompose']);
-const dailyRequestCounts = new Map();
-
-function sendJson(response, status, body) {
-  response.status(status).setHeader('Content-Type', 'application/json');
-  response.end(JSON.stringify(body));
-}
-
-function readEnv(name, fallbackName) {
-  const value = process.env[name] || (fallbackName ? process.env[fallbackName] : undefined);
-  return typeof value === 'string' ? value.trim() : '';
-}
-
-function getAuthorizationHeader(request) {
-  const header = request.headers.authorization || request.headers.Authorization;
-  return typeof header === 'string' ? header : '';
-}
-
-function getBearerToken(request) {
-  const header = getAuthorizationHeader(request);
-  const match = header.match(/^Bearer\s+([^\s]+)$/i);
-  return match?.[1]?.trim() || '';
-}
-
-function getApproximateHeaderSize(request) {
-  return Object.entries(request.headers || {}).reduce((total, [key, value]) => {
-    const normalizedValue = Array.isArray(value) ? value.join(',') : String(value ?? '');
-    return total + key.length + normalizedValue.length + 4;
-  }, 0);
-}
-
-function trimForLog(text, maxLength = 2000) {
-  return text.length > maxLength ? `${text.slice(0, maxLength)}…` : text;
-}
-
-function logAIRequestFailure({ url, status, responseText }) {
-  console.error('[VD_API_AI_REQUEST_FAILED]', {
-    url,
-    status,
-    responseText: trimForLog(responseText),
-  });
-}
-
-async function readJsonBody(request) {
-  if (request.body && typeof request.body === 'object') return request.body;
-
-  const chunks = [];
-  for await (const chunk of request) chunks.push(Buffer.from(chunk));
-  const raw = Buffer.concat(chunks).toString('utf8');
-  return raw ? JSON.parse(raw) : {};
-}
-
-async function verifySupabaseToken(accessToken) {
-  const supabaseUrl = readEnv('SUPABASE_URL', 'VITE_SUPABASE_URL').replace(/\/+$/, '');
-  const supabaseAnonKey = readEnv('SUPABASE_ANON_KEY', 'VITE_SUPABASE_ANON_KEY');
-  if (!supabaseUrl || !supabaseAnonKey) throw new Error('SUPABASE_CONFIG_MISSING');
-
-  const response = await fetch(`${supabaseUrl}/auth/v1/user`, {
-    headers: {
-      apikey: supabaseAnonKey,
-      Authorization: `Bearer ${accessToken}`,
-    },
-  });
-
-  if (!response.ok) return null;
-  const user = await response.json();
-  return typeof user?.id === 'string' ? user : null;
-}
-
-function getUsageKey(userId) {
-  return `${userId}:${new Date().toISOString().slice(0, 10)}`;
-}
-
-function checkRateLimit(userId) {
-  // TODO: Move this placeholder limit to a Supabase table or another durable store.
-  // Vercel function memory is per warm instance and can reset/rebalance between invocations.
-  const key = getUsageKey(userId);
-  const used = dailyRequestCounts.get(key) || 0;
-  if (used >= MAX_REQUESTS_PER_USER_PER_DAY) return false;
-  dailyRequestCounts.set(key, used + 1);
-  return true;
-}
 
 function validatePayload(payload) {
   if (!payload || typeof payload !== 'object') return '请求体必须是 JSON 对象。';
-  if (!SUPPORTED_MODES.has(payload.mode)) return 'mode 必须是 task_advice、daily_plan、pressure_analysis、capture_interpret 或 goal_decompose。';
+  if (!SUPPORTED_MODES.has(payload.mode)) return '请求模式无效。';
+  try { selectAIContract(payload); } catch { return '请求的输出契约无效。'; }
   if (typeof payload.message !== 'string' || !payload.message.trim()) return 'message 不能为空。';
   if (payload.message.length > MAX_MESSAGE_LENGTH) return `message 不能超过 ${MAX_MESSAGE_LENGTH} 个字符。`;
-
-  if (payload.context !== undefined) {
-    if (!payload.context || typeof payload.context !== 'object' || Array.isArray(payload.context)) return 'context 必须是对象。';
-    const contextLength = JSON.stringify(payload.context).length;
-    if (contextLength > MAX_CONTEXT_LENGTH) return `context 不能超过 ${MAX_CONTEXT_LENGTH} 个字符。`;
-  }
-
+  if (payload.context !== undefined && (!payload.context || typeof payload.context !== 'object' || Array.isArray(payload.context) || JSON.stringify(payload.context).length > MAX_CONTEXT_LENGTH)) return 'context 无效或过长。';
   return '';
 }
-
-function buildUserContent(payload) {
-  return JSON.stringify(
-    {
-      mode: payload.mode,
-      message: payload.message,
-      context: payload.context || {},
-    },
-    null,
-    2,
-  );
+function providerConfig() {
+  const provider = readEnv('VD_AI_PROVIDER') || 'deepseek'; const apiKey = readEnv('DEEPSEEK_API_KEY'); const baseUrl = readEnv('DEEPSEEK_API_BASE_URL') || readEnv('DEEPSEEK_BASE_URL') || 'https://api.deepseek.com'; const model = readEnv('DEEPSEEK_MODEL') || 'deepseek-chat';
+  if (provider !== 'deepseek') throw new Error('UNSUPPORTED_PROVIDER'); if (!apiKey) throw new Error('DEEPSEEK_API_KEY_MISSING'); return { provider, apiKey, baseUrl: baseUrl.replace(/\/+$/, ''), model };
 }
-
-async function callDeepSeek(payload) {
-  const apiKey = readEnv('DEEPSEEK_API_KEY');
-  const baseUrl = readEnv('DEEPSEEK_BASE_URL') || 'https://api.deepseek.com';
-  const model = readEnv('DEEPSEEK_MODEL') || 'deepseek-chat';
-  const provider = readEnv('AI_PROVIDER') || DEEPSEEK_PROVIDER;
-
-  if (provider !== DEEPSEEK_PROVIDER) throw new Error('UNSUPPORTED_PROVIDER');
-  if (!apiKey) throw new Error('DEEPSEEK_API_KEY_MISSING');
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30_000);
-
+async function callDeepSeek(payload, config) {
+  const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), 30_000);
   try {
-    const response = await fetch(`${baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-      method: 'POST',
-      signal: controller.signal,
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          {
-            role: 'system',
-            content:
-              "You are Visual Deadline's AI planning assistant. Analyze task, goal, and pressure data only from the provided JSON. Be concise, practical, structured, and respond in Simplified Chinese unless the user asks otherwise. Never claim to modify data directly.",
-          },
-          { role: 'user', content: buildUserContent(payload) },
-        ],
-        temperature: 0.4,
-      }),
-    });
-
-    const rawText = await response.text();
-    let data;
-    try {
-      data = rawText ? JSON.parse(rawText) : undefined;
-    } catch {
-      data = undefined;
-    }
-
-    if (!response.ok) {
-      logAIRequestFailure({ url: `${baseUrl.replace(/\/+$/, '')}/chat/completions`, status: response.status, responseText: rawText });
-      const upstreamMessage = typeof data?.error?.message === 'string' ? data.error.message : `DeepSeek returned ${response.status}`;
-      const error = new Error(upstreamMessage);
-      error.status = response.status;
-      throw error;
-    }
-
-    const content = data?.choices?.[0]?.message?.content?.trim();
-    if (!content) throw new Error('DeepSeek 未返回有效内容。');
-
-    return { content, model };
-  } finally {
-    clearTimeout(timeoutId);
-  }
+    const response = await fetch(`${config.baseUrl}/chat/completions`, { method: 'POST', signal: controller.signal, headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(buildProviderRequest(payload, config.model)) });
+    const data = await response.json().catch(() => undefined); if (!response.ok) { const error = new Error(typeof data?.error?.message === 'string' ? data.error.message : 'AI 服务暂时不可用。'); error.status = response.status; throw error; }
+    const content = validateProviderOutput(payload, data?.choices?.[0]);
+    return { content, usage: data?.usage || {}, model: typeof data?.model === 'string' && data.model.trim() ? data.model.trim() : config.model, generatedAt: new Date().toISOString() };
+  } finally { clearTimeout(timeout); }
 }
 
 export default async function handler(request, response) {
-  if (request.method !== 'POST') {
-    response.setHeader('Allow', 'POST');
-    return sendJson(response, 405, { ok: false, error: '只支持 POST 请求。' });
-  }
-
+  const id = requestId(request); if (request.method !== 'POST') { response.setHeader('Allow', 'POST'); return sendJson(response, 405, { ok: false, error: '只支持 POST 请求。' }, id); }
+  let user; let quotaReserved = false; const startedAt = Date.now(); let config;
   try {
-    const headerSize = getApproximateHeaderSize(request);
-    const authorizationHeader = getAuthorizationHeader(request);
-    if (headerSize > 12_000 || authorizationHeader.length > MAX_AUTH_HEADER_LENGTH) {
-      console.error('[VD_API_AI_HEADER_TOO_LARGE]', { headerSize, authorizationHeaderLength: authorizationHeader.length, url: request.url || '/api/ai' });
-      return sendJson(response, 431, { ok: false, error: '请求头过大或登录状态异常。请重新登录；如果仍然失败，请清除本地缓存后再试。' });
-    }
-
-    const accessToken = getBearerToken(request);
-    if (!accessToken) return sendJson(response, 401, { ok: false, error: '缺少 Supabase 登录凭证。' });
-
-    const user = await verifySupabaseToken(accessToken);
-    if (!user) return sendJson(response, 401, { ok: false, error: 'Supabase 登录凭证无效或已过期。' });
-
-    const payload = await readJsonBody(request);
-    const validationError = validatePayload(payload);
-    if (validationError) return sendJson(response, 400, { ok: false, error: validationError });
-
-    if (!checkRateLimit(user.id)) return sendJson(response, 429, { ok: false, error: '今日 AI 请求次数已达上限（20 次）。请明天再试。' });
-
-    const result = await callDeepSeek(payload);
-    return sendJson(response, 200, {
-      ok: true,
-      content: result.content,
-      model: result.model,
-      provider: DEEPSEEK_PROVIDER,
-    });
+    user = await requireAuthenticatedUser(request); await assertWorkspaceAdmission(user.id); assertAccountMayOperate(await findActiveAccountControl(user.id)); const payload = await readJson(request); const validation = validatePayload(payload); if (validation) return sendJson(response, 400, { ok: false, error: validation }, id);
+    assertRateLimit({ key: `ai:${user.id}`, limit: 30, windowMs: 60 * 60 * 1000 }); config = providerConfig(); quotaReserved = (await consumeAIQuota({ p_user_id: user.id, p_request_id: id, p_provider: config.provider, p_model: config.model, p_feature: selectAIUsageFeature(payload) })) === true;
+    if (!quotaReserved) return sendJson(response, 429, { ok: false, error: '本周期 AI 使用额度已用完。' }, id);
+    const result = await callDeepSeek(payload, config); const usage = result.usage; await finalizeAIUsage({ userId: user.id, requestId: id, status: 'succeeded', model: result.model, cost: estimateAIUsageCost({ provider: config.provider, model: result.model, usage }, readEnv('VD_AI_PRICING_JSON')), inputTokens: Number(usage.prompt_tokens) || 0, cachedInputTokens: Number(usage.prompt_cache_hit_tokens) || 0, outputTokens: Number(usage.completion_tokens) || 0, totalTokens: Number(usage.total_tokens) || 0, latencyMs: Date.now() - startedAt });
+    return sendJson(response, 200, { ok: true, content: result.content, generatedAt: result.generatedAt, model: result.model, provider: config.provider }, id);
   } catch (error) {
-    if (error?.message === 'SUPABASE_CONFIG_MISSING') return sendJson(response, 500, { ok: false, error: '服务端 Supabase 环境变量未配置。' });
-    if (error?.message === 'UNSUPPORTED_PROVIDER') return sendJson(response, 500, { ok: false, error: '当前服务端 AI_PROVIDER 暂不支持。' });
-    if (error?.message === 'DEEPSEEK_API_KEY_MISSING') return sendJson(response, 500, { ok: false, error: '服务端 DeepSeek API Key 未配置。' });
-    if (error?.name === 'AbortError') return sendJson(response, 504, { ok: false, error: 'AI 请求超时，请稍后重试。' });
-
-    const status = Number.isInteger(error?.status) && error.status >= 400 && error.status < 600 ? error.status : 500;
-    const message = error instanceof Error && error.message ? error.message : 'AI 服务暂时不可用，请稍后重试。';
-    return sendJson(response, status >= 500 ? 502 : status, { ok: false, error: message });
+    if (user && quotaReserved) await finalizeAIUsage({ userId: user.id, requestId: id, status: 'failed', latencyMs: Date.now() - startedAt, errorCode: error instanceof Error ? error.message.slice(0, 120) : 'UNKNOWN' }).catch(() => undefined);
+    if (error instanceof Error && error.message === 'DEEPSEEK_API_KEY_MISSING') return sendJson(response, 503, { ok: false, error: '服务端 AI 服务尚未配置。' }, id);
+    if (error instanceof Error && error.message === 'UNSUPPORTED_PROVIDER') return sendJson(response, 503, { ok: false, error: '当前 AI 服务暂不可用。' }, id);
+    if (error instanceof Error && error.message === 'AI_OUTPUT_CONTRACT_INVALID') return sendJson(response, 502, { ok: false, error: 'AI 返回内容不符合本功能的格式要求，请重新生成。' }, id);
+    if (error?.name === 'AbortError') return sendJson(response, 504, { ok: false, error: 'AI 请求超时，请稍后重试。' }, id);
+    const [status, message] = publicError(error); return sendJson(response, status, { ok: false, error: message }, id);
   }
 }

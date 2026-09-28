@@ -14,21 +14,21 @@ export const PHONE_OTP_RESEND_COOLDOWN_MS = 60_000;
 
 const enabled = (value: unknown): boolean => value === 'true';
 
-/** New providers are opt-in and require a deliberately set public readiness flag. */
+/** Closed beta disables OAuth at the action boundary; phone is existing-user login only. */
 export function createAuthFeatureFlags(environment: Record<string, unknown> = {}): AuthFeatureFlags {
   return Object.freeze({
   emailPassword: true,
   emailSignup: enabled(environment.VITE_AUTH_EMAIL_SIGNUP_ENABLED),
-  google: enabled(environment.VITE_AUTH_GOOGLE_ENABLED),
-  github: enabled(environment.VITE_AUTH_GITHUB_ENABLED),
-  x: enabled(environment.VITE_AUTH_X_ENABLED),
+  google: false,
+  github: false,
+  x: false,
   phone: enabled(environment.VITE_AUTH_PHONE_ENABLED),
   identityLinking: enabled(environment.VITE_AUTH_IDENTITY_LINKING_ENABLED),
   guestImport: enabled(environment.VITE_AUTH_GUEST_IMPORT_ENABLED),
   });
 }
 
-/** New providers are opt-in and require a deliberately set public readiness flag. */
+/** OAuth enablement requires a later authoritative admission-policy change, not an env toggle. */
 const viteEnvironment = (import.meta as unknown as { env?: Record<string, unknown> }).env;
 export const authFeatureFlags: AuthFeatureFlags = createAuthFeatureFlags(viteEnvironment);
 

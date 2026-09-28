@@ -3,6 +3,7 @@ dist/
 tests/.compiled/
 .env
 .env.*
+!.env.example
 .DS_Store
 *.local
 

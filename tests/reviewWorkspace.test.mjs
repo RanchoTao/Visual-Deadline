@@ -237,7 +237,7 @@ test('REVIEW wiring uses row-level cloud persistence, real AI provenance, and an
   assert.match(cloud, /review_records/); assert.match(cloud, /review_events/); assert.match(cloud, /review_archive_events/); assert.match(cloud, /review_tombstones/); assert.match(cloud, /resolution=ignore-duplicates/); assert.doesNotMatch(cloud, /supabase-schema\.sql/); assert.match(cloud, /20260924034628_v2_review_history\.sql/);
   assert.match(cloud, /loadAllReviewRows/); assert.match(cloud, /offset=\$\{offset\}/); assert.match(client, /count=exact/); assert.match(client, /Content-Range/);
   assert.match(cloud, /if \(profileData\?\.reviewState\) await saveCloudReviewState\(reviewState, session, owner\)/);
-  assert.match(ai, /generatedAt: new Date\(\)\.toISOString\(\), model: response\.model, provider: response\.provider/);
+  assert.match(ai, /generatedAt: response\.generatedAt, model: response\.model, provider: response\.provider/);
   for (const table of ['review_records', 'review_events', 'review_archive_events', 'review_tombstones']) { assert.match(migration, new RegExp(`alter table public\\.${table} enable row level security`)); assert.match(migration, new RegExp(`create policy ${table}_select_own`)); }
   for (const contract of ['owner inserts own ReviewRecord', 'cross-user REVIEW select returns no rows', 'forged REVIEW user_id insert is denied', 'anonymous REVIEW select is denied', 'authenticated REVIEW update is denied', 'authenticated REVIEW delete is denied']) assert.match(rlsTest, new RegExp(contract));
 });
