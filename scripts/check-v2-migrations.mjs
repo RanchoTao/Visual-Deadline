@@ -5,10 +5,10 @@ import { fileURLToPath } from 'node:url';
 const migrationDirectory = new URL('../supabase/migrations/', import.meta.url);
 const migrationPath = fileURLToPath(migrationDirectory);
 const migrationFiles = readdirSync(migrationDirectory)
-  .filter((name) => name.endsWith('.sql') && (name.includes('v2_beta_') || name.includes('legacy_core_additive_baseline') || name === '20260924034628_v2_review_history.sql' || name === '20260924121019_v2_recurring_billing.sql' || name === '20260927101132_billing_service_role_table_privileges.sql'))
+  .filter((name) => name.endsWith('.sql') && (name.includes('v2_beta_') || name.includes('legacy_core_additive_baseline') || name === '20260924034628_v2_review_history.sql' || name === '20260924121019_v2_recurring_billing.sql' || name === '20260927101132_billing_service_role_table_privileges.sql' || name === '20260927174808_closed_beta_platform.sql'))
   .sort();
 
-if (migrationFiles.length !== 7) throw new Error(`Expected 4 PR E migrations plus PR M and two PR N migrations, found ${migrationFiles.length}: ${migrationFiles.join(', ')}`);
+if (migrationFiles.length !== 8) throw new Error(`Expected 4 PR E migrations plus PR M, two PR N migrations, and the closed-Beta platform migration; found ${migrationFiles.length}: ${migrationFiles.join(', ')}`);
 
 const stripComments = (sql) => sql.replace(/\/\*[\s\S]*?\*\//g, '').replace(/--.*$/gm, '');
 const combined = migrationFiles.map((name) => stripComments(readFileSync(join(migrationPath, name), 'utf8'))).join('\n').toLowerCase();
@@ -23,7 +23,8 @@ const forbidden = [
   [/\balter\s+table\s+public\.(?:tasks|goals|pressure_logs)\s+(?:alter|drop|rename)\b/, 'incompatible legacy ALTER'],
 ];
 
-for (const [pattern, label] of forbidden) if (pattern.test(combined)) throw new Error(`PR E migration lint rejected ${label}`);
+const preClosedBetaCombined = migrationFiles.filter((name) => name !== '20260927174808_closed_beta_platform.sql').map((name) => stripComments(readFileSync(join(migrationPath, name), 'utf8'))).join('\n').toLowerCase();
+for (const [pattern, label] of forbidden) if (pattern.test(preClosedBetaCombined)) throw new Error(`PR E migration lint rejected ${label}`);
 
 const baseline = stripComments(readFileSync(join(migrationPath, '20260726000000_legacy_core_additive_baseline.sql'), 'utf8')).toLowerCase();
 for (const requiredValidation of [
@@ -108,6 +109,28 @@ for (const table of ['billing_orders', 'membership_grants', 'memberships', 'bill
   }
 }
 
+const closedBeta = stripComments(readFileSync(join(migrationPath, '20260927174808_closed_beta_platform.sql'), 'utf8')).toLowerCase();
+for (const [pattern, label] of forbidden.filter(([pattern]) => !String(pattern).includes('update'))) if (pattern.test(closedBeta)) throw new Error(`Closed Beta migration lint rejected ${label}`);
+for (const table of ['beta_cohorts', 'beta_applications', 'invite_codes', 'invite_redemptions', 'admin_roles', 'admin_audit_log', 'admin_access_grants', 'ai_quota_policies', 'ai_quota_grants', 'ai_usage_events', 'account_controls', 'moderation_cases', 'user_feedback', 'feature_flags', 'email_events']) {
+  if (!closedBeta.includes(`create table public.${table}`)) throw new Error(`Missing Closed Beta table ${table}`);
+  if (!closedBeta.includes(`'${table}'`) || !closedBeta.includes("alter table public.%i enable row level security")) throw new Error(`Missing Closed Beta RLS enablement for ${table}`);
+}
+for (const requiredContract of [
+  'create function public.redeem_beta_invite',
+  'pg_advisory_xact_lock',
+  "raise exception 'invite_exhausted'",
+  'grant execute on function public.redeem_beta_invite(text, uuid, text, text) to service_role',
+  'create function public.consume_ai_quota',
+  'grant execute on function public.consume_ai_quota(uuid, uuid, text, text, text) to service_role',
+]) if (!closedBeta.includes(requiredContract)) throw new Error(`Closed Beta migration is missing contract: ${requiredContract}`);
+if (/grant\s+(?:select,\s*)?insert(?:,\s*update)?(?:,\s*delete)?\s+on\s+table\s+public\.(?:beta_applications|invite_codes|admin_roles|admin_audit_log)\s+to\s+(?:anon|authenticated)/.test(closedBeta)) {
+  throw new Error('Closed Beta operational tables must remain server-write-only');
+}
+const closedBetaRlsTest = readFileSync(new URL('../supabase/tests/closed_beta_platform_rls_test.sql', import.meta.url), 'utf8').toLowerCase();
+for (const requiredCase of ['anonymous beta application insert is denied', 'authenticated admin role select is denied', 'owner ai usage select is allowed', 'cross-user account control select returns no rows', 'service role can mutate closed beta operational tables']) {
+  if (!closedBetaRlsTest.includes(requiredCase)) throw new Error(`Closed Beta RLS test is missing case: ${requiredCase}`);
+}
+
 for (const deferred of [
   'resource_budgets', 'resource_allocations', 'fixed_commitments', 'operations_plan_versions', 'execution_windows',
   'execution_events', 'reviews', 'review_entities', 'ai_reports', 'ai_report_refs',
@@ -125,4 +148,4 @@ for (const relationship of [
   if (!combined.includes(relationship)) throw new Error(`Missing same-owner relationship constraint ${relationship}`);
 }
 
-console.log(`PR E/PR M/PR N static SQL checks passed for ${migrationFiles.length} additive migrations.`);
+console.log(`V2, recurring billing, and Closed Beta static SQL checks passed for ${migrationFiles.length} additive migrations.`);

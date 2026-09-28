@@ -65,22 +65,15 @@ export function useSupabaseAuth() {
     };
   }, []);
 
-  const signUp = useCallback(async (email: string, password: string) => {
+  const signUp = useCallback(async (email: string, password: string, inviteCode: string) => {
     setError(undefined);
     setStatus(undefined);
-    const nextSession = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: getEmailRedirectTo(),
-      },
-    });
-    if (nextSession) setSession(nextSession);
-    else {
-      emailCooldown.current.request();
-      setEmailResendRemainingMs(emailCooldown.current.remainingMs());
-    }
-    return nextSession;
+    const response = await fetch('/api/beta-register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password, inviteCode }) });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(typeof body?.error === 'string' ? body.error : '注册暂时不可用，请稍后再试。');
+    emailCooldown.current.request();
+    setEmailResendRemainingMs(emailCooldown.current.remainingMs());
+    return null;
   }, []);
 
   const signIn = useCallback(async (email: string, password: string) => {
