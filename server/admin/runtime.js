@@ -109,6 +109,7 @@ function serviceConfig(env) {
 const errorStatuses = {
   ADMIN_FORBIDDEN: 403,
   ACCOUNT_BLOCKED: 403,
+  BETA_ADMISSION_REQUIRED: 403,
   INVITE_OWNER_MISMATCH: 403,
   ADMIN_NOT_FOUND: 404,
   ADMIN_IDEMPOTENCY_CONFLICT: 409,
@@ -176,11 +177,13 @@ export async function authenticateUser(
   });
   if (!response.ok) throw new ApiError(401, "UNAUTHENTICATED");
   const user = await response.json();
-  if (!UUID.test(user?.id) || !user.email_confirmed_at)
+  if (!UUID.test(user?.id) || (!user.email_confirmed_at && !user.phone_confirmed_at))
     throw new ApiError(401, "UNCONFIRMED_ACCOUNT");
   return user;
 }
 export async function assertAccountNormal(userId) {
   if ((await rpc("admin_account_status", { p_user: userId })) !== "normal")
     throw new ApiError(403, "ACCOUNT_BLOCKED");
+  if ((await rpc("beta_workspace_admitted", { p_user: userId })) !== true)
+    throw new ApiError(403, "BETA_ADMISSION_REQUIRED");
 }

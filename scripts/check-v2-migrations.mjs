@@ -12,7 +12,7 @@ if (migrationFiles.length !== 7) throw new Error(`Expected 4 PR E migrations plu
 
 const stripComments = (sql) => sql.replace(/\/\*[\s\S]*?\*\//g, '').replace(/--.*$/gm, '');
 const adminFiles = readdirSync(migrationDirectory).filter(name=>name.includes('_admin_v1_')).sort();
-if(adminFiles.length!==2) throw new Error('Expected both Admin v1 additive migrations');
+if(adminFiles.length!==3) throw new Error('Expected three canonical Admin v1 additive migrations');
 const adminSql=adminFiles.map(name=>stripComments(readFileSync(join(migrationPath,name),'utf8'))).join('\n').toLowerCase();
 for(const pattern of [/\bdrop\s+table\b/,/\btruncate\b/,/\bdisable\s+row\s+level\s+security\b/,/\bdrop\s+policy\b/,/\b(?:update|delete\s+from)\s+public\.subscriptions\b/]) {
  if(pattern.test(adminSql)) throw new Error('Admin migration would destroy state, weaken RLS, or mutate subscription records');

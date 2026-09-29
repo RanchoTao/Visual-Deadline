@@ -1,5 +1,6 @@
 import {randomUUID} from 'node:crypto';
-import {ApiError,authenticateUser,readBody,rpc,assertAccountNormal} from '../server/admin/runtime.js';
+import {ApiError,UUID,authenticateUser,readBody,rpc,assertAccountNormal} from '../server/admin/runtime.js';
+import {buildProviderRequest,selectAIContract,validateProviderOutput} from '../server/platform/aiContracts.js';
 const MAX_MESSAGE_LENGTH = 12_000;
 const MAX_CONTEXT_LENGTH = 60_000;
 const MAX_REQUESTS_PER_USER_PER_HOUR = 60;
@@ -54,6 +55,7 @@ function checkRateLimit(userId) {
 function validatePayload(payload) {
   if (!payload || typeof payload !== 'object') return '请求体必须是 JSON 对象。';
   if (!SUPPORTED_MODES.has(payload.mode)) return 'mode 必须是 task_advice、daily_plan、pressure_analysis、capture_interpret 或 goal_decompose。';
+  try { selectAIContract(payload); } catch { return '请求的输出契约无效。'; }
   if (typeof payload.message !== 'string' || !payload.message.trim()) return 'message 不能为空。';
   if (payload.message.length > MAX_MESSAGE_LENGTH) return `message 不能超过 ${MAX_MESSAGE_LENGTH} 个字符。`;
 
@@ -98,18 +100,7 @@ async function callDeepSeek(payload) {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        model,
-        messages: [
-          {
-            role: 'system',
-            content:
-              "You are Visual Deadline's AI planning assistant. Analyze task, goal, and pressure data only from the provided JSON. Be concise, practical, structured, and respond in Simplified Chinese unless the user asks otherwise. Never claim to modify data directly.",
-          },
-          { role: 'user', content: buildUserContent(payload) },
-        ],
-        temperature: 0.4,
-      }),
+      body: JSON.stringify(buildProviderRequest(payload, model)),
     });
 
     const rawText = await response.text();
@@ -127,11 +118,11 @@ async function callDeepSeek(payload) {
       throw error;
     }
 
-    const content = data?.choices?.[0]?.message?.content?.trim();
-    if (!content) throw new Error('DeepSeek 未返回有效内容。');
+    const content = validateProviderOutput(payload, data?.choices?.[0]);
+    if (typeof data?.model !== 'string' || !data.model.trim() || data.model.length > 200) throw new Error('AI_OUTPUT_CONTRACT_INVALID');
 
     const integer=value=>Number.isSafeInteger(value)&&value>=0?value:null;
-    return { content, model, usage:{inputTokens:integer(data?.usage?.prompt_tokens),outputTokens:integer(data?.usage?.completion_tokens),cachedTokens:integer(data?.usage?.prompt_cache_hit_tokens)} };
+    return { content, model:data.model.trim(), generatedAt:new Date().toISOString(), usage:{inputTokens:integer(data?.usage?.prompt_tokens),outputTokens:integer(data?.usage?.completion_tokens),cachedTokens:integer(data?.usage?.prompt_cache_hit_tokens)} };
   } finally {
     clearTimeout(timeoutId);
   }
@@ -164,19 +155,22 @@ export default async function handler(request, response) {
     if (validationError) return sendJson(response, 400, { ok: false, error: validationError });
 
     if (!checkRateLimit(user.id)) return sendJson(response, 429, { ok: false, error: '请求过于频繁，请稍后重试。' });
-    const requestId=randomUUID();
-    await rpc('ai_reserve',{p_user:user.id,p_request:requestId,p_mode:payload.mode,p_provider:DEEPSEEK_PROVIDER,p_model:readEnv('DEEPSEEK_MODEL')||'deepseek-chat'});
+    const suppliedId=request.headers['x-request-id'];
+    if(suppliedId!==undefined && (typeof suppliedId!=='string'||!UUID.test(suppliedId))) return sendJson(response,400,{ok:false,error:'请求标识无效。'});
+    const requestId=suppliedId||randomUUID();
+    await rpc('ai_reserve',{p_user:user.id,p_request:requestId,p_mode:selectAIContract(payload).key,p_provider:DEEPSEEK_PROVIDER,p_model:readEnv('DEEPSEEK_MODEL')||'deepseek-chat'});
     reservation={userId:user.id,requestId,started:Date.now()};
 
     const result = await callDeepSeek(payload);
     providerSucceeded=true;
-    await rpc('ai_settle',{p_user:user.id,p_request:requestId,p_status:'succeeded',p_usage:{...result.usage,latencyMs:Date.now()-reservation.started}});
+    await rpc('ai_settle',{p_user:user.id,p_request:requestId,p_status:'succeeded',p_usage:{...result.usage,model:result.model,generatedAt:result.generatedAt,latencyMs:Date.now()-reservation.started}});
     reservation=undefined;
     return sendJson(response, 200, {
       ok: true,
       content: result.content,
       model: result.model,
       provider: DEEPSEEK_PROVIDER,
+      generatedAt: result.generatedAt,
     });
   } catch (error) {
     if(reservation && !providerSucceeded) {
@@ -188,6 +182,7 @@ export default async function handler(request, response) {
     if (error?.message === 'UNSUPPORTED_PROVIDER') return sendJson(response, 500, { ok: false, error: '当前服务端 AI_PROVIDER 暂不支持。' });
     if (error?.message === 'DEEPSEEK_API_KEY_MISSING') return sendJson(response, 500, { ok: false, error: '服务端 DeepSeek API Key 未配置。' });
     if (error?.name === 'AbortError') return sendJson(response, 504, { ok: false, error: 'AI 请求超时，请稍后重试。' });
+    if (error?.message === 'AI_OUTPUT_CONTRACT_INVALID') return sendJson(response,502,{ok:false,error:'AI 返回内容不符合本功能的格式要求，请重新生成。'});
 
     const status = Number.isInteger(error?.status) && error.status >= 400 && error.status < 600 ? error.status : 500;
     const message = 'AI 服务暂时不可用，请稍后重试。';

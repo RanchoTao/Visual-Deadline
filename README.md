@@ -377,3 +377,10 @@ The project also draws from ideas in time management, cognitive load theory, per
 ## License
 
 Visual Deadline is licensed under the [Apache License 2.0](./LICENSE).
+
+
+## Closed Beta / PR139 consolidation
+
+PR140 is the canonical authority for Free / Plus / Pro, Admin roles/audit/receipts, grants, AI quota ledger and account controls. [File-by-file reconciliation](docs/admin/PR139_PR140_CONSOLIDATION.md) records the frozen PR139 reference and its disposition. [Admission rollout and grandfathering](docs/admin/CLOSED_BETA_ADMISSION.md) describes the single database-owned `VD_CLOSED_BETA_ADMISSION_ENFORCED` policy, default OFF. The beta application intake availability flag does not grant workspace admission.
+
+The actual `/beta/apply` page uses Turnstile without a bypass. Invited signup and verified redemption reuse PR140 tables/RPCs. Cloud AI now uses server-owned mode contracts, validated JSON/Markdown and actual returned model/provider/server generation time. Existing local data, billing rules and subscriptions remain preserved. No merge, hosted migration or production rollout is performed; real Auth/Turnstile/SMTP/provider and hosted acceptance remain external gates.

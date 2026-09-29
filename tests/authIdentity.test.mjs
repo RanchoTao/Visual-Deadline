@@ -26,6 +26,8 @@ test('providers default off, X uses the x identifier, and action gates reject be
   assert.doesNotThrow(() => assertPhoneEnabled(enabled));
   assert.doesNotThrow(() => assertEmailSignupEnabled(enabled));
   assert.equal('twitter' in enabled, false);
+  assert.equal(nextModeAfterEmailSignup({ requiresEmailVerification: true, verificationSent: false }), 'email-otp');
+  assert.equal(nextModeAfterEmailSignup({ requiresEmailVerification: true, verificationSent: true }), 'email-otp');
 });
 
 test('E.164 validation and resend cooldown are deterministic', () => {

@@ -14,7 +14,7 @@ export const PHONE_OTP_RESEND_COOLDOWN_MS = 60_000;
 
 const enabled = (value: unknown): boolean => value === 'true';
 
-/** New providers are opt-in and require a deliberately set public readiness flag. */
+/** UI readiness only. The database admission policy is the authority; ON additionally disables OAuth in the auth hook. */
 export function createAuthFeatureFlags(environment: Record<string, unknown> = {}): AuthFeatureFlags {
   return Object.freeze({
   emailPassword: true,

@@ -3,6 +3,8 @@ import { readFileSync, readdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 const tools = process.env.VD_TEST_TOOLS_DIR;
 if (!tools)
   throw new Error(
@@ -39,6 +41,10 @@ try {
     console.log("APPLIED " + name);
   }
   console.log("MIGRATION_CHAIN PASS");
+  if(process.env.VD_TEST_ADVISORS==='1') {
+    const result=await promisify(execFile)(process.execPath,[resolve(tools,'node_modules/supabase/dist/supabase.js'),'db','advisors','--db-url','postgresql://postgres:local-contract-test-only@127.0.0.1:55440/postgres?sslmode=disable','--type','security','--level','error','--fail-on','error'],{windowsHide:true,timeout:60000});
+    console.log('LOCAL SECURITY ADVISOR PASS '+result.stdout.trim());
+  }
   if (process.env.VD_TEST_PGTAP === "1") {
     await client.query(
       "create extension pgtap with schema extensions; set search_path=public,extensions;",

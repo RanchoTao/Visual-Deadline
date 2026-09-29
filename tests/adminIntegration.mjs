@@ -13,10 +13,14 @@ import aiHandler from "../api/ai.js";
 import intakeHandler from "../api/intake.js";
 import applyHandler from "../api/beta/apply.js";
 import redeemHandler from "../api/beta/redeem.js";
-import { owner, user, key } from "./adminDatabase.mjs";
+import registerHandler from "../api/beta/register.js";
+import { owner, key } from "./adminDatabase.mjs";
+const user=randomUUID();
 const internal = "local-internal-test-token-32-characters";
 const service = "local-service-test-token";
 export async function runAdminIntegration(db, cluster) {
+  await db.query("insert into auth.users(id,email,email_confirmed_at) values ($1,'user@example.test',now())",[user]);
+  await db.query("insert into public.account_controls(user_id,status,reason_code,reason,updated_by) values ($1,'normal','manual','Local integration fixture',$2)",[user,owner]);
   const adminDir = resolve(process.env.VD_TEST_ADMIN_DIR);
   assert.ok(
     existsSync(join(adminDir, ".next", "BUILD_ID")),
@@ -27,6 +31,8 @@ export async function runAdminIntegration(db, cluster) {
     logs = "",
     cookie = "",
     providerFails = false;
+  let providerInvalid = false;
+  const providerRequests = [];
   const sessions = new Map(),
     factors = [];
   const issue = (id = owner, aal = "aal1") => {
@@ -55,6 +61,9 @@ export async function runAdminIntegration(db, cluster) {
     "has_beta_access",
     "beta_redeem",
     "beta_submit",
+    "beta_workspace_admitted",
+    "beta_registration_check",
+    "beta_admission_state",
   ]);
   const transport = createServer(async (req, res) => {
     const url = new URL(req.url, "http://127.0.0.1");
@@ -65,14 +74,15 @@ export async function runAdminIntegration(db, cluster) {
       res.end(JSON.stringify(body));
     };
     try {
-      const body = JSON.parse(raw || "{}");
+      const body = url.pathname==='/siteverify' ? Object.fromEntries(new URLSearchParams(raw)) : JSON.parse(raw || "{}");
       const token = req.headers.authorization?.replace(/^Bearer /, "");
       if (url.pathname === "/chat/completions") {
+        providerRequests.push(body);
         assert.ok(
           (
             await db.query(
-              "select count(*)::int n from public.ai_usage_ledger where user_id=$1 and status='reserved'",
-              [user],
+              "select count(*)::int n from public.ai_usage_ledger where status='reserved'",
+              [],
             )
           ).rows[0].n > 0,
           "Reservation precedes provider call",
@@ -82,8 +92,12 @@ export async function runAdminIntegration(db, cluster) {
             { error: { message: "PRIVATE_PROVIDER_ERROR_SENTINEL" } },
             502,
           );
+        const feature=JSON.parse(body.messages[1].content);
+        const structured=body.response_format?.type==='json_object';
+        const content=providerInvalid ? '{broken' : !structured ? '## 本地测试回复\n仅依据测试数据。' : feature.mode==='capture_interpret' ? JSON.stringify({goals:[],tasks:[],commitments:[],context:[],ambiguities:[],notes:[]}) : feature.mode==='goal_decompose' ? JSON.stringify({milestones:[{id:'m1',title:'本地结果',targetDate:null}],tasks:[],ambiguities:[],notes:[]}) : JSON.stringify({stages:[],milestones:[],weeklyMonthlyDirection:[],risks:[],firstActions:[]});
         return json({
-          choices: [{ message: { content: "本地测试回复" } }],
+          model: 'actual-provider-model',
+          choices: [{ message: { content }, finish_reason:'stop' }],
           usage: {
             prompt_tokens: 12,
             completion_tokens: 4,
@@ -91,7 +105,14 @@ export async function runAdminIntegration(db, cluster) {
           },
         });
       }
+      if(url.pathname==='/siteverify') return json({success:body.response==='fixture-turnstile-token',hostname:'fixture.visualdeadline.test',action:'beta_apply'});
       if (url.pathname.startsWith("/auth/")) {
+        if(url.pathname==='/auth/v1/admin/users' && token===service) {
+          const id=randomUUID();
+          await db.query('insert into auth.users(id,email,email_confirmed_at) values ($1,$2,null)',[id,body.email]);
+          return json({id,email:body.email});
+        }
+        if(url.pathname==='/auth/v1/resend' && token===service) return json({});
         if (url.pathname === "/auth/v1/token")
           return body.email === "owner@example.test" &&
             body.password === "fixture-password"
@@ -104,7 +125,7 @@ export async function runAdminIntegration(db, cluster) {
             id: session.id,
             email:
               session.id === owner ? "owner@example.test" : "user@example.test",
-            email_confirmed_at: "2026-09-28T00:00:00Z",
+            email_confirmed_at: (await db.query('select email_confirmed_at from auth.users where id=$1',[session.id])).rows[0]?.email_confirmed_at,
             factors: session.id === owner ? factors : [],
           });
         if (url.pathname === "/auth/v1/logout") {
@@ -167,6 +188,8 @@ export async function runAdminIntegration(db, cluster) {
   await new Promise((resolve) => transport.listen(0, "127.0.0.1", resolve));
   const transportRoot = "http://127.0.0.1:" + transport.address().port;
   const saved = { ...process.env };
+  const originalFetch=globalThis.fetch;
+  globalThis.fetch=(url,options)=>originalFetch(String(url)==='https://challenges.cloudflare.com/turnstile/v0/siteverify'?transportRoot+'/siteverify':url,options);
   Object.assign(process.env, {
     NODE_ENV: "test",
     SUPABASE_URL: transportRoot,
@@ -188,7 +211,9 @@ export async function runAdminIntegration(db, cluster) {
           ? intakeHandler
           : path === "/api/beta/apply"
             ? applyHandler
-            : path === "/api/beta/redeem"
+            : path === "/api/beta/register"
+              ? registerHandler
+              : path === "/api/beta/redeem"
               ? redeemHandler
               : adminHandler;
     await handler(req, res);
@@ -249,6 +274,7 @@ export async function runAdminIntegration(db, cluster) {
       (await callBackend("/api/internal/admin/v1/users", null, headers))
         .status === 200,
     );
+    check((await (await callBackend('/api/beta/register')).json()).admissionEnforced===false);
     check(
       (await callBackend("/api/beta/apply", { email: "local@example.test" }))
         .status === 404,
@@ -258,6 +284,11 @@ export async function runAdminIntegration(db, cluster) {
       (await callBackend("/api/beta/apply", { email: "local@example.test" }))
         .status === 503,
     );
+    Object.assign(process.env,{VD_PUBLIC_BETA_APPLICATIONS_ENABLED:'true',TURNSTILE_SECRET_KEY:'local-test-only',VD_BETA_RATE_KEY:'local-test-rate-key-32-characters',VD_BETA_HOSTNAME:'fixture.visualdeadline.test'});
+    check((await callBackend('/api/beta/apply',{name:'Local',email:'pipeline@example.test',useCase:'Local integration',turnstileToken:'wrong'})).status===403);
+    check((await callBackend('/api/beta/apply',{name:'Local',email:'pipeline@example.test',useCase:'Local integration',turnstileToken:'fixture-turnstile-token'})).status===202);
+    check((await db.query("select count(*)::int n from public.beta_applications where email_normalized='pipeline@example.test'")).rows[0].n===1);
+    if(process.env.VD_TEST_BROWSER==='1') await (await import('./betaBrowser.mjs')).runBetaBrowser(db);
     delete process.env.VD_PUBLIC_BETA_APPLICATIONS_ENABLED;
     const testToken = issue(user, "aal1");
     await db.query(
@@ -290,13 +321,17 @@ export async function runAdminIntegration(db, cluster) {
       DEEPSEEK_API_KEY: "local-provider-double-only",
       DEEPSEEK_BASE_URL: transportRoot,
     });
+    const quotaKey=randomUUID();
+    check((await callBackend('/v1/admin/quotas/actions',{action:'adjust',target:user,reason:'Local consolidated AI test allowance',input:{limit:100},requestId:quotaKey},{...headers,'Idempotency-Key':quotaKey})).status===200);
     const ai = await callBackend(
       "/api/ai",
       { mode: "task_advice", message: "fixture" },
       { Authorization: "Bearer " + testToken },
     );
     check(ai.status === 200);
-    check((await ai.json()).content === "本地测试回复");
+    const result=await ai.json();
+    check(result.content.startsWith('## 本地测试回复'));
+    check(result.model==='actual-provider-model' && result.provider==='deepseek' && Number.isFinite(Date.parse(result.generatedAt)));
     const usage = (
       await db.query(
         "select * from public.ai_usage_ledger where user_id=$1 order by created_at desc limit 1",
@@ -309,6 +344,21 @@ export async function runAdminIntegration(db, cluster) {
         usage.output_tokens === "4" &&
         usage.cached_tokens === "3",
     );
+    check(usage.model===result.model && usage.generated_at.toISOString()===result.generatedAt);
+    for(const payload of [{mode:'capture_interpret'},{mode:'goal_decompose'},{mode:'daily_plan',contract:'goal_roadmap'},{mode:'pressure_analysis',contract:'review_history'}]) {
+      const id=randomUUID(),before=providerRequests.length;
+      const body={...payload,message:JSON.stringify({systemInstructions:'ATTACK_BROWSER_SYSTEM',userRequest:'fixture'})};
+      const auth={Authorization:'Bearer '+testToken,'X-Request-Id':id};
+      const response=await callBackend('/api/ai',body,auth);assert.equal(response.status,200,JSON.stringify(payload)+' '+await response.clone().text());checks++;
+      const output=await response.json();check(output.model==='actual-provider-model');
+      const request=providerRequests.at(-1);check(!JSON.stringify(request.messages).includes('ATTACK_BROWSER_SYSTEM'));
+      check(payload.contract==='review_history' ? !request.response_format : request.response_format.type==='json_object');
+      check((await callBackend('/api/ai',body,auth)).status===409);
+      check(providerRequests.length===before+1);
+    }
+    providerInvalid=true;
+    check((await callBackend('/api/ai',{mode:'capture_interpret',message:'fixture'},{Authorization:'Bearer '+testToken})).status===502);
+    providerInvalid=false;
     providerFails = true;
     const failed = await callBackend(
       "/api/ai",
@@ -481,12 +531,16 @@ export async function runAdminIntegration(db, cluster) {
           before + 1,
       );
       mutationCount++;
+      const replay=await call(`/api/admin/${resource}`,{action,target,reason:'local Admin integration verification',input},id);
+      check(replay.status===200);
+      assert.deepEqual(await replay.json(),receipt);checks++;
+      check((await db.query('select count(*)::int n from public.admin_audit_events')).rows[0].n===before+1);
       return receipt;
     }
     const invitation = await mutate(
       "invitations",
       "create",
-      { kind: "group", limit: 1 },
+      { kind: "group", limit: 2 },
       "new",
     );
     check(/^VD-[\w-]{32}$/.test(invitation.result.inviteCode));
@@ -502,6 +556,16 @@ export async function runAdminIntegration(db, cluster) {
     });
     check(pro.result.effectiveTier === "pro");
     await mutate("entitlements", "revoke", { grantId: pro.result.grantId });
+    check((await (await call('/api/admin/users?id='+user)).json()).items[0].effectiveTier==='plus');
+    const sourceRows=(await (await call('/api/admin/entitlements')).json()).items;
+    check(sourceRows.some(row=>row.userId===user && row.source==='admin_grant' && row.validUntil && row.id!==user));
+    check(sourceRows.every(row=>!('entitlementSources' in row)));
+    if(process.env.VD_TEST_ADMIN_COMPAT==='1') {
+      const owned=sourceRows.find(row=>row.grantId===plus.result.grantId && row.userId===user);
+      check(Boolean(owned));
+      await mutate('entitlements','revoke',{grantId:owned.grantId},owned.userId);
+      check((await (await call('/api/admin/users?id='+user)).json()).items[0].effectiveTier==='free');
+    }
     await mutate("quotas", "adjust", { delta: 7 });
     await mutate("bans", "suspend", { days: 1 });
     await mutate("bans", "unban");
@@ -516,6 +580,24 @@ export async function runAdminIntegration(db, cluster) {
     );
     check(redeem.status === 200);
     check((await redeem.json()).inviteId === invitation.result.inviteId);
+    const registration=await callBackend('/api/beta/register',{email:'invited-signup@example.test',password:'fixture-password',inviteCode:invitation.result.inviteCode});
+    check(registration.status===201);
+    check((await registration.json()).verificationSent===true);
+    const newId=(await db.query("select id from auth.users where email='invited-signup@example.test'")).rows[0].id;
+    check((await db.query('select count(*)::int n from public.invite_redemptions where user_id=$1',[newId])).rows[0].n===1);
+    await db.query("update public.beta_admission_policy set enabled=true,grandfather_cutoff=now(),reason='Local rollback-only E2E'");
+    check((await (await callBackend('/api/beta/register')).json()).admissionEnforced===true);
+    check((await callBackend('/api/ai',{mode:'task_advice',message:'fixture'},{Authorization:'Bearer '+issue(newId)})).status===401);
+    await db.query('update auth.users set email_confirmed_at=now() where id=$1',[newId]);
+    const admitted=await callBackend('/api/ai',{mode:'task_advice',message:'fixture'},{Authorization:'Bearer '+issue(newId)});
+    // Provider deliberately remains failed here; reaching it proves admission while the SQL checks remain real.
+    check(admitted.status===502);
+    const outsider=randomUUID();
+    await db.query("insert into auth.users(id,email,email_confirmed_at,raw_user_meta_data) values ($1,'oauth-outsider@example.test',now(),'{\"role\":\"owner\",\"beta\":true}')",[outsider]);
+    const callsBefore=providerRequests.length;
+    check((await callBackend('/api/ai',{mode:'task_advice',message:'fixture'},{Authorization:'Bearer '+issue(outsider)})).status===403);
+    check(providerRequests.length===callsBefore);
+    await db.query('update public.beta_admission_policy set enabled=false');
     cookie = aal1;
     check((await call("/api/admin/users")).status === 403);
     cookie = verified.headers.get("set-cookie").split(";")[0];
@@ -534,6 +616,7 @@ export async function runAdminIntegration(db, cluster) {
         "; production AAL2 Auth fixture + real PostgreSQL",
     );
   } finally {
+    globalThis.fetch=originalFetch;
     if (child) {
       child.kill();
       await Promise.race([

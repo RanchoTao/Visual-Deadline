@@ -15,7 +15,7 @@
     "v2:backfill:fixture": "node scripts/generate-v2-backfill-fixture.mjs",
     "test:v2:backfill:local": "node scripts/test-v2-local-backfill.mjs",
     "test:v2:guest-import:local": "node scripts/test-v2-guest-import-local.mjs",
-    "test:admin": "node --test tests/adminBackend.test.mjs",
+    "test:admin": "node --test tests/adminBackend.test.mjs tests/consolidation.test.mjs",
     "test:admin:db": "node scripts/test-admin-postgres.mjs"
   },
   "dependencies": {

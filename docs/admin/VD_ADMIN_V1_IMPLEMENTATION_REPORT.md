@@ -43,7 +43,7 @@ Beta defaults are UTC daily request units: Free 20, Plus 200, Pro 500. These val
 
 Provider calls time out after 30 seconds; stale reservations expire after two minutes and are marked released on the next reservation. If the provider succeeds but settlement transport fails, the API fails closed and leaves the reservation pending rather than falsely marking provider usage failed. Production acceptance must include durable monitoring/reconciliation of these rare uncertain settlements; no external provider reconciliation worker is implemented in this PR.
 
-Restricted/suspended/banned status blocks cloud writes, AI, intake and user-initiated billing endpoints. New restrictive INSERT/UPDATE/DELETE policies supplement existing owner RLS on 22 product tables and storage objects. Read/export and local data remain available. `account_bootstrap()` exposes only the signed-in user's state/tier; UI shows blocked or unknown status without deleting data. Expired controls resolve to normal. These are VD controls: no Supabase Auth ban or session revocation occurs; mutation results say `authProviderPropagation: not_requested`. A future Auth reconciler must separately record provider-confirmed outcomes.
+Restricted/suspended/banned status blocks cloud writes, AI, intake and user-initiated billing endpoints. New restrictive INSERT/UPDATE/DELETE policies supplement existing owner RLS on 22 product tables and storage objects. Read/export and local data remain available. `account_bootstrap()` exposes only the signed-in user's state/tier and authoritative admission status; UI shows blocked or unknown status without deleting data. Expired controls resolve to normal. These are VD controls: no Supabase Auth ban or session revocation occurs; mutation results say `authProviderPropagation: not_requested`. A future Auth reconciler must separately record provider-confirmed outcomes.
 
 ## Beta, invitations and email
 
@@ -59,7 +59,7 @@ Approve-and-email atomically creates the invite, updates application state, crea
 
 Owner-only inspect requires case reference, category, scope and a valid interval no longer than 31 days. Audit is inserted before bounded content selection; SQL commits before HTTP returns. Up to 50 items expose only ID, title (1000 characters), content (6000), createdAt and updatedAt, with a 240000-byte internal result bound. Exact retry data is encrypted in the command receipt. Audit snapshots record authorization metadata, never content. There is no ordinary restricted-content GET.
 
-## Validation evidence
+## Original Admin foundation validation evidence (superseded by consolidation evidence below)
 
 - Product regression: `npm test` (291 existing domain tests plus 6 Admin boundary tests), `npm run typecheck`, `npm run build`, static migrations/routing/browser-secret scan and `git diff --check`.
 - Fresh actual PostgreSQL: 14 applied migrations, 201 Admin assertions including independent-connection quota/idempotency/invite races and forced audit rollback.
@@ -67,3 +67,15 @@ Owner-only inspect requires case reference, category, scope and a valid interval
 - Actual production-mode Admin Next server → VD handlers → real SQL: 72 HTTP/E2E assertions; eight mutations each matched exactly one authoritative audit. Password/AAL1 rejection, enrollment/challenge fixture, AAL2 page/API, logout, users, invitations, approval/email queue, tiers, revocation, quota, suspend/unban and audit were exercised. AI success/failure also used a local provider double and real reservation/settlement SQL.
 
 The local harness substitutes Supabase Auth/REST transport and AI provider responses. It does not prove real GoTrue/TOTP, managed PostgREST grants, hosted Storage behavior, Vercel deployment routing or email delivery. No real production credentials are needed. Reproduction steps and acceptance gates are in the security review and rollback guide.
+
+
+## PR139 consolidation follow-up
+
+See [frozen file audit](PR139_PR140_CONSOLIDATION.md) and [admission/registration procedure](CLOSED_BETA_ADMISSION.md). The two original Admin migrations are byte-for-byte preserved; one CLI-generated additive consolidation migration extends them. AI prompt authority, structured output validation and actual provider/model/server generatedAt are restored without PR139 quota SQL. Client request UUIDs reach durable reservation; replays never call the provider. Generated time and actual model settle in the same PR140 ledger.
+
+Entitlements LIST now emits operational source rows, deduplicating inherited Plus for a Pro operator grant while retaining independent Plus sources. `grantId` is present only for operator grants; `users?id` keeps aggregate sources/grants/capabilities. The separate Admin consumer disables masked-code copying and uses that explicit grant ID for source-row revocation. No provider payload or subscription mutation is introduced.
+
+
+### Consolidated executed evidence
+
+Latest local consolidation: VD 313 tests; typecheck/build/static migration/routing/secret checks pass; fresh 15-migration chain; 11 pgTAP suites / 282 assertions; 201 existing authority/concurrency checks; local error-level advisor no findings. Baseline Admin f608401 build passed 139 HTTP checks; compatible Admin daa0f18 passed 148 checks including source-row grant revocation and nine committed audited mutations. Real beta application browser flow passed 3 checks with a test-only widget and real SQL. Independent Admin 35 tests, typecheck/build, client scan, 59 HTTP checks and production runtime/MFA gates pass. See the reconciliation audit for limits and precise file dispositions. Hosted acceptance remains HOLD.

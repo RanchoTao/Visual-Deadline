@@ -14,7 +14,7 @@ grant usage on schema public,auth,storage,extensions to anon,authenticated,servi
 create table auth.users (
  id uuid primary key, instance_id uuid, aud text, role text, email text,
  encrypted_password text, raw_app_meta_data jsonb, raw_user_meta_data jsonb,
- created_at timestamptz default now(), updated_at timestamptz default now(), last_sign_in_at timestamptz, email_confirmed_at timestamptz
+ created_at timestamptz default now(), updated_at timestamptz default now(), last_sign_in_at timestamptz, email_confirmed_at timestamptz, phone_confirmed_at timestamptz
 );
 grant all on auth.users to supabase_auth_admin;
 create function auth.uid() returns uuid language sql stable as $$
