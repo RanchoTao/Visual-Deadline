@@ -1,0 +1,27 @@
+name: Admin foundation checks
+on:
+  pull_request:
+  push:
+    branches: [codex/vd-admin-v1]
+permissions:
+  contents: read
+jobs:
+  foundation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run typecheck
+      - run: npm run build
+      - name: Install isolated local PostgreSQL test tools
+        run: npm install --prefix "$RUNNER_TEMP/vd-admin-tools" --no-audit --no-fund pg@8.16.3 embedded-postgres@17.9.0-beta.17
+      - name: Fresh migration chain and real authority/RLS/concurrency tests
+        run: npm run test:admin:db
+        env:
+          VD_TEST_TOOLS_DIR: ${{ runner.temp }}/vd-admin-tools
+      - run: git diff --check

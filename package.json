@@ -8,13 +8,15 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b",
-    "test": "npm run test:life-controller && npm run test:sql:static",
+    "test": "npm run test:life-controller && npm run test:sql:static && npm run test:admin",
     "test:sql:static": "node scripts/check-v2-migrations.mjs && node scripts/check-vercel-spa-routing.mjs && node scripts/check-production-secret-exposure.mjs",
     "test:life-controller": "tsc -p tests/tsconfig.life-controller.json && node --test tests/lifeController.test.mjs tests/executionDomain.test.mjs tests/homeProjection.test.mjs tests/v2Domain.test.mjs tests/v2Ranking.test.mjs tests/v2Backfill.test.mjs tests/dataSafety.test.mjs tests/authIdentity.test.mjs tests/smsBridgeContract.test.mjs tests/workspaceOwnership.test.mjs tests/appShell.test.mjs tests/accountSurface.test.mjs tests/captureFirst.test.mjs tests/tasksOperations.test.mjs tests/planHierarchy.test.mjs tests/opsExecution.test.mjs tests/reviewWorkspace.test.mjs tests/recurringBilling.test.mjs",
     "v2:backfill:local": "node scripts/v2-local-backfill.mjs",
     "v2:backfill:fixture": "node scripts/generate-v2-backfill-fixture.mjs",
     "test:v2:backfill:local": "node scripts/test-v2-local-backfill.mjs",
-    "test:v2:guest-import:local": "node scripts/test-v2-guest-import-local.mjs"
+    "test:v2:guest-import:local": "node scripts/test-v2-guest-import-local.mjs",
+    "test:admin": "node --test tests/adminBackend.test.mjs tests/consolidation.test.mjs",
+    "test:admin:db": "node scripts/test-admin-postgres.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",

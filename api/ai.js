@@ -1,13 +1,17 @@
+import {randomUUID} from 'node:crypto';
+import {ApiError,UUID,authenticateUser,readBody,rpc,assertAccountNormal} from '../server/admin/runtime.js';
+import {buildProviderRequest,selectAIContract,validateProviderOutput} from '../server/platform/aiContracts.js';
 const MAX_MESSAGE_LENGTH = 12_000;
 const MAX_CONTEXT_LENGTH = 60_000;
-const MAX_REQUESTS_PER_USER_PER_DAY = 20;
+const MAX_REQUESTS_PER_USER_PER_HOUR = 60;
 const MAX_AUTH_HEADER_LENGTH = 8_500;
 const DEEPSEEK_PROVIDER = 'deepseek';
 const SUPPORTED_MODES = new Set(['task_advice', 'daily_plan', 'pressure_analysis', 'capture_interpret', 'goal_decompose']);
-const dailyRequestCounts = new Map();
+const hourlyRequestCounts = new Map();
 
 function sendJson(response, status, body) {
   response.status(status).setHeader('Content-Type', 'application/json');
+  response.setHeader('Cache-Control', 'no-store');
   response.end(JSON.stringify(body));
 }
 
@@ -34,61 +38,24 @@ function getApproximateHeaderSize(request) {
   }, 0);
 }
 
-function trimForLog(text, maxLength = 2000) {
-  return text.length > maxLength ? `${text.slice(0, maxLength)}…` : text;
-}
-
-function logAIRequestFailure({ url, status, responseText }) {
-  console.error('[VD_API_AI_REQUEST_FAILED]', {
-    url,
-    status,
-    responseText: trimForLog(responseText),
-  });
-}
-
-async function readJsonBody(request) {
-  if (request.body && typeof request.body === 'object') return request.body;
-
-  const chunks = [];
-  for await (const chunk of request) chunks.push(Buffer.from(chunk));
-  const raw = Buffer.concat(chunks).toString('utf8');
-  return raw ? JSON.parse(raw) : {};
-}
-
-async function verifySupabaseToken(accessToken) {
-  const supabaseUrl = readEnv('SUPABASE_URL', 'VITE_SUPABASE_URL').replace(/\/+$/, '');
-  const supabaseAnonKey = readEnv('SUPABASE_ANON_KEY', 'VITE_SUPABASE_ANON_KEY');
-  if (!supabaseUrl || !supabaseAnonKey) throw new Error('SUPABASE_CONFIG_MISSING');
-
-  const response = await fetch(`${supabaseUrl}/auth/v1/user`, {
-    headers: {
-      apikey: supabaseAnonKey,
-      Authorization: `Bearer ${accessToken}`,
-    },
-  });
-
-  if (!response.ok) return null;
-  const user = await response.json();
-  return typeof user?.id === 'string' ? user : null;
-}
-
 function getUsageKey(userId) {
-  return `${userId}:${new Date().toISOString().slice(0, 10)}`;
+  return `${userId}:${new Date().toISOString().slice(0, 13)}`;
 }
 
 function checkRateLimit(userId) {
-  // TODO: Move this placeholder limit to a Supabase table or another durable store.
-  // Vercel function memory is per warm instance and can reset/rebalance between invocations.
+  // Per-instance burst friction only. Commercial quota is enforced by the PostgreSQL reservation.
   const key = getUsageKey(userId);
-  const used = dailyRequestCounts.get(key) || 0;
-  if (used >= MAX_REQUESTS_PER_USER_PER_DAY) return false;
-  dailyRequestCounts.set(key, used + 1);
+  for(const oldKey of hourlyRequestCounts.keys()) if(!oldKey.endsWith(new Date().toISOString().slice(0,13))) hourlyRequestCounts.delete(oldKey);
+  const used = hourlyRequestCounts.get(key) || 0;
+  if (used >= MAX_REQUESTS_PER_USER_PER_HOUR) return false;
+  hourlyRequestCounts.set(key, used + 1);
   return true;
 }
 
 function validatePayload(payload) {
   if (!payload || typeof payload !== 'object') return '请求体必须是 JSON 对象。';
   if (!SUPPORTED_MODES.has(payload.mode)) return 'mode 必须是 task_advice、daily_plan、pressure_analysis、capture_interpret 或 goal_decompose。';
+  try { selectAIContract(payload); } catch { return '请求的输出契约无效。'; }
   if (typeof payload.message !== 'string' || !payload.message.trim()) return 'message 不能为空。';
   if (payload.message.length > MAX_MESSAGE_LENGTH) return `message 不能超过 ${MAX_MESSAGE_LENGTH} 个字符。`;
 
@@ -133,18 +100,7 @@ async function callDeepSeek(payload) {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        model,
-        messages: [
-          {
-            role: 'system',
-            content:
-              "You are Visual Deadline's AI planning assistant. Analyze task, goal, and pressure data only from the provided JSON. Be concise, practical, structured, and respond in Simplified Chinese unless the user asks otherwise. Never claim to modify data directly.",
-          },
-          { role: 'user', content: buildUserContent(payload) },
-        ],
-        temperature: 0.4,
-      }),
+      body: JSON.stringify(buildProviderRequest(payload, model)),
     });
 
     const rawText = await response.text();
@@ -156,17 +112,17 @@ async function callDeepSeek(payload) {
     }
 
     if (!response.ok) {
-      logAIRequestFailure({ url: `${baseUrl.replace(/\/+$/, '')}/chat/completions`, status: response.status, responseText: rawText });
-      const upstreamMessage = typeof data?.error?.message === 'string' ? data.error.message : `DeepSeek returned ${response.status}`;
-      const error = new Error(upstreamMessage);
+      console.error('[VD_API_AI_REQUEST_FAILED]', {status:response.status});
+      const error = new Error('AI_PROVIDER_REJECTED');
       error.status = response.status;
       throw error;
     }
 
-    const content = data?.choices?.[0]?.message?.content?.trim();
-    if (!content) throw new Error('DeepSeek 未返回有效内容。');
+    const content = validateProviderOutput(payload, data?.choices?.[0]);
+    if (typeof data?.model !== 'string' || !data.model.trim() || data.model.length > 200) throw new Error('AI_OUTPUT_CONTRACT_INVALID');
 
-    return { content, model };
+    const integer=value=>Number.isSafeInteger(value)&&value>=0?value:null;
+    return { content, model:data.model.trim(), generatedAt:new Date().toISOString(), usage:{inputTokens:integer(data?.usage?.prompt_tokens),outputTokens:integer(data?.usage?.completion_tokens),cachedTokens:integer(data?.usage?.prompt_cache_hit_tokens)} };
   } finally {
     clearTimeout(timeoutId);
   }
@@ -178,6 +134,8 @@ export default async function handler(request, response) {
     return sendJson(response, 405, { ok: false, error: '只支持 POST 请求。' });
   }
 
+  let reservation;
+  let providerSucceeded=false;
   try {
     const headerSize = getApproximateHeaderSize(request);
     const authorizationHeader = getAuthorizationHeader(request);
@@ -189,30 +147,45 @@ export default async function handler(request, response) {
     const accessToken = getBearerToken(request);
     if (!accessToken) return sendJson(response, 401, { ok: false, error: '缺少 Supabase 登录凭证。' });
 
-    const user = await verifySupabaseToken(accessToken);
-    if (!user) return sendJson(response, 401, { ok: false, error: 'Supabase 登录凭证无效或已过期。' });
+    const user = await authenticateUser(request);
+    await assertAccountNormal(user.id);
 
-    const payload = await readJsonBody(request);
+    const payload = await readBody(request,100000);
     const validationError = validatePayload(payload);
     if (validationError) return sendJson(response, 400, { ok: false, error: validationError });
 
-    if (!checkRateLimit(user.id)) return sendJson(response, 429, { ok: false, error: '今日 AI 请求次数已达上限（20 次）。请明天再试。' });
+    if (!checkRateLimit(user.id)) return sendJson(response, 429, { ok: false, error: '请求过于频繁，请稍后重试。' });
+    const suppliedId=request.headers['x-request-id'];
+    if(suppliedId!==undefined && (typeof suppliedId!=='string'||!UUID.test(suppliedId))) return sendJson(response,400,{ok:false,error:'请求标识无效。'});
+    const requestId=suppliedId||randomUUID();
+    await rpc('ai_reserve',{p_user:user.id,p_request:requestId,p_mode:selectAIContract(payload).key,p_provider:DEEPSEEK_PROVIDER,p_model:readEnv('DEEPSEEK_MODEL')||'deepseek-chat'});
+    reservation={userId:user.id,requestId,started:Date.now()};
 
     const result = await callDeepSeek(payload);
+    providerSucceeded=true;
+    await rpc('ai_settle',{p_user:user.id,p_request:requestId,p_status:'succeeded',p_usage:{...result.usage,model:result.model,generatedAt:result.generatedAt,latencyMs:Date.now()-reservation.started}});
+    reservation=undefined;
     return sendJson(response, 200, {
       ok: true,
       content: result.content,
       model: result.model,
       provider: DEEPSEEK_PROVIDER,
+      generatedAt: result.generatedAt,
     });
   } catch (error) {
+    if(reservation && !providerSucceeded) {
+      try {await rpc('ai_settle',{p_user:reservation.userId,p_request:reservation.requestId,p_status:error?.name==='AbortError'?'cancelled':'failed',p_usage:{latencyMs:Date.now()-reservation.started,errorCode:'PROVIDER_OR_SETTLEMENT_FAILED'}});}
+      catch {console.error('[VD_API_AI_SETTLEMENT_PENDING]',{requestId:reservation.requestId});}
+    }
+    if(error instanceof ApiError) return sendJson(response,error.status,{ok:false,error:error.code==='AI_QUOTA_EXHAUSTED'?'当前 AI 配额已用尽。':error.code==='ACCOUNT_BLOCKED'?'账号当前禁止云端写入和 AI 请求。':'认证或配额服务暂时不可用。'});
     if (error?.message === 'SUPABASE_CONFIG_MISSING') return sendJson(response, 500, { ok: false, error: '服务端 Supabase 环境变量未配置。' });
     if (error?.message === 'UNSUPPORTED_PROVIDER') return sendJson(response, 500, { ok: false, error: '当前服务端 AI_PROVIDER 暂不支持。' });
     if (error?.message === 'DEEPSEEK_API_KEY_MISSING') return sendJson(response, 500, { ok: false, error: '服务端 DeepSeek API Key 未配置。' });
     if (error?.name === 'AbortError') return sendJson(response, 504, { ok: false, error: 'AI 请求超时，请稍后重试。' });
+    if (error?.message === 'AI_OUTPUT_CONTRACT_INVALID') return sendJson(response,502,{ok:false,error:'AI 返回内容不符合本功能的格式要求，请重新生成。'});
 
     const status = Number.isInteger(error?.status) && error.status >= 400 && error.status < 600 ? error.status : 500;
-    const message = error instanceof Error && error.message ? error.message : 'AI 服务暂时不可用，请稍后重试。';
+    const message = 'AI 服务暂时不可用，请稍后重试。';
     return sendJson(response, status >= 500 ? 502 : status, { ok: false, error: message });
   }
 }

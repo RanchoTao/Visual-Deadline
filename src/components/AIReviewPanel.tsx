@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { storageKeys } from '../storage';
 import type { AIArtifactInput, PressureHistoryRecord, Task } from '../types/task';
-import { defaultAISettings, getAIConnectionLabel, isDeveloperAIKeyMode, normalizeAISettings, requestChatCompletion, type AISettings } from '../services/aiClient';
+import { defaultAISettings, getAIConnectionLabel, isDeveloperAIKeyMode, normalizeAISettings, requestChatCompletionWithProvenance, type AISettings } from '../services/aiClient';
 import { buildReviewUserPrompt, reviewSystemPrompt } from '../services/reviewPrompt';
 import { AIReportRenderer } from './AIReportRenderer';
 
@@ -32,18 +32,18 @@ export function AIReviewPanel({ tasks, pressureHistory, onAIReportGenerated }: A
     setState('loading');
     setErrorMessage('');
     try {
-      const result = await requestChatCompletion(settings, reviewSystemPrompt, buildReviewUserPrompt(tasks, pressureHistory), { mode: 'pressure_analysis', context: { tasks, pressure: pressureHistory.at(-1) } });
-      setReport(result);
+      const result = await requestChatCompletionWithProvenance(settings, reviewSystemPrompt, buildReviewUserPrompt(tasks, pressureHistory), { mode: 'pressure_analysis', contract: 'legacy_review', context: { tasks, pressure: pressureHistory.at(-1) } });
+      setReport(result.content);
       setState('success');
       onAIReportGenerated?.({
         kind: 'review',
         title: '近期系统观察',
-        content: result,
+        content: result.content,
         relatedTaskIds: tasks.map((task) => task.id),
         relatedGoalIds: [],
         pressure: pressureHistory.at(-1)?.pressure,
-        model: settings.model,
-        metadata: { provider: settings.provider, pressureRecordCount: pressureHistory.length },
+        model: result.model,
+        metadata: { provider: result.provider, generatedAt: result.generatedAt, pressureRecordCount: pressureHistory.length },
       });
     } catch (error) {
       setState('error');

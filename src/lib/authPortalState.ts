@@ -19,5 +19,6 @@ export function isSixDigitOtp(value: string): boolean {
 
 /** A confirmation-required signup is the only result that enters email OTP. */
 export function nextModeAfterEmailSignup(signupSession: unknown): AuthPortalMode | undefined {
+  if (signupSession && typeof signupSession === 'object' && 'requiresEmailVerification' in signupSession && signupSession.requiresEmailVerification === true) return 'email-otp';
   return signupSession ? undefined : 'email-otp';
 }

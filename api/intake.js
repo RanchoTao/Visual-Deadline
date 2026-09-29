@@ -1,3 +1,4 @@
+import {ApiError,readBody,assertAccountNormal} from '../server/admin/runtime.js';
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
 const BUCKET = 'intake-assets';
 const MIME_KINDS = new Map([
@@ -67,12 +68,14 @@ export default async function handler(request, response) {
     if (!url || !anonKey) return send(response, 500, { ok: false, error: '服务端 Supabase 未配置。' });
     const user = token && await getUser(url, anonKey, token);
     if (!user?.id) return send(response, 401, { ok: false, error: '登录状态无效或已过期。' });
-    const input = parseRequest(request.body, user.id);
+    await assertAccountNormal(user.id);
+    const input = parseRequest(await readBody(request,60000), user.id);
     await Promise.all(input.assets.map((asset) => verifyObject(url, anonKey, token, asset)));
     await insert(url, anonKey, token, 'intake_messages', [{ id: input.intakeId, user_id: user.id, role: 'user', text_content: input.text, status: 'processing' }]);
     if (input.assets.length) await insert(url, anonKey, token, 'intake_assets', input.assets.map((asset) => ({ id: crypto.randomUUID(), intake_message_id: input.intakeId, user_id: user.id, storage_bucket: BUCKET, storage_path: asset.storagePath, kind: asset.kind, mime_type: asset.mimeType, file_name: asset.fileName, size_bytes: asset.size, status: 'uploaded' })));
     return send(response, 202, { ok: true, intakeId: input.intakeId, status: 'processing' });
   } catch (error) {
+    if(error instanceof ApiError) return send(response,error.status,{ok:false,error:error.code==='ACCOUNT_BLOCKED'?'账号当前禁止云端写入。':'录入服务暂时不可用。'});
     return send(response, 400, { ok: false, error: error instanceof Error ? error.message : '录入请求无效。' });
   }
 }

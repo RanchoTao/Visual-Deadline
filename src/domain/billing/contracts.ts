@@ -1,7 +1,7 @@
 export type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'paused' | 'cancel_scheduled' | 'canceled' | 'expired';
 export type ProviderEnvironment = 'sandbox' | 'production' | 'legacy_unknown';
 export type EntitlementStatus = 'active' | 'inactive' | 'revoked' | 'expired';
-export type EntitlementSourceType = 'subscription' | 'legacy_membership_grant' | 'legacy_membership' | 'admin_grant';
+export type EntitlementSourceType = 'subscription' | 'legacy_membership_grant' | 'legacy_membership' | 'admin_grant' | 'operator_grant';
 export type BillingEventSource = 'webhook' | 'reconciliation' | 'migration' | 'manual_admin';
 
 export interface Subscription {
@@ -47,7 +47,7 @@ export interface PaymentReference {
 export interface Entitlement {
   id: string;
   user_id: string;
-  capability: 'vd.plus';
+  capability: 'vd.plus' | 'vd.pro';
   source_type: EntitlementSourceType;
   source_id: string;
   status: EntitlementStatus;
