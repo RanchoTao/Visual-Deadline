@@ -1,8 +1,23 @@
 {
-  "crons": [
-    { "path": "/api/billing-reconcile", "schedule": "17 3 * * *" }
-  ],
+  "git": { "deploymentEnabled": { "codex/vd-admin-v1": false, "codex/rancho-task-fixes-20261008-6cd68af": false } },
+  "crons": [{ "path": "/api/billing-reconcile", "schedule": "17 3 * * *" }],
   "rewrites": [
+    {
+      "source": "/api/internal/admin/v1/:resource/actions",
+      "destination": "/api/internal/admin?resource=:resource&operation=actions"
+    },
+    {
+      "source": "/api/internal/admin/v1/:resource",
+      "destination": "/api/internal/admin?resource=:resource"
+    },
+    {
+      "source": "/v1/admin/:resource/actions",
+      "destination": "/api/internal/admin?resource=:resource&operation=actions"
+    },
+    {
+      "source": "/v1/admin/:resource",
+      "destination": "/api/internal/admin?resource=:resource"
+    },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

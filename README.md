@@ -23,6 +23,10 @@ A pressure-aware, visualization-driven life operating system for deadlines, prio
 
 ## What is VD?
 
+### Internal Admin backend v1
+
+The independent Admin-1 console remains contract-tested. This repository now provides the authoritative Admin API, transactional audits, Free / Plus / Pro operator grants, durable beta AI quota, account controls and invitation/email outbox infrastructure. Production Admin requires Supabase MFA/AAL2. No production operational write, deployment or email sender is enabled by this change; isolated Supabase acceptance and server configuration are required. See the [implementation report](docs/admin/VD_ADMIN_V1_IMPLEMENTATION_REPORT.md), [security review](docs/admin/VD_ADMIN_V1_SECURITY_REVIEW.md) and [rollback guide](docs/admin/VD_ADMIN_V1_ROLLBACK.md).
+
 **Visual Deadline (VD)** is not a traditional todo list. It is a **life operating system** that makes invisible pressure visible.
 
 Most task apps ask: “What do you need to do?” VD asks a deeper question:
@@ -373,3 +377,10 @@ The project also draws from ideas in time management, cognitive load theory, per
 ## License
 
 Visual Deadline is licensed under the [Apache License 2.0](./LICENSE).
+
+
+## Closed Beta / PR139 consolidation
+
+PR140 is the canonical authority for Free / Plus / Pro, Admin roles/audit/receipts, grants, AI quota ledger and account controls. [File-by-file reconciliation](docs/admin/PR139_PR140_CONSOLIDATION.md) records the frozen PR139 reference and its disposition. [Admission rollout and grandfathering](docs/admin/CLOSED_BETA_ADMISSION.md) describes the single database-owned `VD_CLOSED_BETA_ADMISSION_ENFORCED` policy, default OFF. The beta application intake availability flag does not grant workspace admission.
+
+The actual `/beta/apply` page uses Turnstile without a bypass. Invited signup and verified redemption reuse PR140 tables/RPCs. Cloud AI now uses server-owned mode contracts, validated JSON/Markdown and actual returned model/provider/server generation time. Existing local data, billing rules and subscriptions remain preserved. No merge, hosted migration or production rollout is performed; real Auth/Turnstile/SMTP/provider and hosted acceptance remain external gates.

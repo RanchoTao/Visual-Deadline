@@ -1,4 +1,5 @@
 import { createPaddleClient } from '../server/billing/paddle.js';
+import {assertAccountNormal,ApiError} from '../server/admin/runtime.js';
 import { createBillingRepository } from '../server/billing/repository.js';
 import { authenticateUser, createCheckoutRecoveryBinding, readEnv, recurringRuntime, sendJson, supabaseRuntime } from '../server/billing/runtime.js';
 
@@ -27,6 +28,7 @@ export default async function handler(request, response) {
   if (!catalog) return sendJson(response, 400, { ok: false, code: 'INVALID_RECURRING_PLAN', error: '订阅方案无效或未配置。' });
 
   try {
+    await assertAccountNormal(user.id);
     const paddle = createPaddleClient(runtime);
     const checkoutUrl = readEnv('PADDLE_CHECKOUT_URL');
     const recoveryBinding = createCheckoutRecoveryBinding({
@@ -69,6 +71,7 @@ export default async function handler(request, response) {
       providerEnvironment: runtime.environment,
     });
   } catch (error) {
+    if(error instanceof ApiError) return sendJson(response,error.status,{ok:false,code:error.code,error:'账号或权限服务当前不允许此操作。'});
     console.error('[VD_RECURRING_CHECKOUT_FAILED]', { message: error instanceof Error ? error.message : String(error) });
     return sendJson(response, 502, { ok: false, code: 'RECURRING_CHECKOUT_FAILED', error: '暂时无法创建自动续费订阅，请稍后重试。' });
   }

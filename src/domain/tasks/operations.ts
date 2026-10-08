@@ -123,5 +123,11 @@ export function transitionTaskLifecycle(task: Task, lifecycleStatus: LifecycleSt
 
 /** Explicit status selection wins when editing an existing task. */
 export function applyTaskEditLifecycle(task: Task, input: TaskInput, now = new Date().toISOString()): Task {
-  return transitionTaskLifecycle({ ...task, ...input, completedAt: undefined, abandonedAt: undefined, updatedAt: now }, input.lifecycleStatus, now);
+  const edited = transitionTaskLifecycle({ ...task, ...input, completedAt: undefined, abandonedAt: undefined, updatedAt: now }, input.lifecycleStatus, now);
+  // Detail edits must not move an existing lifecycle event into today's history.
+  if (task.lifecycleStatus === input.lifecycleStatus) {
+    if (input.lifecycleStatus === 'completed') return { ...edited, completedAt: task.completedAt ?? edited.completedAt };
+    if (input.lifecycleStatus === 'abandoned') return { ...edited, abandonedAt: task.abandonedAt ?? edited.abandonedAt };
+  }
+  return edited;
 }

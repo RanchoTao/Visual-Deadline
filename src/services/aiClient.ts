@@ -12,6 +12,7 @@ export interface AISettings {
 
 export interface BackendAIRequest {
   mode: BackendAIMode;
+  contract?: 'review_history' | 'legacy_review' | 'goal_roadmap';
   message: string;
   context?: {
     tasks?: unknown[];
@@ -25,10 +26,12 @@ export interface BackendAIResponse {
   content: string;
   model: string;
   provider: 'deepseek';
+  generatedAt: string;
 }
 
 interface RequestChatCompletionOptions {
   mode?: BackendAIMode;
+  contract?: BackendAIRequest['contract'];
   context?: BackendAIRequest['context'];
 }
 
@@ -37,6 +40,11 @@ export interface AICompletionResult {
   generatedAt: string;
   model: string;
   provider: string;
+}
+export type AICompletionProvenance = Omit<AICompletionResult, 'content'>;
+
+export function aiArtifactProvenance(result: AICompletionProvenance) {
+  return { model: result.model, metadata: { provider: result.provider, generatedAt: result.generatedAt } };
 }
 
 export const defaultAISettings: AISettings = {
@@ -98,17 +106,6 @@ interface BackendAIErrorResponse {
   error?: string;
 }
 
-function buildBackendMessage(systemPrompt: string, userPrompt: string): string {
-  return JSON.stringify(
-    {
-      systemInstructions: systemPrompt,
-      userRequest: userPrompt,
-    },
-    null,
-    2,
-  );
-}
-
 function isSafeBearerToken(token: unknown): token is string {
   return typeof token === 'string' && token.length > 0 && token.length <= MAX_SAFE_BEARER_TOKEN_LENGTH && JWT_LIKE_PATTERN.test(token);
 }
@@ -149,6 +146,7 @@ export async function callBackendAI(request: BackendAIRequest): Promise<BackendA
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${session.access_token}`,
+      'X-Request-Id': crypto.randomUUID(),
     },
     body: JSON.stringify(request),
   });
@@ -164,6 +162,7 @@ export async function callBackendAI(request: BackendAIRequest): Promise<BackendA
     throw new Error(message);
   }
 
+  if (!payload.model || !payload.provider || typeof payload.generatedAt !== 'string' || !Number.isFinite(Date.parse(payload.generatedAt))) throw new Error('AI 返回来源信息不完整。');
   return payload;
 }
 
@@ -214,8 +213,9 @@ export async function requestChatCompletionWithProvenance(settings: AISettings, 
 
   const response = await callBackendAI({
     mode: options.mode ?? 'task_advice',
-    message: buildBackendMessage(systemPrompt, userPrompt),
+    contract: options.contract,
+    message: userPrompt,
     context: options.context,
   });
-  return { content: response.content, generatedAt: new Date().toISOString(), model: response.model, provider: response.provider };
+  return { content: response.content, generatedAt: response.generatedAt, model: response.model, provider: response.provider };
 }
