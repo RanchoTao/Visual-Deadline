@@ -21,6 +21,7 @@
     "../src/domain/v2/**/*.ts",
     "../src/domain/account/**/*.ts",
     "../src/utils/taskScoring.ts",
+    "../src/utils/date.ts",
     "../src/storage/schema.ts",
     "../src/storage/inventory.ts",
     "../src/storage/dataSafety.ts",
