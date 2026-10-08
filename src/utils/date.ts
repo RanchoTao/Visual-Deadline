@@ -5,12 +5,15 @@ const MS_PER_DAY = 24 * MS_PER_HOUR;
 export function formatDeadline(deadline?: string): string {
   if (!deadline) return '无截止日期';
 
+  const date = new Date(deadline);
+  if (Number.isNaN(date.getTime())) return '截止时间无效';
+
   return new Intl.DateTimeFormat('zh-CN', {
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
-  }).format(new Date(deadline));
+  }).format(date);
 }
 
 export function formatCountdown(deadline?: string, now = new Date()): string {

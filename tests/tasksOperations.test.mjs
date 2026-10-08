@@ -20,3 +20,78 @@ test('terminal deadline existence filters use valid deadlines rather than lifecy
 test('sorts remain deterministic for deadline, importance, priority and updated ties', () => { const tasks = [task('b', { importance: 9, deadline: '2026-09-24T10:00:00.000Z', updatedAt: '2026-09-22T10:00:00.000Z' }), task('a', { importance: 9, deadline: '2026-09-23T10:00:00.000Z', updatedAt: '2026-09-22T10:00:00.000Z' })]; assert.deepEqual(sortTasks(tasks, 'deadline', now).map((item) => item.id), ['a', 'b']); assert.deepEqual(sortTasks(tasks, 'importance', now).map((item) => item.id), ['a', 'b']); assert.deepEqual(sortTasks(tasks, 'updated', now).map((item) => item.id), ['a', 'b']); assert.equal(sortTasks(tasks, 'priority', now)[0].id, 'a'); });
 test('matrix eligibility is active-only after lifecycle filtering', () => { const tasks = [task('active'), task('done', { lifecycleStatus: 'completed', progress: 100 })]; assert.deepEqual(filterTasks(tasks, { ...defaultTaskFilters, lifecycle: 'active' }, now).map((item) => item.id), ['active']); });
 test('TASKS UI keeps task terminology, detail category, and deterministic manual CRUD boundaries', () => { const page = readFileSync(new URL('../src/components/TaskPage.tsx', import.meta.url), 'utf8'); const form = readFileSync(new URL('../src/components/TaskForm.tsx', import.meta.url), 'utf8'); const list = readFileSync(new URL('../src/components/TaskList.tsx', import.meta.url), 'utf8'); assert.doesNotMatch(page, /AITaskCommandBar|Gantt|scheduler|项目/); assert.doesNotMatch(form, /项目/); assert.match(form, /预计时长（分钟）/); assert.match(form, /关联目标/); assert.match(form, /前置任务/); assert.match(list, /分类<\/dt><dd>\{getActivityTypeLabel\(detail\.activityType\)\}/); assert.match(page, /tasks=\{normalizedTasks\}|任务/); });
+
+const { createPressureHistoryRecord } = await import('./.compiled/src/utils/pressureHistory.js');
+
+test('editing completed task details preserves its original completion time', () => {
+  const completedAt = '2026-09-21T09:00:00.000Z';
+  const original = task('done', { lifecycleStatus: 'completed', progress: 100, taskProgress: 100, completedAt });
+  const editedAt = now.toISOString();
+  const edited = applyTaskEditLifecycle(original, input({ title: 'Corrected title', lifecycleStatus: 'completed', completedAt: editedAt }), editedAt);
+  assert.equal(edited.completedAt, completedAt);
+  assert.equal(edited.updatedAt, editedAt);
+  assert.equal(edited.title, 'Corrected title');
+  assert.equal(edited.progress, 100);
+  assert.equal(edited.taskProgress, 100);
+  assert.equal(edited.abandonedAt, undefined);
+  assert.equal(original.title, 'done');
+  assert.equal(original.completedAt, completedAt);
+});
+
+test('editing abandoned task details preserves its original abandonment time', () => {
+  const abandonedAt = '2026-09-21T09:00:00.000Z';
+  const original = task('abandoned', { lifecycleStatus: 'abandoned', abandonedAt });
+  const editedAt = now.toISOString();
+  const edited = applyTaskEditLifecycle(original, input({ description: 'Added context', lifecycleStatus: 'abandoned' }), editedAt);
+  assert.equal(edited.abandonedAt, abandonedAt);
+  assert.equal(edited.updatedAt, editedAt);
+  assert.equal(edited.description, 'Added context');
+  assert.equal(edited.completedAt, undefined);
+  assert.equal(original.description, undefined);
+  assert.equal(original.abandonedAt, abandonedAt);
+});
+
+test('editing old terminal tasks does not count them as newly resolved in today pressure history', () => {
+  const resolvedAt = '2026-09-20T09:00:00.000Z';
+  const originalTasks = [
+    task('done', { lifecycleStatus: 'completed', progress: 100, completedAt: resolvedAt }),
+    task('abandoned', { lifecycleStatus: 'abandoned', abandonedAt: resolvedAt }),
+  ];
+  const edited = originalTasks.map((original) => applyTaskEditLifecycle(original, input({ lifecycleStatus: original.lifecycleStatus, nextAction: 'Updated details' }), now.toISOString()));
+  const pressure = { rawPressure: 20, currentTaskLoad: 0, recoveryRelief: 0 };
+  const history = createPressureHistoryRecord(pressure, edited, 'auto', undefined, now);
+  assert.equal(history.completedToday, 0);
+  assert.equal(history.abandonedToday, 0);
+});
+
+test('actual terminal status changes use the new transition time and clear the previous terminal time', () => {
+  const oldTime = '2026-09-21T09:00:00.000Z';
+  const editedAt = now.toISOString();
+  const completed = task('done', { lifecycleStatus: 'completed', progress: 100, completedAt: oldTime });
+  const abandoned = applyTaskEditLifecycle(completed, input({ lifecycleStatus: 'abandoned' }), editedAt);
+  assert.equal(abandoned.abandonedAt, editedAt);
+  assert.equal(abandoned.completedAt, undefined);
+  const recompleted = applyTaskEditLifecycle(abandoned, input({ lifecycleStatus: 'completed' }), editedAt);
+  assert.equal(recompleted.completedAt, editedAt);
+  assert.equal(recompleted.abandonedAt, undefined);
+});
+
+test('reopening then completing a task records a fresh completion time', () => {
+  const completed = task('done', { lifecycleStatus: 'completed', progress: 100, taskProgress: 100, completedAt: '2026-09-21T09:00:00.000Z' });
+  const reopened = applyTaskEditLifecycle(completed, input({ lifecycleStatus: 'active', progress: 100, taskProgress: 100 }), now.toISOString());
+  assert.equal(reopened.completedAt, undefined);
+  assert.equal(reopened.abandonedAt, undefined);
+  assert.equal(reopened.progress, 0);
+  assert.equal(reopened.taskProgress, 0);
+  const recompletedAt = '2026-09-23T09:00:00.000Z';
+  const recompleted = applyTaskEditLifecycle(reopened, input({ lifecycleStatus: 'completed' }), recompletedAt);
+  assert.equal(recompleted.completedAt, recompletedAt);
+});
+
+test('editing terminal tasks with missing legacy timestamps still supplies a timestamp', () => {
+  const editedAt = now.toISOString();
+  for (const [lifecycleStatus, timestampField] of [['completed', 'completedAt'], ['abandoned', 'abandonedAt']]) {
+    const edited = applyTaskEditLifecycle(task('legacy', { lifecycleStatus }), input({ lifecycleStatus }), editedAt);
+    assert.equal(edited[timestampField], editedAt);
+  }
+});
