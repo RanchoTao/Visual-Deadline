@@ -8,6 +8,20 @@ Contributions are welcome across engineering, design, writing, testing, demos, d
 
 ---
 
+## Public contribution scope
+
+This repository is the **public source and community release** of VD. Some experimental or operational development may happen privately. You can contribute to the code published here; there is no implied right to unpublished internal modules or a guarantee that proposals enter a hosted release.
+
+- Target the public code and documented behavior, not unreleased features.
+- Prefer a small PR with a test or reproduction case.
+- Do not put user data, accounts, provider secrets, production logs, or unredacted private screenshots in an issue or commit.
+- By submitting a contribution for inclusion in this Apache-2.0 repository, you must have rights to contribute it and preserve required third-party notices. This page does not request a copyright assignment or broad relicensing permission.
+- Changing the project's license, rewriting history, or moving commercial modules is **not** part of an ordinary community PR.
+
+See [Community & Cloud](./docs/COMMUNITY_AND_CLOUD.md) and [Public release process](./docs/PUBLIC_RELEASE_PROCESS.md) for intended boundaries.
+
+---
+
 ## Project Setup
 
 ### Requirements
@@ -18,17 +32,21 @@ Contributions are welcome across engineering, design, writing, testing, demos, d
 ### Local development
 
 ```bash
-git clone https://github.com/<your-org-or-username>/Visualized-Deadline.git
-cd Visualized-Deadline
+git clone https://github.com/RanchoTao/Visual-Deadline.git
+cd Visual-Deadline
 npm install
 npm run dev
 ```
 
-### Production build check
+### Verification before a PR
 
 ```bash
+npm run typecheck
+npm test
 npm run build
 ```
+
+If any command cannot run, explain why in the PR; do not imply the check passed.
 
 Before opening a pull request, please run the build command and include the result in the PR description.
 

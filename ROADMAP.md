@@ -1,243 +1,76 @@
-# Visual Deadline Roadmap
+# Visual Deadline roadmap
 
-Visual Deadline (VD) is evolving from a visual deadline prototype into a pressure-aware, local-first life operating system.
+**As of 2026-10-11 · Early-stage project · Roadmap is not a release commitment**
 
-The roadmap is intentionally ambitious, but staged. Each phase should produce a usable product, not just infrastructure.
+VD began as a visual deadline-pressure tool. The active product direction is a personal planning and execution workspace: **NOW → TASKS → PLAN → OPS → REVIEW**.
 
----
+This roadmap separates **code present**, **next validation work**, and **research ideas**. The presence of a component or an acceptance test is not proof that an end-to-end cloud workflow has been deployed and validated.
 
-## v0.x Foundations
+## 1. Present in the public codebase
 
-Goal: stabilize the local-first product shell and make the core idea understandable within seconds.
+| System | Verified source entry points | Limitations |
+| --- | --- | --- |
+| V2 application shell | `src/components/V2AppShell.tsx` | Five primary workspace destinations; some legacy UI remains. |
+| Planning and hierarchy | `src/domain/plan/`, `src/components/PlanPage.tsx` | Still needs real user testing. |
+| Tasks and dependencies | `src/domain/execution/`, `src/domain/ops/` | Domain logic is not autonomous agent execution. |
+| Scheduling | `src/domain/ops/scheduler.ts` | Scheduling outputs require user review and realistic constraints. |
+| Review and history | `src/domain/review/` | Verify retention, persistence and migration in the chosen deployment. |
+| Local backup and account paths | `src/components/DataSafetyPanel.tsx`, `src/domain/account/` | Local vs authenticated cloud behavior must be documented and tested separately. |
+| Server-backed AI | `api/ai.js`, `docs/ai-backend.md` | Provider keys and deployment required; not a general agent guarantee. |
+| Subscription entitlement system | `api/billing-*.js`, `docs/BILLING_RECURRING_V2.md` | Recurring rollout flags default off; live lifecycle acceptance is a separate gate. |
 
-### Product shell
+These paths establish that work exists in the repository, not that every area has passed independent hosted acceptance.
 
-- [ ] Refine Home / Map / Social / Logs / Me navigation.
-- [ ] Improve mobile responsiveness across all primary views.
-- [ ] Add consistent empty states and loading states.
-- [ ] Create a clear first-run onboarding path.
-- [ ] Make “current focus” useful without feeling bossy.
+## 2. Next: make V2 genuinely useful
 
-### Pressure foundations
+### Product experience
 
-- [ ] Stabilize urgency × importance task pressure calculation.
-- [ ] Improve subjective pressure calibration copy.
-- [ ] Add pressure history snapshots.
-- [ ] Add recovery activity modeling.
-- [ ] Make overload and burnout-risk states visually distinct.
+- Make NOW/TASKS/PLAN/OPS/REVIEW understandable without reading architecture documents.
+- Improve mobile use, visual hierarchy, keyboard flows, form validation and accessibility.
+- Demonstrate an end-to-end user journey: capture → plan → execute → review.
+- Replace generic placeholder screenshots with captures of the actual shipped build.
+- Keep pressure visualization useful without producing needless anxiety.
 
-### Data safety
+### Reliability and privacy
 
-- [ ] Harden JSON export/import validation.
-- [ ] Add user-readable backup summaries.
-- [ ] Improve local backup recovery messaging.
-- [ ] Document local storage schema.
-- [ ] Add migration tests for legacy data.
+- Run `npm run typecheck`, `npm test`, and `npm run build` on releases.
+- Test local export/restore and browser cache migration on representative old datasets.
+- Independently verify cloud owner isolation, session handling, and safe credential boundaries.
+- Clearly document what is browser-local versus cloud-synced and how a user can export data.
+- Check and preserve legacy records through backward-compatible transitions.
 
-### Graph foundations
+### Product feedback
 
-- [ ] Improve life map node editing.
-- [ ] Improve social graph layout and readability.
-- [ ] Add relationship metadata editing polish.
-- [ ] Make graph interactions predictable on touchpads and mobile.
+- Recruit a small number of real users and measure task capture, return use, and successful reviews.
+- Identify the single most useful differentiator over a basic todo list.
+- Validate willingness to pay **before** committing to pricing, cloud cost, or heavy administration.
 
-### Documentation and launch assets
+## 3. Later: managed cloud and integrations (conditional)
 
-- [ ] Add polished screenshots.
-- [ ] Add first demo GIFs.
-- [ ] Create a short product video script.
-- [ ] Add contributor-friendly issue templates.
-- [ ] Document the pressure model with diagrams.
+- Improve managed onboarding, backup, failure recovery and cross-device consistency.
+- Perform a real provider sandbox lifecycle before enabling recurring checkout.
+- Define explicit entitlement and AI-usage budgets; do not promise unlimited inference.
+- Publish stable, permission-scoped integration surfaces (calendar, GitHub, MCP) **after** contracts and security checks.
+- Formalize a repeatable reviewed public release process: [PUBLIC_RELEASE_PROCESS.md](./docs/PUBLIC_RELEASE_PROCESS.md).
+- Keep pricing and commercial boundaries transparent: [COMMUNITY_AND_CLOUD.md](./docs/COMMUNITY_AND_CLOUD.md).
 
----
+## 4. Longer-term research and exploration
 
-## v1.0 Productization
+These are research hypotheses, **not supported product features**:
 
-Goal: make VD feel reliable, understandable, and worth starring or trying.
+- Context-aware task decomposition, dynamic reprioritization, and explainable plan changes.
+- Long-term memory with explicit data control, retention and forgetting mechanisms.
+- Planning with uncertainty, attention limits, dependency risk and recovery constraints.
+- User-authorized agents that can execute tasks and verify evidence of completion.
+- A richer life graph connecting projects, obligations, resources and goals.
+- Scenario models for potential consequences of taking on new commitments.
 
-### Experience quality
+Success means users make better decisions and complete relevant work—not just that the system generates more plans.
 
-- [ ] Complete visual design pass across the shell.
-- [ ] Add keyboard-friendly flows for task creation and editing.
-- [ ] Improve accessibility, contrast, focus states, and screen-reader labels.
-- [ ] Add responsive tablet and mobile layouts.
-- [ ] Polish microcopy and emotional tone.
+## Historical references
 
-### Product clarity
+Earlier `v0.x` documentation and local-first pressure/life-graph prototypes remain valuable design history, but should not be mistaken for the current five-view V2 product. See [docs/life-controller/](./docs/life-controller/), [docs/vnext-architecture-audit.md](./docs/vnext-architecture-audit.md), and the repository's prior commits.
 
-- [ ] Create an interactive sample dataset/demo mode.
-- [ ] Add “Why this is pressure” explanations to task recommendations.
-- [ ] Add guided examples for students, founders, creators, and researchers.
-- [ ] Add an in-app glossary for pressure, recovery, domains, and life graph.
+## Release posture
 
-### Reliability
-
-- [ ] Add unit tests for pressure calculations.
-- [ ] Add integration tests for import/export.
-- [ ] Add regression checks for local data migrations.
-- [ ] Add release checklist and versioning policy.
-
-### Distribution
-
-- [ ] Improve GitHub Pages deployment.
-- [ ] Add PWA install support if product experience is ready.
-- [ ] Publish a stable v1.0 release with demo assets.
-- [ ] Create launch post and contributor guide.
-
----
-
-## AI Integration
-
-Goal: add AI assistance without sacrificing user agency or privacy.
-
-### Local-first AI posture
-
-- [ ] Define AI privacy principles.
-- [ ] Show exactly what context is sent to an AI model.
-- [ ] Support redaction before AI analysis.
-- [ ] Design optional local-model compatibility path.
-
-### AI assistant capabilities
-
-- [ ] Daily pressure summary.
-- [ ] Weekly review generation.
-- [ ] Suggested next actions with explanation.
-- [ ] Overloaded life-domain detection.
-- [ ] Relationship follow-up suggestions.
-- [ ] Task decomposition for high-pressure items.
-- [ ] Reflection prompts for abandoned tasks.
-
-### AI evaluation
-
-- [ ] Create example life scenarios.
-- [ ] Evaluate recommendation usefulness and tone.
-- [ ] Detect overly aggressive or guilt-inducing suggestions.
-- [ ] Add safety checks for sensitive personal content.
-
----
-
-## Plugin Ecosystem
-
-Goal: let VD become a platform without losing trust.
-
-### Plugin architecture
-
-- [ ] Define plugin manifest format.
-- [ ] Create plugin lifecycle: install, enable, disable, update, remove.
-- [ ] Add permission model for data domains.
-- [ ] Create plugin sandbox strategy.
-- [ ] Document plugin API boundaries.
-
-### First-party plugin ideas
-
-- [ ] Calendar import.
-- [ ] Markdown task import/export.
-- [ ] GitHub issues pressure adapter.
-- [ ] Habit tracker adapter.
-- [ ] Academic deadline pack.
-- [ ] Finance recurring obligation pack.
-- [ ] Relationship maintenance pack.
-
-### Community ecosystem
-
-- [ ] Add plugin template.
-- [ ] Add plugin examples.
-- [ ] Add plugin review guidelines.
-- [ ] Add marketplace metadata proposal.
-
----
-
-## Social Systems
-
-Goal: represent relationship health and social pressure with nuance.
-
-### Relationship graph
-
-- [ ] Improve social node clustering.
-- [ ] Add interaction recency indicators.
-- [ ] Add relationship strength and trust visualization.
-- [ ] Add optional reminders for neglected relationships.
-- [ ] Add private notes with clear local-first handling.
-
-### Social pressure model
-
-- [ ] Model social obligations separately from tasks.
-- [ ] Identify high-impact relationships needing attention.
-- [ ] Represent emotional closeness without turning people into scores.
-- [ ] Add healthy boundaries and recovery-aware social suggestions.
-
----
-
-## Life Graph
-
-Goal: unify tasks, domains, people, goals, logs, achievements, and time.
-
-### Graph data model
-
-- [ ] Define entities: task, project, goal, domain, person, log, achievement, event.
-- [ ] Define relationships: depends on, supports, blocks, belongs to, affects, requires recovery from.
-- [ ] Build migration path from current life/social graphs.
-
-### Visualization
-
-- [ ] Show pressure propagation across connected nodes.
-- [ ] Highlight overloaded domains.
-- [ ] Show goals unsupported by current actions.
-- [ ] Show tasks disconnected from meaningful goals.
-- [ ] Add time horizon layers: today, week, month, year, life stage.
-
----
-
-## Pressure Engine
-
-Goal: make pressure calculation explainable, adaptable, and useful.
-
-### Model improvements
-
-- [ ] Add nonlinear deadline urgency curves.
-- [ ] Add effort estimates.
-- [ ] Add uncertainty and ambiguity pressure.
-- [ ] Add dependency pressure for blocked tasks.
-- [ ] Add context-switching cost.
-- [ ] Add recovery debt and energy state.
-
-### Explainability
-
-- [ ] Show pressure contribution per task.
-- [ ] Show what changed since yesterday.
-- [ ] Show simulated effect of completing, postponing, or abandoning a task.
-- [ ] Add “why this matters” explanations.
-
-### Calibration
-
-- [ ] Add recurring subjective check-ins.
-- [ ] Learn pressure ratio trends over time.
-- [ ] Detect when the model no longer matches user experience.
-- [ ] Allow manual override with transparent reasoning.
-
----
-
-## Future World-Model Ideas
-
-Goal: help users simulate life pressure before making decisions.
-
-These are exploratory, not near-term promises.
-
-- Future pressure timeline simulation.
-- Deadline collision detection.
-- Life-domain imbalance forecasting.
-- “If I accept this project, what happens?” simulation.
-- Social maintenance load forecasting.
-- Burnout risk scenario planning.
-- Goal-path simulation from current habits and deadlines.
-- AI-generated weekly life map diff.
-- Multi-agent planning where specialized agents represent health, work, finance, social, and recovery perspectives.
-- Personal operating system snapshots for major life stages.
-
----
-
-## Roadmap Principle
-
-VD should only become more powerful if it also becomes more humane.
-
-The goal is not to pressure users into doing more. The goal is to help users see pressure clearly enough to make better decisions.
+VD is independently developed and early-stage. Feature priorities, license strategy for future **owned** code, pricing, and publication cadence may change. Published Apache-2.0 versions retain their existing grants. No paid tier or delivery date is promised here.
