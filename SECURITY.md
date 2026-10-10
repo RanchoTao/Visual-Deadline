@@ -6,7 +6,7 @@ Visual Deadline (VD) is a pressure-aware life operating system. Because it can c
 
 ## Supported Versions
 
-VD is currently early-stage. Security fixes will focus on the active `main` branch unless release branches are introduced later.
+VD is early-stage. Report issues affecting a published version and include the affected commit or deployed URL. Security fixes generally target the active `main` branch; deployment and release support should not be assumed for older snapshots.
 
 | Version | Supported |
 | --- | --- |
@@ -68,14 +68,14 @@ This means VD should prefer:
 
 ## Local-First Data Principles
 
-The current application stores user data in the browser by default. This includes tasks, pressure calibration, achievements, profile data, life map nodes, social graph nodes, logs, and backup snapshots.
+VD has browser-local features **and** implemented authentication / Supabase cloud data paths. Guest and signed-in data flows are not identical; the actual destination depends on the feature, user session, and deployed configuration. Do not assume all signed-in information stays on one device. Browser-local content can be lost if local browser data is cleared without a backup.
 
 Local-first principles:
 
-- Personal data should remain on the user’s device unless the user explicitly opts into sync or export.
+- Make local and hosted data boundaries visible to users; avoid presenting signed-in cloud storage as purely local.
 - Backups should be portable and human-auditable where practical.
-- Future cloud sync should be optional, transparent, and designed with encryption in mind.
-- Future AI features should clearly explain what context is sent to a model, if any.
+- Test cloud authorization and owner isolation (including Supabase RLS) in the actual deployment, and document retention, backup and deletion behavior.
+- AI features should explain which context is transmitted, which provider receives it, and what user controls exist. Server-side keys must never reach browser bundles.
 - Data migrations should avoid destructive behavior and preserve user trust.
 
 ---
@@ -92,7 +92,8 @@ Please report issues involving:
 - dependency or build-chain vulnerabilities;
 - future plugin permission bypasses;
 - future AI prompt/context leakage;
-- future sync/authentication weaknesses.
+- sync/authentication weaknesses and cross-account access;
+- cloud billing entitlements and webhook authorization flaws.
 
 ---
 
@@ -103,7 +104,7 @@ VD’s long-term security roadmap includes:
 - documented data schema and migration policy;
 - safer backup validation and recovery flows;
 - encrypted export options;
-- optional encrypted sync architecture;
+- evaluation of encrypted sync and explicit key-management tradeoffs;
 - plugin permission manifests;
 - sandboxing for third-party plugins;
 - security review checklist for AI features;
@@ -113,12 +114,10 @@ VD’s long-term security roadmap includes:
 
 ---
 
-## Out of Scope for Early Prototype Reports
+## Current limitations and reporting priority
 
-The following may be treated as lower priority during early development unless paired with a concrete exploit:
+Cloud authentication, owner isolation, accidental user-data exposure, payment/webhook trust boundaries, and provider-secret leakage are **in scope now**, because the repository already contains cloud, AI, and billing code. A feature flag does not make a real vulnerability harmless if a deployment enables the feature.
 
-- missing enterprise compliance certifications;
-- absence of cloud security controls before cloud sync exists;
-- attacks requiring full control of the user’s local machine or browser profile.
+Do not infer end-to-end encryption, compliance certifications, independent audits, penetration tests, backups, or uptime guarantees from this document. Report reproducible security issues privately. Vulnerabilities that require complete control of a user's local machine may be lower priority, but reports are still welcome.
 
-Even when something is out of scope, thoughtful reports are welcome.
+For product and self-host/hosted distinctions, see [Community & Cloud](./docs/COMMUNITY_AND_CLOUD.md).
