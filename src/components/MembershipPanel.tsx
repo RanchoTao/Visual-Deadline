@@ -193,21 +193,21 @@ export function MembershipPanel() {
           const isYearly = plan.code === 'vd_yearly';
           const isBuying = buyingPlan === plan.code;
           return (
-            <article key={plan.code} className={`relative rounded-[1.75rem] p-5 ring-1 ${isYearly ? 'bg-slate-950 text-white ring-slate-900' : 'bg-slate-50/85 text-slate-900 ring-white'}`}>
-              {isYearly ? <span className="absolute right-4 top-4 rounded-full bg-white/12 px-3 py-1 text-xs font-semibold text-white ring-1 ring-white/20">推荐</span> : null}
-              <p className={`text-sm font-semibold ${isYearly ? 'text-slate-300' : 'text-slate-500'}`}>{plan.label}</p>
+            <article key={plan.code} className={`relative rounded-[1.75rem] p-5 ring-1 ${isYearly ? 'bg-sky-50 text-slate-900 ring-sky-200' : 'bg-slate-50/85 text-slate-900 ring-slate-200'}`}>
+              {isYearly ? <span className="absolute right-4 top-4 rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold text-sky-800 ring-1 ring-sky-200">推荐</span> : null}
+              <p className={`text-sm font-semibold ${isYearly ? 'text-slate-600' : 'text-slate-500'}`}>{plan.label}</p>
               <div className="mt-3 flex items-end gap-2">
                 <span className="text-4xl font-semibold tracking-tight">¥{plan.priceCny}</span>
-                <span className={`pb-1 text-sm ${isYearly ? 'text-slate-400' : 'text-slate-500'}`}>/ {plan.durationLabel}</span>
+                <span className={`pb-1 text-sm ${isYearly ? 'text-slate-500' : 'text-slate-500'}`}>/ {plan.durationLabel}</span>
               </div>
-              <p className={`mt-3 text-xs leading-5 ${isYearly ? 'text-slate-300' : 'text-slate-500'}`}>
+              <p className={`mt-3 text-xs leading-5 ${isYearly ? 'text-slate-600' : 'text-slate-500'}`}>
                 {isYearly ? '相比连续购买 12 个月共 ¥228，年费节省 ¥29。' : '适合先体验完整会员身份与后续会员能力。'}
               </p>
               <button
                 type="button"
                 onClick={() => void buy(plan.code)}
                 disabled={!session || Boolean(buyingPlan)}
-                className={`mt-5 w-full rounded-full px-4 py-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${isYearly ? 'bg-white text-slate-950 hover:bg-slate-100' : 'bg-slate-950 text-white hover:bg-slate-800'}`}
+                className={`mt-5 w-full rounded-full px-4 py-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${isYearly ? 'bg-[#31465f] text-white hover:bg-[#26384f]' : 'bg-[#31465f] text-white hover:bg-[#26384f]'}`}
               >
                 {!session ? '登录后开通' : isBuying ? '正在建立订单…' : membershipActive ? `续费 ${plan.label}` : `开通 ${plan.label}`}
               </button>

@@ -214,3 +214,14 @@ textarea {
     animation: none;
   }
 }
+
+/* Consistent, accessible keyboard focus inside the workspace. */
+.vd-workspace :is(button, a, summary, [role="button"], [role="tab"]):focus:not(:focus-visible) { outline: none; }
+.vd-workspace :is(button, a, summary, [role="button"], [role="tab"]):focus-visible {
+  outline: 2px solid var(--vd-workspace-stroke-focus);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 4px rgba(125,167,210,.1);
+}
+.vd-workspace details > summary { border: 0; border-radius: .875rem; }
+.vd-workspace input[aria-invalid="true"] { border-color: #fda4af !important; }
+.vd-workspace .vd-native-date-picker { border: 0 !important; box-shadow: none !important; padding: 0 !important; }

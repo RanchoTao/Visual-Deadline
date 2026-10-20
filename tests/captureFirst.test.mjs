@@ -126,3 +126,22 @@ test('workspace visual tokens unify controls and animate only real AI wait state
   assert.match(panel, /vd-field/);
   for (const source of [plan, ops, review]) assert.match(source, /vd-subpanel|vd-surface/);
 });
+
+test('workspace dates and active states are browser-locale independent', () => {
+  const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
+  const field = readFileSync(new URL('../src/components/LocalizedDateField.tsx', import.meta.url), 'utf8');
+  const plan = readFileSync(new URL('../src/components/PlanPage.tsx', import.meta.url), 'utf8');
+  const capture = readFileSync(new URL('../src/components/CaptureIntakePanel.tsx', import.meta.url), 'utf8');
+  const ops = readFileSync(new URL('../src/components/OpsPage.tsx', import.meta.url), 'utf8');
+  const review = readFileSync(new URL('../src/components/ReviewPage.tsx', import.meta.url), 'utf8');
+  const member = readFileSync(new URL('../src/components/MembershipPanel.tsx', import.meta.url), 'utf8');
+  for (const page of [plan,capture,ops]) assert.doesNotMatch(page, /type="date"|type="datetime-local"/);
+  assert.match(field, /选择日期/);
+  assert.match(field, /mode === 'date'/);
+  assert.match(css, /:focus-visible/);
+  assert.match(css, /:focus:not\(:focus-visible\)/);
+  assert.match(plan, /ring-sky-200 font-semibold/);
+  assert.match(ops, /formatWorkspaceTimezone/);
+  assert.match(review, /总览/);
+  assert.match(member, /bg-sky-50 text-slate-900/);
+});
