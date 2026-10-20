@@ -6,6 +6,11 @@ const DEEPSEEK_PROVIDER = 'deepseek';
 const SUPPORTED_MODES = new Set(['task_advice', 'daily_plan', 'pressure_analysis', 'capture_interpret', 'goal_decompose']);
 const dailyRequestCounts = new Map();
 
+// Keep ordinary advice responsive while allowing structured multi-task captures time to finish.
+export function getAIRequestTimeoutMs(mode) {
+  return mode === 'capture_interpret' || mode === 'goal_decompose' ? 90_000 : 30_000;
+}
+
 function sendJson(response, status, body) {
   response.status(status).setHeader('Content-Type', 'application/json');
   response.end(JSON.stringify(body));
@@ -116,14 +121,17 @@ function buildUserContent(payload) {
 async function callDeepSeek(payload) {
   const apiKey = readEnv('DEEPSEEK_API_KEY');
   const baseUrl = readEnv('DEEPSEEK_BASE_URL') || 'https://api.deepseek.com';
-  const model = readEnv('DEEPSEEK_MODEL') || 'deepseek-chat';
+  const model = readEnv('DEEPSEEK_MODEL') || 'deepseek-flash';
   const provider = readEnv('AI_PROVIDER') || DEEPSEEK_PROVIDER;
 
   if (provider !== DEEPSEEK_PROVIDER) throw new Error('UNSUPPORTED_PROVIDER');
   if (!apiKey) throw new Error('DEEPSEEK_API_KEY_MISSING');
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30_000);
+  const timeoutMs = getAIRequestTimeoutMs(payload.mode);
+  const startedAt = Date.now();
+  let succeeded = false;
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(`${baseUrl.replace(/\/+$/, '')}/chat/completions`, {
@@ -166,9 +174,27 @@ async function callDeepSeek(payload) {
     const content = data?.choices?.[0]?.message?.content?.trim();
     if (!content) throw new Error('DeepSeek 未返回有效内容。');
 
+    succeeded = true;
     return { content, model };
+  } catch (error) {
+    // Never log prompt contents, user identifiers, or API credentials.
+    console.error('[VD_API_AI_EXECUTION_FAILED]', {
+      mode: payload.mode,
+      elapsedMs: Date.now() - startedAt,
+      timeoutMs,
+      timedOut: controller.signal.aborted,
+      status: Number.isInteger(error?.status) ? error.status : null,
+    });
+    throw error;
   } finally {
     clearTimeout(timeoutId);
+    if (succeeded) {
+      console.info('[VD_API_AI_EXECUTION_OK]', {
+        mode: payload.mode,
+        elapsedMs: Date.now() - startedAt,
+        timeoutMs,
+      });
+    }
   }
 }
 

@@ -53,7 +53,7 @@ const LARGE_HEADER_STATUS_CODES = new Set([431, 494]);
 const LARGE_HEADER_MESSAGE = 'VD Cloud AI 请求失败：请求头过大或登录状态异常。请重新登录；如果仍然失败，请清除本地缓存后再试。';
 
 export function getProviderDefaults(provider: AIProvider): Pick<AISettings, 'baseUrl' | 'model'> {
-  if (provider === 'deepseek-compatible') return { baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' };
+  if (provider === 'deepseek-compatible') return { baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-flash' };
   return { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' };
 }
 

@@ -8,6 +8,6 @@ export function buildCaptureInterpretUserPrompt(capture: CaptureInput, tasks: Ta
   return JSON.stringify({ capture: { text: capture.text, links: capture.links, assets: capture.assets.map(({ id, kind, name, mimeType, size, durationSeconds, availability, semanticCoverage }) => ({ id, kind, name, mimeType, size, durationSeconds, availability, semanticCoverage })) }, activeTasks: tasks.slice(0, 40).map(({ id, title, deadline }) => ({ id, title, deadline })), activeGoals: goals.slice(0, 30).map(({ id, title }) => ({ id, title })), currentDateTime: now.toISOString(), timezone }, null, 2);
 }
 export async function interpretCapture(settings: AISettings, capture: CaptureInput, tasks: Task[], goals: Goal[], now: Date, timezone: string): Promise<{ interpretation: CaptureInterpretation; model?: string }> {
-  const content = await requestChatCompletion(settings, captureInterpretSystemPrompt, buildCaptureInterpretUserPrompt(capture, tasks, goals, now, timezone), { mode: 'capture_interpret', context: { tasks: tasks.slice(0, 40), goals: goals.slice(0, 30) } });
+  const content = await requestChatCompletion(settings, captureInterpretSystemPrompt, buildCaptureInterpretUserPrompt(capture, tasks, goals, now, timezone), { mode: 'capture_interpret' });
   return { interpretation: parseCaptureInterpretation(content, capture), model: settings.model };
 }
