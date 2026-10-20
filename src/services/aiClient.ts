@@ -30,6 +30,7 @@ export interface BackendAIResponse {
 interface RequestChatCompletionOptions {
   mode?: BackendAIMode;
   context?: BackendAIRequest['context'];
+  signal?: AbortSignal;
 }
 
 export interface AICompletionResult {
@@ -137,7 +138,7 @@ function getLargeHeaderMessage(status: number): string | undefined {
   return LARGE_HEADER_STATUS_CODES.has(status) ? LARGE_HEADER_MESSAGE : undefined;
 }
 
-export async function callBackendAI(request: BackendAIRequest): Promise<BackendAIResponse> {
+export async function callBackendAI(request: BackendAIRequest, signal?: AbortSignal): Promise<BackendAIResponse> {
   const session = await supabase.auth.getSession();
   if (!isSafeBearerToken(session?.access_token)) {
     await resetCloudAIAuthState();
@@ -151,6 +152,7 @@ export async function callBackendAI(request: BackendAIRequest): Promise<BackendA
       Authorization: `Bearer ${session.access_token}`,
     },
     body: JSON.stringify(request),
+    signal,
   });
 
   const responseText = await response.text();
@@ -167,7 +169,7 @@ export async function callBackendAI(request: BackendAIRequest): Promise<BackendA
   return payload;
 }
 
-async function requestBrowserChatCompletion(settings: AISettings, systemPrompt: string, userPrompt: string): Promise<AICompletionResult> {
+async function requestBrowserChatCompletion(settings: AISettings, systemPrompt: string, userPrompt: string, signal?: AbortSignal): Promise<AICompletionResult> {
   const normalized = normalizeAISettings(settings);
   if (!normalized.apiKey.trim()) throw new Error('缺少 API Key，请先完成 AI 设置。');
   if (!normalized.baseUrl.trim()) throw new Error('缺少服务地址，请检查 AI 设置。');
@@ -188,6 +190,7 @@ async function requestBrowserChatCompletion(settings: AISettings, systemPrompt: 
       ],
       temperature: 0.2,
     }),
+    signal,
   });
 
   const responseText = await response.text();
@@ -210,12 +213,12 @@ export async function requestChatCompletion(settings: AISettings, systemPrompt: 
 
 export async function requestChatCompletionWithProvenance(settings: AISettings, systemPrompt: string, userPrompt: string, options: RequestChatCompletionOptions = {}): Promise<AICompletionResult> {
   const normalized = normalizeAISettings(settings);
-  if (normalized.apiKey.trim()) return requestBrowserChatCompletion(normalized, systemPrompt, userPrompt);
+  if (normalized.apiKey.trim()) return requestBrowserChatCompletion(normalized, systemPrompt, userPrompt, options.signal);
 
   const response = await callBackendAI({
     mode: options.mode ?? 'task_advice',
     message: buildBackendMessage(systemPrompt, userPrompt),
     context: options.context,
-  });
+  }, options.signal);
   return { content: response.content, generatedAt: new Date().toISOString(), model: response.model, provider: response.provider };
 }

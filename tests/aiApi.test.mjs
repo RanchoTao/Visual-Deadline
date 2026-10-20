@@ -64,7 +64,7 @@ test('capture interpreter sends existing tasks and goals only once', () => {
   const source = readFileSync(new URL('../src/domain/capture/interpreter.ts', import.meta.url), 'utf8');
   assert.match(source, /activeTasks: tasks\.slice\(0, 40\)/);
   assert.match(source, /activeGoals: goals\.slice\(0, 30\)/);
-  assert.match(source, /\{ mode: 'capture_interpret' \}/);
+  assert.match(source, /\{ mode: 'capture_interpret', signal \}/);
   assert.doesNotMatch(source, /context: \{ tasks: tasks\.slice/);
 });
 
