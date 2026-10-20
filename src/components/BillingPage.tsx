@@ -105,7 +105,7 @@ export function BillingPage({ session }: { session: SupabaseSession }) {
         ) : <p className="mt-4 rounded-xl bg-zinc-50 px-4 py-3 text-sm text-zinc-500">目前没有自动续费订阅。</p>}
 
         {current ? <div className="mt-4 flex flex-wrap gap-2">
-          <button type="button" onClick={() => void portal('overview')} disabled={Boolean(busy)} className="rounded-lg bg-zinc-950 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">管理订阅</button>
+          <button type="button" onClick={() => void portal('overview')} disabled={Boolean(busy)} className="rounded-lg bg-[#31465f] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">管理订阅</button>
           <button type="button" onClick={() => void portal('update_payment')} disabled={Boolean(busy)} className="rounded-lg border border-zinc-200 px-4 py-2 text-sm font-semibold disabled:opacity-50">更新付款方式</button>
           <button type="button" onClick={() => void portal('cancel')} disabled={Boolean(busy)} className="rounded-lg border border-zinc-200 px-4 py-2 text-sm font-semibold disabled:opacity-50">取消订阅 / 管理账单</button>
         </div> : null}
@@ -120,7 +120,7 @@ export function BillingPage({ session }: { session: SupabaseSession }) {
         <div className="mt-3 divide-y divide-zinc-100">{snapshot?.payments.length ? snapshot.payments.map((payment) => <div key={payment.id} className="flex items-center justify-between gap-4 py-3"><div><p className="text-sm font-medium">{payment.kind === 'renewal' ? '订阅续费' : '订阅付款'}</p><p className="mt-1 text-xs text-zinc-400">{dateTime(payment.occurred_at)}</p></div><div className="text-right"><p className="text-sm font-semibold">{money(payment.currency, payment.total_minor)}</p><p className="mt-1 text-xs text-zinc-500">{PAYMENT_LABEL[payment.status]}</p></div></div>) : <p className="py-3 text-sm text-zinc-500">暂无自动续费付款记录。</p>}</div>
       </section>
 
-      <details className="rounded-2xl border border-zinc-200 bg-white p-4"><summary className="cursor-pointer text-sm font-semibold">旧版一次性会员（兼容）</summary><div className="mt-4"><MembershipPanel /></div></details>
+      <details className="rounded-2xl border border-zinc-200 bg-white p-4"><summary className="cursor-pointer rounded-xl px-2 py-1 text-sm font-semibold text-slate-700 hover:bg-slate-50">旧版一次性会员（兼容）</summary><div className="mt-4"><MembershipPanel /></div></details>
     </div>
   );
 }

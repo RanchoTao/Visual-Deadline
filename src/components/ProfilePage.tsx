@@ -124,7 +124,7 @@ export function ProfilePage({ profile, onProfileChange, reminderSettings, onRemi
             <p className="text-xs font-semibold tracking-[0.22em] text-slate-400">订阅 / 账单</p>
             <h3 className="mt-2 text-base font-semibold text-slate-900">会员与付款记录</h3>
             <p className="mt-1 text-xs leading-5 text-slate-500">订阅、历史一次性会员和付款记录统一由订阅与账单处理；这里不会重复提供支付入口。</p>
-            <button type="button" onClick={onOpenBilling} className="mt-4 rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white">打开订阅与账单</button>
+            <button type="button" onClick={onOpenBilling} className="mt-4 rounded-full bg-[#31465f] px-4 py-2 text-sm font-semibold text-white">打开订阅与账单</button>
           </article>
           <article className="rounded-3xl bg-white/75 p-4 ring-1 ring-white/80">
             <p className="text-xs font-semibold tracking-[0.22em] text-slate-400">集成 / 提醒</p>
@@ -147,7 +147,7 @@ export function ProfilePage({ profile, onProfileChange, reminderSettings, onRemi
               <p className="mt-1 text-xs leading-5 text-slate-500">登录后也可以随时查看 VD（Visual Deadline）如何处理与保护你的数据，以及你使用产品需要了解的基本规则。</p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <a href="/privacy" className="inline-flex items-center justify-center rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-slate-200">查看隐私政策</a>
+              <a href="/privacy" className="inline-flex items-center justify-center rounded-full bg-[#31465f] px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-slate-200">查看隐私政策</a>
               <a href="/terms" className="inline-flex items-center justify-center rounded-full bg-white/85 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200">查看用户协议</a>
             </div>
           </div>
