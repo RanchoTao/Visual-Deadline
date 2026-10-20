@@ -81,3 +81,26 @@ test('capture UI contracts fully reset cancel state, render review-only sections
   assert.match(composer, /setLinkNotice\('请输入有效的 http\/https URL。'\)/); assert.match(composer, /setLinkNotice\('该 URL 已添加。'\)/); assert.match(composer, /setLinkNotice\('最多可添加 10 个 URL。'\)/);
   assert.doesNotMatch(composer, /assets\.forEach\(\(asset\).*URL\.revokeObjectURL/s); assert.match(composer, /disposeActiveRecorder\(\)/);
 });
+
+test('conversational capture feedback has factual status, accessible cancel, and preserves drafts', () => {
+  const panel = readFileSync(new URL('../src/components/CaptureIntakePanel.tsx', import.meta.url), 'utf8');
+  const status = readFileSync(new URL('../src/components/CaptureProcessingStatus.tsx', import.meta.url), 'utf8');
+  const composer = readFileSync(new URL('../src/components/MultimodalComposer.tsx', import.meta.url), 'utf8');
+  const client = readFileSync(new URL('../src/services/aiClient.ts', import.meta.url), 'utf8');
+  const interpreter = readFileSync(new URL('../src/domain/capture/interpreter.ts', import.meta.url), 'utf8');
+  assert.match(panel, /function stopAnalysis\(\)/);
+  assert.match(panel, /controller\.abort\(\)/);
+  assert.match(panel, /lastIntakeRef\.current = intake/);
+  assert.match(panel, /state === 'error' && lastIntakeRef\.current/);
+  assert.match(panel, /activeRequestRef\.current !== controller/);
+  assert.match(status, /role="status" aria-live="polite"/);
+  assert.match(status, /elapsedSeconds/);
+  assert.match(status, /不会自动创建或修改任务/);
+  assert.match(composer, /submittingRef\.current/);
+  assert.match(composer, /!event\.nativeEvent\.isComposing/);
+  assert.match(composer, /onCancel\?\.\(\)/);
+  assert.match(client, /export async function callBackendAI\(request: BackendAIRequest, signal\?: AbortSignal\)/);
+  assert.match(client, /signal,\s*\}\);/);
+  assert.match(interpreter, /mode: 'capture_interpret', signal/);
+  assert.match(interpreter, /corresponding deadline or targetDate as YYYY-MM-DD/);
+});

@@ -6,6 +6,7 @@ import type { CaptureInput } from '../domain/capture/types';
 
 interface MultimodalComposerProps {
   disabled?: boolean;
+  onCancel?: () => void;
   onSubmit: (intake: MultimodalIntake) => Promise<boolean> | boolean;
   placeholder?: string;
   initialCapture?: CaptureInput;
@@ -19,7 +20,7 @@ function formatSize(bytes: number) {
 
 const statusLabels: Record<IntakeAsset['status'], string> = { queued: '排队中', uploading: '上传中', uploaded: '已上传', processing: '处理中', ready: '可用', error: '失败' };
 
-export function MultimodalComposer({ disabled = false, onSubmit, placeholder, initialCapture }: MultimodalComposerProps) {
+export function MultimodalComposer({ disabled = false, onCancel, onSubmit, placeholder, initialCapture }: MultimodalComposerProps) {
   const [text, setText] = useState('');
   const [links, setLinks] = useState<string[]>([]);
   const [linkInput, setLinkInput] = useState('');
@@ -37,6 +38,7 @@ export function MultimodalComposer({ disabled = false, onSubmit, placeholder, in
   const initialCaptureRef = useRef<string | undefined>(undefined);
   const previewUrlsRef = useRef(new Set<string>());
   const unmountedRef = useRef(false);
+  const submittingRef = useRef(false);
 
   useEffect(() => () => {
     unmountedRef.current = true;
@@ -160,12 +162,17 @@ export function MultimodalComposer({ disabled = false, onSubmit, placeholder, in
   const canSubmit = !disabled && !busy && !recording && Boolean(text.trim() || readyAssets.length || links.length);
 
   async function submit() {
-    if (!canSubmit) return;
-    const accepted = await onSubmit({ intakeId, text: text.trim(), links, assets: readyAssets.map(({ storagePath, kind, mimeType, fileName, size }) => ({ storagePath: storagePath!, kind, mimeType, fileName, size })) });
-    if (!accepted) return;
-    setText('');
-    setAssets([]);
-    setIntakeId(crypto.randomUUID()); setLinks([]);
+    if (!canSubmit || submittingRef.current) return;
+    submittingRef.current = true;
+    try {
+      const accepted = await onSubmit({ intakeId, text: text.trim(), links, assets: readyAssets.map(({ storagePath, kind, mimeType, fileName, size }) => ({ storagePath: storagePath!, kind, mimeType, fileName, size })) });
+      if (!accepted || unmountedRef.current) return;
+      setText('');
+      setAssets([]);
+      setIntakeId(crypto.randomUUID()); setLinks([]);
+    } finally {
+      submittingRef.current = false;
+    }
   }
 
   function addLink() { const value = linkInput.trim(); if (!isHttpUrl(value)) { setLinkNotice('请输入有效的 http/https URL。'); return; } if (links.includes(value)) { setLinkNotice('该 URL 已添加。'); return; } if (links.length >= 10) { setLinkNotice('最多可添加 10 个 URL。'); return; } setLinks((current) => [...current, value]); setLinkInput(''); setLinkNotice(undefined); }
@@ -182,14 +189,14 @@ export function MultimodalComposer({ disabled = false, onSubmit, placeholder, in
         <button type="button" aria-label={`删除 ${asset.fileName}`} onClick={() => void deleteAsset(asset)} className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-slate-400 hover:bg-white">×</button>
       </div>)}
     </div> : null}
-    <textarea value={text} onChange={(event) => setText(event.target.value)} disabled={disabled} rows={3} className="min-h-28 w-full resize-none bg-transparent px-4 py-3 pb-14 text-sm leading-6 outline-none placeholder:text-slate-400" placeholder={placeholder || '描述任务，也可以添加图片、文档或录音…'} />
+    <textarea value={text} onChange={(event) => setText(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void submit(); } }} disabled={disabled} rows={3} aria-label="描述你要整理的任务" className="min-h-28 w-full resize-none bg-transparent px-4 py-3 pb-14 text-sm leading-6 outline-none placeholder:text-slate-400" placeholder={placeholder || '描述任务，也可以添加图片、文档或录音…'} />
     {dragging ? <div className="pointer-events-none absolute inset-0 grid place-items-center rounded-[1.5rem] bg-sky-50/90 text-sm font-semibold text-sky-700">松开以添加附件</div> : null}
     <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between">
       <div className="relative"><button type="button" aria-label="添加附件" onClick={() => setMenuOpen((value) => !value)} disabled={disabled} className="grid h-9 w-9 place-items-center rounded-full bg-slate-100 text-xl text-slate-600 hover:bg-slate-200">+</button>
         {menuOpen ? <div className="absolute bottom-11 left-0 z-10 w-64 rounded-xl bg-white p-2 text-sm shadow-xl ring-1 ring-slate-200"><button type="button" className="w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50" onClick={() => { inputRef.current?.click(); setMenuOpen(false); }}>上传图片或文件</button><div className="mt-1 flex gap-1"><input value={linkInput} onChange={(event) => setLinkInput(event.target.value)} placeholder="https://…" className="min-w-0 flex-1 rounded-lg bg-slate-50 px-2 py-1 text-xs" /><button type="button" onClick={addLink} className="rounded-lg bg-slate-900 px-2 py-1 text-xs text-white">添加链接</button></div>{linkNotice ? <p className="mt-1 text-xs text-rose-600">{linkNotice}</p> : null}</div> : null}
         <input ref={inputRef} hidden multiple type="file" accept={ACCEPTED_INTAKE_TYPES} onChange={(event) => { void queueFiles(Array.from(event.target.files ?? [])); event.target.value = ''; }} />
       </div>
-      {recording ? <div className="flex items-center gap-2 text-xs font-semibold text-rose-600"><span className="animate-pulse">● {String(Math.floor(recordingSeconds / 60)).padStart(2, '0')}:{String(recordingSeconds % 60).padStart(2, '0')}</span><button type="button" onClick={() => stopRecording(false)} className="rounded-full bg-rose-50 px-3 py-2">停止</button><button type="button" onClick={() => stopRecording(true)} className="px-2 py-2 text-slate-500">取消</button></div> : <div className="flex gap-2"><button type="button" aria-label="开始录音" onClick={() => void startRecording()} disabled={disabled || busy} className="grid h-9 w-9 place-items-center rounded-full text-slate-500 hover:bg-slate-100 disabled:opacity-40">🎙</button><button type="button" aria-label="提交" onClick={() => void submit()} disabled={!canSubmit} className="grid h-9 w-9 place-items-center rounded-full bg-slate-900 text-white disabled:bg-slate-200">↑</button></div>}
+      {recording ? <div className="flex items-center gap-2 text-xs font-semibold text-rose-600"><span className="animate-pulse">● {String(Math.floor(recordingSeconds / 60)).padStart(2, '0')}:{String(recordingSeconds % 60).padStart(2, '0')}</span><button type="button" onClick={() => stopRecording(false)} className="rounded-full bg-rose-50 px-3 py-2">停止</button><button type="button" onClick={() => stopRecording(true)} className="px-2 py-2 text-slate-500">取消</button></div> : <div className="flex gap-2"><button type="button" aria-label="开始录音" onClick={() => void startRecording()} disabled={disabled || busy} className="grid h-9 w-9 place-items-center rounded-full text-slate-500 hover:bg-slate-100 disabled:opacity-40">🎙</button><button type="button" aria-label={disabled && onCancel ? '停止生成' : '提交'} onClick={() => disabled ? onCancel?.() : void submit()} disabled={disabled ? !onCancel : !canSubmit} className="grid h-9 w-9 place-items-center rounded-full bg-slate-900 text-white transition hover:bg-slate-700 disabled:bg-slate-200">{disabled && onCancel ? <span aria-hidden="true" className="h-3 w-3 rounded-sm bg-white" /> : '↑'}</button></div>}
     </div>
     {busy ? <p className="absolute bottom-1 left-14 text-[10px] text-sky-600">附件上传或处理中，请稍候…</p> : null}
   </div>;

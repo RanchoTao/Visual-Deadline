@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { interpretCapture } from '../domain/capture/interpreter';
 import { validateCaptureReview } from '../domain/capture/review';
 import type { CaptureGoalDraft, CaptureInput, CaptureInterpretation, CaptureState, CaptureTaskDraft } from '../domain/capture/types';
@@ -6,18 +6,120 @@ import { supabase } from '../lib/supabaseClient';
 import type { AISettings } from '../services/aiClient';
 import type { ActivityType, Goal, Importance, Task } from '../types/task';
 import { MultimodalComposer } from './MultimodalComposer';
+import { CaptureProcessingStatus } from './CaptureProcessingStatus';
 
 const categories: ActivityType[] = ['task','schedule','entertainment','recovery','study','research','fitness','exercise','work','life','social','other'];
 interface Props { ownerUserId: string; settings: AISettings; tasks: Task[]; goals: Goal[]; initialCapture?: CaptureInput; onConfirm: (capture: CaptureInput, interpretation: CaptureInterpretation, model?: string) => Promise<void>; onCancelInitial?: (captureId: string) => void; }
 export function CaptureIntakePanel({ ownerUserId, settings, tasks, goals, initialCapture, onConfirm, onCancelInitial }: Props) {
-  const [state, setState] = useState<CaptureState>('idle'); const [capture, setCapture] = useState<CaptureInput | undefined>(initialCapture); const [review, setReview] = useState<CaptureInterpretation>(); const [model, setModel] = useState<string>(); const [error, setError] = useState<string>();
-  useEffect(() => { if (initialCapture?.ownerKey === `user:${ownerUserId}`) { setCapture(initialCapture); setState('capturing'); } }, [initialCapture, ownerUserId]);
-  async function submit(intake: import('../types/intake').MultimodalIntake): Promise<boolean> { setState('interpreting'); setError(undefined); const uploaded = intake.assets.map((asset, index) => ({ id: `asset-${index}`, kind: asset.kind, name: asset.fileName, mimeType: asset.mimeType, size: asset.size, storagePath: asset.storagePath, availability: 'available' as const, semanticCoverage: 'metadata_only' as const })); const active = capture?.id === intake.intakeId ? { ...capture, text: intake.text, links: intake.links ?? capture.links, assets: [...capture.assets.filter((asset) => asset.availability === 'needs_reattach'), ...uploaded] } : { id: intake.intakeId, ownerKey: `user:${ownerUserId}` as const, text: intake.text, links: intake.links ?? [], assets: uploaded }; try { if (intake.assets.length) { const session = await supabase.auth.getSession(); if (!session?.access_token || session.user?.id !== ownerUserId) throw new Error('登录状态已变化，请重新开始本次整理。'); const response = await fetch('/api/intake', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` }, body: JSON.stringify(intake) }); if (!response.ok) throw new Error((await response.json().catch(() => null))?.error || '附件处理请求失败。'); } const result = await interpretCapture(settings, active, tasks, goals, new Date(), Intl.DateTimeFormat().resolvedOptions().timeZone); const duplicateTitles = new Set(tasks.map((task) => task.title.trim().toLocaleLowerCase())); result.interpretation.tasks = result.interpretation.tasks.map((task) => duplicateTitles.has(task.title.toLocaleLowerCase()) ? { ...task, included: false } : task); setCapture(active); setReview(result.interpretation); setModel(result.model); setState('review'); return true; } catch (cause) { setError(cause instanceof Error ? cause.message : '解释失败'); setState('error'); return false; } }
+  const [state, setState] = useState<CaptureState>('idle');
+  const [capture, setCapture] = useState<CaptureInput | undefined>(initialCapture);
+  const [review, setReview] = useState<CaptureInterpretation>();
+  const [model, setModel] = useState<string>();
+  const [error, setError] = useState<string>();
+  const [startedAt, setStartedAt] = useState<number>();
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const activeRequestRef = useRef<AbortController | undefined>(undefined);
+  const lastIntakeRef = useRef<import('../types/intake').MultimodalIntake | undefined>(undefined);
+
+  useEffect(() => {
+    if (initialCapture?.ownerKey === `user:${ownerUserId}`) {
+      setCapture(initialCapture);
+      setState('capturing');
+    }
+  }, [initialCapture, ownerUserId]);
+
+  // Never let a request started by the previous account update the next account's UI.
+  useEffect(() => () => {
+    activeRequestRef.current?.abort();
+    activeRequestRef.current = undefined;
+  }, [ownerUserId]);
+
+  useEffect(() => {
+    if (startedAt === undefined) return;
+    const ticker = window.setInterval(() => setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000)), 1000);
+    return () => window.clearInterval(ticker);
+  }, [startedAt]);
+
+  async function submit(intake: import('../types/intake').MultimodalIntake): Promise<boolean> {
+    if (activeRequestRef.current) return false;
+    const controller = new AbortController();
+    activeRequestRef.current = controller;
+    lastIntakeRef.current = intake;
+    setStartedAt(Date.now());
+    setElapsedSeconds(0);
+    setState(intake.assets.length ? 'uploading' : 'interpreting');
+    setError(undefined);
+
+    const uploaded = intake.assets.map((asset, index) => ({
+      id: `asset-${index}`, kind: asset.kind, name: asset.fileName,
+      mimeType: asset.mimeType, size: asset.size, storagePath: asset.storagePath,
+      availability: 'available' as const, semanticCoverage: 'metadata_only' as const,
+    }));
+    const active: CaptureInput = capture?.id === intake.intakeId
+      ? { ...capture, text: intake.text, links: intake.links ?? capture.links, assets: [...capture.assets.filter((asset) => asset.availability === 'needs_reattach'), ...uploaded] }
+      : { id: intake.intakeId, ownerKey: `user:${ownerUserId}`, text: intake.text, links: intake.links ?? [], assets: uploaded };
+    try {
+      if (intake.assets.length) {
+        const session = await supabase.auth.getSession();
+        if (controller.signal.aborted || activeRequestRef.current !== controller) return false;
+        if (!session?.access_token || session.user?.id !== ownerUserId) throw new Error('登录状态已变化，请重新开始本次整理。');
+        const response = await fetch('/api/intake', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+          body: JSON.stringify(intake),
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error((await response.json().catch(() => null))?.error || '附件处理请求失败。');
+      }
+      if (controller.signal.aborted || activeRequestRef.current !== controller) return false;
+      setState('interpreting');
+      const result = await interpretCapture(
+        settings, active, tasks, goals, new Date(),
+        Intl.DateTimeFormat().resolvedOptions().timeZone, controller.signal,
+      );
+      if (controller.signal.aborted || activeRequestRef.current !== controller) return false;
+      const duplicateTitles = new Set(tasks.map((task) => task.title.trim().toLocaleLowerCase()));
+      result.interpretation.tasks = result.interpretation.tasks.map((task) =>
+        duplicateTitles.has(task.title.trim().toLocaleLowerCase()) ? { ...task, included: false } : task);
+      setCapture(active);
+      setReview(result.interpretation);
+      setModel(result.model);
+      setState('review');
+      lastIntakeRef.current = undefined;
+      return true;
+    } catch (cause) {
+      if (controller.signal.aborted || activeRequestRef.current !== controller) return false;
+      setError(cause instanceof Error ? cause.message : '整理失败，请重试。');
+      setState('error');
+      return false;
+    } finally {
+      if (activeRequestRef.current === controller) {
+        activeRequestRef.current = undefined;
+        setStartedAt(undefined);
+      }
+    }
+  }
+
+  function stopAnalysis() {
+    if (!activeRequestRef.current) return;
+    const controller = activeRequestRef.current;
+    activeRequestRef.current = undefined;
+    controller.abort();
+    setStartedAt(undefined);
+    setError('已停止整理。原始输入仍在上方，修改后可再次发送。');
+    setState('capturing');
+  }
+
+  function retryAnalysis() {
+    if (lastIntakeRef.current && !activeRequestRef.current) void submit(lastIntakeRef.current);
+  }
   function addTask() { if (!review) return; setReview({ ...review, tasks: [...review.tasks, { id: `manual-${crypto.randomUUID()}`, title: '', importance: 5, category: 'task', dependencyDraftIds: [], included: true, sourceRefs: ['manual:review'] }] }); }
   async function confirm() { if (!review || !capture) return; const errors = validateCaptureReview(review); if (errors.length) { setError(errors.join(' ')); return; } setState('materializing'); try { await onConfirm(capture, review, model); setCapture(undefined); setReview(undefined); setError(undefined); setModel(undefined); setState('idle'); } catch (cause) { setError(cause instanceof Error ? cause.message : '写入失败'); setState('review'); } }
-  function cancel() { if (capture) onCancelInitial?.(capture.id); setCapture(undefined); setReview(undefined); setError(undefined); setModel(undefined); setState('idle'); }
+  function cancel() { activeRequestRef.current?.abort(); activeRequestRef.current = undefined; lastIntakeRef.current = undefined; setStartedAt(undefined); if (capture) onCancelInitial?.(capture.id); setCapture(undefined); setReview(undefined); setError(undefined); setModel(undefined); setState('idle'); }
   if (state === 'review' && review && capture) return <section className="rounded-3xl border border-sky-100 bg-sky-50/50 p-5" data-testid="capture-review"><header><h2 className="font-semibold">确认这次整理</h2><p className="text-xs text-slate-500">包含 {review.goals.filter((x) => x.included).length + review.tasks.filter((x) => x.included).length} 项，排除 {review.goals.filter((x) => !x.included).length + review.tasks.filter((x) => !x.included).length} 项</p></header>{review.notes.length ? <ul className="mt-3 rounded-xl bg-amber-50 p-3 text-xs text-amber-800">{review.notes.map((note) => <li key={note}>{note}</li>)}</ul> : null}<div className="mt-4 space-y-3"><p className="text-xs font-semibold text-slate-500">目标</p>{review.goals.map((goal) => <GoalEditor key={goal.id} goal={goal} onChange={(next) => setReview({ ...review, goals: review.goals.map((item) => item.id === goal.id ? next : item) })} />)}<div className="flex items-center justify-between"><p className="text-xs font-semibold text-slate-500">任务</p><button type="button" onClick={addTask} className="text-sm font-semibold text-sky-700">＋ 添加任务</button></div>{review.tasks.map((task) => <TaskEditor key={task.id} task={task} allTasks={review.tasks} goals={review.goals} duplicate={tasks.some((existing) => existing.title.trim().toLocaleLowerCase() === task.title.trim().toLocaleLowerCase())} onChange={(next) => setReview({ ...review, tasks: review.tasks.map((item) => item.id === task.id ? next : item) })} />)}<ReviewOnlySections interpretation={review} /></div>{error ? <p className="mt-3 text-sm text-rose-600">{error}</p> : null}<div className="mt-5 flex gap-3"><button type="button" onClick={() => void confirm()} className="rounded-full bg-slate-900 px-5 py-2 text-sm font-semibold text-white">确认并保存</button><button type="button" onClick={cancel} className="text-sm text-slate-500">取消</button></div></section>;
-  return <section className="rounded-3xl border border-slate-200 bg-white/80 p-5" data-testid="capture-intake"><h2 className="font-semibold">说说你现在想推进什么</h2><p className="mb-3 text-sm text-slate-500">可以一次写下多个项目、任务、约定和背景；整理后由你确认。</p>{capture?.assets.filter((asset) => asset.availability === 'needs_reattach').map((asset) => <div key={asset.id} className="mb-2 flex justify-between rounded-lg bg-amber-50 p-2 text-xs text-amber-800"><span>{asset.name} · {asset.mimeType || '未知类型'} · {asset.size ? `${Math.round(asset.size / 1024)} KB` : '大小未知'} · 需要重新添加</span><button type="button" onClick={() => setCapture((current) => current ? { ...current, assets: current.assets.filter((item) => item.id !== asset.id) } : current)}>移除</button></div>)}<MultimodalComposer disabled={state === 'interpreting' || state === 'materializing'} initialCapture={capture} onSubmit={submit} />{error ? <p className="mt-3 text-sm text-rose-600">{error}</p> : null}</section>;
+  return <section className="rounded-3xl border border-slate-200 bg-white/80 p-5" data-testid="capture-intake"><h2 className="font-semibold">说说你现在想推进什么</h2><p className="mb-3 text-sm text-slate-500">可以一次写下多个项目、任务、约定和背景；整理后由你确认。</p>{capture?.assets.filter((asset) => asset.availability === 'needs_reattach').map((asset) => <div key={asset.id} className="mb-2 flex justify-between rounded-lg bg-amber-50 p-2 text-xs text-amber-800"><span>{asset.name} · {asset.mimeType || '未知类型'} · {asset.size ? `${Math.round(asset.size / 1024)} KB` : '大小未知'} · 需要重新添加</span><button type="button" onClick={() => setCapture((current) => current ? { ...current, assets: current.assets.filter((item) => item.id !== asset.id) } : current)}>移除</button></div>)}<MultimodalComposer disabled={state === 'uploading' || state === 'interpreting' || state === 'materializing'} initialCapture={capture} onSubmit={submit} onCancel={state === 'uploading' || state === 'interpreting' ? stopAnalysis : undefined} />
+    {state === 'uploading' || state === 'interpreting' ? <CaptureProcessingStatus stage={state} elapsedSeconds={elapsedSeconds} onStop={stopAnalysis} /> : null}
+    {error ? <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-rose-100 bg-rose-50/70 px-4 py-3" role="alert"><p className="text-sm text-rose-700">{error}</p>{state === 'error' && lastIntakeRef.current ? <button type="button" onClick={retryAnalysis} className="rounded-full border border-rose-200 bg-white px-4 py-2 text-sm font-medium text-rose-700 hover:bg-rose-50">重新整理</button> : null}</div> : null}</section>;
 }
 const clamp = (value: number) => Math.max(1, Math.min(10, Math.round(value || 5))) as Importance;
 function ReviewOnlySections({ interpretation }: { interpretation: CaptureInterpretation }) {
