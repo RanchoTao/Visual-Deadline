@@ -9,6 +9,10 @@ Visual Deadline uses a Vercel Serverless Function at `POST /api/ai` so logged-in
 3. The function validates the AI payload and applies a simple placeholder rate limit of **20 AI requests per user per day**.
 4. The function calls DeepSeek's chat completions endpoint from the backend and returns only the generated content, model, and provider name.
 
+The `/api/ai` handler uses a 30-second provider timeout for short advice, daily plans, and pressure analysis, and a 90-second timeout for multi-item capture interpretation and goal decomposition. The Vercel function has `maxDuration: 120` seconds to leave time for authentication and response handling. A timeout returns HTTP 504 without saving any generated tasks. Structured logs include mode, elapsed time, and timeout status but never the submitted task text or credentials.
+
+Capture interpretation sends a compact snapshot of active task and goal titles in its prompt rather than repeating the complete objects in both `message` and `context`. Existing task and goal data is never modified by this optimization.
+
 The browser never receives `DEEPSEEK_API_KEY`. Developer fallback mode still exists, but it only reads an API key saved in the user's local browser `localStorage`; Visual Deadline does not upload or store that key in Supabase.
 
 ## Vercel environment variables
@@ -20,7 +24,7 @@ Configure these variables in Vercel Project Settings → Environment Variables:
 | `AI_PROVIDER` | `deepseek` | Yes | Currently only `deepseek` is supported. |
 | `DEEPSEEK_API_KEY` | `sk-...` | Yes | Backend-only secret. Do **not** prefix with `VITE_`. |
 | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | Yes | The function posts to `${DEEPSEEK_BASE_URL}/chat/completions`. |
-| `DEEPSEEK_MODEL` | `deepseek-chat` | Yes | DeepSeek chat model used by VD Cloud AI. |
+| `DEEPSEEK_MODEL` | `deepseek-flash` | Yes | DeepSeek chat model used by VD Cloud AI. |
 | `SUPABASE_URL` | `https://<project>.supabase.co` | Yes | Backend Supabase project URL used to verify sessions. Falls back to `VITE_SUPABASE_URL` if absent. |
 | `SUPABASE_ANON_KEY` | `<anon-key>` | Yes | Backend Supabase anon key used with the user's bearer token. Falls back to `VITE_SUPABASE_ANON_KEY` if absent. |
 
@@ -56,6 +60,8 @@ Supported `mode` values:
 - `task_advice`
 - `daily_plan`
 - `pressure_analysis`
+- `capture_interpret`
+- `goal_decompose`
 
 Successful response:
 
@@ -63,7 +69,7 @@ Successful response:
 {
   "ok": true,
   "content": "...",
-  "model": "deepseek-chat",
+  "model": "deepseek-flash",
   "provider": "deepseek"
 }
 ```
@@ -95,7 +101,7 @@ Error responses are frontend-safe JSON objects such as:
    AI_PROVIDER=deepseek
    DEEPSEEK_API_KEY=<deepseek-api-key>
    DEEPSEEK_BASE_URL=https://api.deepseek.com
-   DEEPSEEK_MODEL=deepseek-chat
+   DEEPSEEK_MODEL=deepseek-flash
    ```
 
 3. Run the Vercel dev server so `/api/ai` and Vite are available together:

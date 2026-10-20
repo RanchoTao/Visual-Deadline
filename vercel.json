@@ -1,8 +1,19 @@
 {
+  "functions": {
+    "api/ai.js": {
+      "maxDuration": 120
+    }
+  },
   "crons": [
-    { "path": "/api/billing-reconcile", "schedule": "17 3 * * *" }
+    {
+      "path": "/api/billing-reconcile",
+      "schedule": "17 3 * * *"
+    }
   ],
   "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
   ]
 }
