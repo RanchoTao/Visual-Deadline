@@ -24,14 +24,14 @@ export function CaptureProcessingStatus({ stage, elapsedSeconds, onStop }: Captu
       ? '请求仍在进行中。复杂整理可能需要更长时间，也可以停止后调整输入。'
       : '正在等待 AI 返回目标、任务及约束的结构化结果。';
 
-  return <section data-testid="capture-processing" className="mt-4 rounded-2xl border border-sky-100 bg-gradient-to-br from-sky-50/90 via-white to-white p-4 shadow-sm">
+  return <section data-testid="capture-processing" className="vd-subpanel mt-4 border-sky-100 bg-gradient-to-br from-sky-50/90 via-white to-white p-4">
     <div className="flex items-start justify-between gap-3">
       <div className="flex min-w-0 items-start gap-3">
         <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-slate-900 text-white">
           <LoaderCircle aria-hidden="true" className="h-5 w-5 motion-safe:animate-spin motion-reduce:animate-none" />
         </div>
         <div className="min-w-0">
-          <p role="status" aria-live="polite" className="text-sm font-semibold text-slate-900">{status}</p>
+          <p role="status" aria-live="polite" className="vd-thinking-text text-sm font-semibold">{status}</p>
           <p className="mt-1 text-xs leading-5 text-slate-600">{detail}</p>
         </div>
       </div>

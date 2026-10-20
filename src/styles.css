@@ -129,3 +129,88 @@ textarea {
     transition: none !important;
   }
 }
+
+
+/* Shared, accessible visual language for authenticated workspace only.
+   Keep public marketing, auth and billing outside this scope. */
+:root {
+  --vd-workspace-bg: #f8fafc;
+  --vd-workspace-surface: #ffffff;
+  --vd-workspace-stroke: #dce5ef;
+  --vd-workspace-stroke-focus: #7aa8d5;
+  --vd-workspace-shadow: 0 16px 42px -38px rgba(15, 23, 42, .42), 0 3px 12px -10px rgba(15, 23, 42, .17);
+}
+
+.vd-workspace {
+  background: var(--vd-workspace-bg);
+  color: #0f172a;
+}
+
+.vd-workspace .vd-surface {
+  border: 1px solid var(--vd-workspace-stroke);
+  border-radius: 1.75rem;
+  background: var(--vd-workspace-surface);
+  box-shadow: var(--vd-workspace-shadow);
+}
+
+.vd-workspace .vd-subpanel {
+  border: 1px solid rgba(220, 229, 239, .96);
+  border-radius: 1.25rem;
+  background: rgba(255, 255, 255, .94);
+  box-shadow: 0 8px 22px -24px rgba(15, 23, 42, .3);
+}
+
+/* Explicitly exclude native switches, checkboxes and upload controls. */
+.vd-workspace :is(
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="hidden"]):not([type="color"]),
+  textarea,
+  select
+) {
+  border: 1px solid var(--vd-workspace-stroke);
+  border-radius: .875rem;
+  background-color: rgba(255, 255, 255, .96);
+  color: #1e293b;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .018);
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+.vd-workspace :is(
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="hidden"]):not([type="color"]),
+  textarea,
+  select
+):focus-visible {
+  outline: 2px solid var(--vd-workspace-stroke-focus);
+  outline-offset: 1px;
+  border-color: var(--vd-workspace-stroke-focus);
+  box-shadow: 0 0 0 4px rgba(125, 167, 210, .12);
+}
+
+.vd-workspace :is(input, textarea, select):disabled {
+  background-color: #f1f5f9;
+  color: #64748b;
+  cursor: not-allowed;
+}
+
+.vd-thinking-text {
+  color: #334155;
+  background-image: linear-gradient(100deg, #0f172a 0%, #738eac 35%, #0f172a 68%, #334155 100%);
+  background-size: 210% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: vd-thinking-breath 3.2s ease-in-out infinite;
+}
+
+@keyframes vd-thinking-breath {
+  0%, 100% { opacity: .78; background-position: 0% 50%; }
+  50% { opacity: 1; background-position: 100% 50%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vd-thinking-text {
+    color: #334155;
+    background-image: none;
+    -webkit-text-fill-color: currentColor;
+    animation: none;
+  }
+}

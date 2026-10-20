@@ -104,3 +104,25 @@ test('conversational capture feedback has factual status, accessible cancel, and
   assert.match(interpreter, /mode: 'capture_interpret', signal/);
   assert.match(interpreter, /corresponding deadline or targetDate as YYYY-MM-DD/);
 });
+
+test('workspace visual tokens unify controls and animate only real AI wait state', () => {
+  const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
+  const shell = readFileSync(new URL('../src/components/V2AppShell.tsx', import.meta.url), 'utf8');
+  const status = readFileSync(new URL('../src/components/CaptureProcessingStatus.tsx', import.meta.url), 'utf8');
+  const panel = readFileSync(new URL('../src/components/CaptureIntakePanel.tsx', import.meta.url), 'utf8');
+  const plan = readFileSync(new URL('../src/components/PlanPage.tsx', import.meta.url), 'utf8');
+  const ops = readFileSync(new URL('../src/components/OpsPage.tsx', import.meta.url), 'utf8');
+  const review = readFileSync(new URL('../src/components/ReviewPage.tsx', import.meta.url), 'utf8');
+  assert.match(shell, /className="vd-workspace /);
+  assert.match(css, /--vd-workspace-stroke:/);
+  assert.match(css, /\.vd-workspace :is\(/);
+  assert.match(css, /:not\(\[type="checkbox"\]\)/);
+  assert.match(css, /:focus-visible/);
+  assert.match(css, /\.vd-thinking-text/);
+  assert.match(css, /prefers-reduced-motion: reduce/);
+  assert.match(status, /vd-thinking-text/);
+  assert.match(status, /已等待时间/);
+  assert.match(panel, /vd-surface/);
+  assert.match(panel, /vd-field/);
+  for (const source of [plan, ops, review]) assert.match(source, /vd-subpanel|vd-surface/);
+});
