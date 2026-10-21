@@ -1,0 +1,69 @@
+name: Publish frozen community v1.0.1
+on:
+  push:
+    branches:
+      - ops/community-release-v1.0.1-20261021
+    paths:
+      - .github/workflows/publish-community-v1.0.1.yml
+permissions:
+  contents: write
+concurrency:
+  group: vd-community-release-v1.0.1
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout frozen source
+        uses: actions/checkout@v4
+        with:
+          ref: 0275ff6965abf02187f80eac55ed09ee38375d8c
+          persist-credentials: false
+      - name: Verify release snapshot
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "0275ff6965abf02187f80eac55ed09ee38375d8c"
+          test "$(node -p 'require("./package.json").version')" = "1.0.1"
+          grep -q "Apache License" LICENSE
+      - name: Validate community snapshot
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Typecheck, tests and build
+        run: |
+          npm run typecheck
+          npm test
+          npm run build
+      - name: Publish GitHub Release from pinned commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if gh release view v1.0.1 --repo RanchoTao/Visual-Deadline >/dev/null 2>&1; then
+            echo "Release v1.0.1 already exists; leaving it unchanged."
+            exit 0
+          fi
+          cat > /tmp/vd-release-notes.md <<'RELEASE_NOTES'
+          ## Visual Deadline v1.0.1 — Community Snapshot
+
+          This release freezes the current open-source Visual Deadline code as a community snapshot (2026-10-21).
+
+          ### Included source
+          - Natural-language capture into structured draft tasks and goals, with review-before-save.
+          - Workspace pages for Now, Tasks, Planning, Execution and Review.
+          - Improved AI capture feedback, cancellation/retry, editable deadlines and consistent workspace styling.
+          - Code for authenticated cloud integrations and billing behind configuration and feature gates.
+
+          ### Scope and compatibility
+          - The source code is distributed under Apache License 2.0, subject to applicable third-party notices.
+          - The repository contains source code, **not** user databases, API keys or live SaaS infrastructure.
+          - Self-hosting may require configuring external providers. Implemented billing/AI components are not a promise that third-party services are configured or certified in your environment.
+          - This is a community release; it is not a claim of commercial-production readiness or a service uptime guarantee.
+          - Future community releases may be less frequent while commercial development continues separately under the VDirect name.
+          - This release does not change the running Visual Deadline website, domains, or deployment configuration.
+
+          **Source commit:** `0275ff6965abf02187f80eac55ed09ee38375d8c`
+          RELEASE_NOTES
+          gh release create v1.0.1             --repo RanchoTao/Visual-Deadline             --target 0275ff6965abf02187f80eac55ed09ee38375d8c             --title "Visual Deadline v1.0.1 — Community Snapshot"             --notes-file /tmp/vd-release-notes.md             --latest
