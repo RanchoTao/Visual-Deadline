@@ -34,8 +34,8 @@ async function loadPlanner() {
 function sourceRows(userId) {
   const user = literal(userId);
   return {
-    goals: query(`select data || jsonb_build_object('id', id, 'createdAt', created_at, 'updatedAt', updated_at) entity from public.goals where user_id=${user} order by id`).map((row) => row.entity),
-    tasks: query(`select data || jsonb_build_object('id', id, 'createdAt', created_at, 'updatedAt', updated_at) entity from public.tasks where user_id=${user} order by id`).map((row) => row.entity),
+    goals: query(`select data || jsonb_build_object('id', id, 'createdAt', created_at, 'updatedAt', updated_at) entity from public.goals where user_id=${user} and not (data ? '_vdDeletedAt') order by id`).map((row) => row.entity),
+    tasks: query(`select data || jsonb_build_object('id', id, 'createdAt', created_at, 'updatedAt', updated_at) entity from public.tasks where user_id=${user} and not (data ? '_vdDeletedAt') order by id`).map((row) => row.entity),
   };
 }
 function refs(userId) { return query(`select source_entity_type,source_legacy_id,canonical_target_type,canonical_target_id,source_checksum from public.v2_legacy_entity_refs where user_id=${literal(userId)}::uuid and source_system='visualdeadline-v1'`); }

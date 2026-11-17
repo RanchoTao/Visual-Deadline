@@ -11,6 +11,7 @@ import {
 } from './.compiled/src/storage/dataSafety.js';
 import { EXPORTABLE_STORAGE_DOMAINS, STORAGE_DOMAIN_INVENTORY } from './.compiled/src/storage/inventory.js';
 import { storageKeys } from './.compiled/src/storage/schema.js';
+import { guestWorkspaceOwner, userWorkspaceOwner, workspaceStorageAdapter, workspaceStorageKey } from './.compiled/src/storage/workspace.js';
 
 class MemoryStorage {
   constructor(entries = {}) { this.values = new Map(Object.entries(entries)); this.failOnceKey = undefined; }
@@ -407,4 +408,37 @@ test('legacy Visualized-Deadline application name is accepted', () => {
 
 test('backup schema version is explicit and current', () => {
   assert.equal(createCompleteBackup(seededStorage()).schemaVersion, BACKUP_SCHEMA_VERSION);
+});
+
+
+test('authenticated export through the owner adapter includes owner-scoped tasks (F29)', () => {
+  const owner = userWorkspaceOwner('owner-a');
+  const storage = new MemoryStorage({
+    [workspaceStorageKey(owner, storageKeys.tasks)]: JSON.stringify([{ id: 'ta', title: 'A task' }]),
+    [workspaceStorageKey(userWorkspaceOwner('owner-b'), storageKeys.tasks)]: JSON.stringify([{ id: 'tb', title: 'B task' }]),
+    [storageKeys.tasks]: JSON.stringify([{ id: 'tg', title: 'Guest task' }]),
+  });
+  const raw = createCompleteBackup(storage);
+  assert.equal(raw.domains.tasks.payload.map((task) => task.id).join(), 'tg', 'raw adapter only sees the guest workspace');
+  const scoped = createCompleteBackup(workspaceStorageAdapter(storage, owner));
+  assert.equal(scoped.domains.tasks.present, true);
+  assert.deepEqual(scoped.domains.tasks.payload.map((task) => task.id), ['ta']);
+  assert.equal(scoped.metadata.totalRecordCount, 1);
+});
+
+test('owner-scoped restore writes only into the active owner workspace', () => {
+  const source = createCompleteBackup(seededStorage());
+  const owner = userWorkspaceOwner('owner-a');
+  const guestTasks = JSON.stringify([{ id: 'guest-only' }]);
+  const target = new MemoryStorage({ [storageKeys.tasks]: guestTasks });
+  const result = restoreBackup(workspaceStorageAdapter(target, owner), source);
+  assert.equal(result.ok, true);
+  assert.equal(target.getItem(storageKeys.tasks), guestTasks, 'guest workspace untouched');
+  assert.deepEqual(JSON.parse(target.getItem(workspaceStorageKey(owner, storageKeys.tasks))).map((task) => task.id), ['t1']);
+  assert.equal(target.getItem(workspaceStorageKey(userWorkspaceOwner('owner-b'), storageKeys.tasks)), null);
+});
+
+test('guest owner adapter is the legacy storage unchanged', () => {
+  const storage = new MemoryStorage();
+  assert.equal(workspaceStorageAdapter(storage, guestWorkspaceOwner()), storage);
 });

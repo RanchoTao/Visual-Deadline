@@ -6,7 +6,9 @@ import { toAccountReminderPreferences, type AccountReminderPreferences } from '.
 import type { LifeEvent } from '../types/lifeController';
 import { normalizeLifeEvents } from '../domain/life-controller';
 import { SupabaseRestError, supabase, type SupabaseSession } from './supabaseClient';
-import { assertWorkspaceSessionOwner, type WorkspaceOwner } from '../storage/workspace';
+import { assertWorkspaceSessionOwner, workspaceStorageKey, type WorkspaceOwner } from '../storage/workspace';
+import { browserStorageAdapter } from '../storage/dataSafety';
+import { parseRemoteRow, RecordSyncChannel, type PendingDelete, type PendingDeleteStore, type RecordSyncTransport, type RemoteMeta, type RemoteRecord, type SyncableRecord } from '../domain/sync/recordSync';
 import type { OpsState } from '../domain/ops/types';
 import { mergeReviewStates, normalizeReviewState } from '../domain/review/normalization';
 import { collectReviewRowPages } from '../domain/review/pagination';
@@ -61,6 +63,9 @@ const REVIEW_PAGE_SIZE = 500;
 export interface CloudData {
   tasks: Task[];
   goals: Goal[];
+  /** Row-level snapshots including tombstones; feed these to the record sync channels. */
+  tasksRemote: RemoteRecord<Task>[];
+  goalsRemote: RemoteRecord<Goal>[];
   pressureHistory: PressureHistoryRecord[];
   profile: UserProfile | null;
   pressureCalibration: PressureCalibrationSnapshot | null;
@@ -126,9 +131,21 @@ function rowFromEntity<T extends { id: string }>(entity: T, userId: string) {
   return { id: entity.id, user_id: userId, data: entity, updated_at: new Date().toISOString() };
 }
 
+const JSON_ROW_PAGE_SIZE = 500;
+const chunked = <T,>(values: readonly T[], size = 100): T[][] => Array.from({ length: Math.ceil(values.length / size) }, (_, index) => values.slice(index * size, index * size + size));
+
+async function loadJsonRowPages<T>(table: 'tasks' | 'goals' | 'pressure_logs', session: SupabaseSession): Promise<JsonRow<T>[]> {
+  return collectReviewRowPages((offset) => supabase.restPage<JsonRow<T>[]>(`${table}?select=id,user_id,data,updated_at&user_id=eq.${encode(session.user.id)}&order=id.asc&limit=${JSON_ROW_PAGE_SIZE}&offset=${offset}`, { method: 'GET' }, session));
+}
+
 async function loadJsonRows<T>(table: 'tasks' | 'goals' | 'pressure_logs', session: SupabaseSession): Promise<T[]> {
-  const rows = await supabase.rest<JsonRow<T>[]>(`${table}?select=id,user_id,data,updated_at&user_id=eq.${encode(session.user.id)}`, { method: 'GET' }, session);
+  const rows = await loadJsonRowPages<T>(table, session);
   return rows.map((row) => row.data).filter(Boolean);
+}
+
+async function loadRemoteRecords<T>(table: 'tasks' | 'goals', session: SupabaseSession): Promise<RemoteRecord<T>[]> {
+  const rows = await loadJsonRowPages<T>(table, session);
+  return rows.map((row) => parseRemoteRow<T>(row)).filter((row): row is RemoteRecord<T> => row !== null);
 }
 
 async function replaceJsonRows<T extends { id: string }>(table: 'tasks' | 'goals' | 'pressure_logs', values: T[], session: SupabaseSession): Promise<void> {
@@ -144,8 +161,8 @@ export async function loadCloudData(session: SupabaseSession, owner: WorkspaceOw
   assertWorkspaceSessionOwner(owner, session.user.id);
   return withCloudSyncErrors((async () => {
     const [tasks, goals, pressureHistory, profiles, reviewRecords, reviewEvents, reviewArchiveEvents, reviewTombstones, notifications] = await Promise.all([
-      loadJsonRows<Task>('tasks', session),
-      loadJsonRows<Goal>('goals', session),
+      loadRemoteRecords<Task>('tasks', session),
+      loadRemoteRecords<Goal>('goals', session),
       loadJsonRows<PressureHistoryRecord>('pressure_logs', session),
       supabase.rest<ProfileRow[]>(`profiles?select=id,user_id,email,display_name,avatar_url,avatar_storage_path,data,updated_at&user_id=eq.${encode(session.user.id)}&limit=1`, { method: 'GET' }, session),
       loadAllReviewRows<ReviewRecordRow>('review_records', 'id,user_id,data', 'id.asc', session),
@@ -160,8 +177,10 @@ export async function loadCloudData(session: SupabaseSession, owner: WorkspaceOw
     // Complete the legacy profile-to-row migration before a later profile save can remove the legacy payload.
     if (profileData?.reviewState) await saveCloudReviewState(reviewState, session, owner);
     return {
-      tasks,
-      goals,
+      tasks: tasks.filter((row) => !row.deletedAt).map((row) => row.data),
+      goals: goals.filter((row) => !row.deletedAt).map((row) => row.data),
+      tasksRemote: tasks,
+      goalsRemote: goals,
       pressureHistory,
       profile: profileData?.profile ? { ...profileData.profile, avatarUrl: profiles[0]?.avatar_url ?? undefined, avatarDataUrl: undefined } as UserProfile : null,
       pressureCalibration: profileData?.pressureCalibration ?? null,
@@ -176,14 +195,80 @@ export async function loadCloudData(session: SupabaseSession, owner: WorkspaceOw
   })());
 }
 
-export async function saveCloudTasks(tasks: Task[], session: SupabaseSession, owner: WorkspaceOwner): Promise<void> {
-  assertWorkspaceSessionOwner(owner, session.user.id);
-  await withCloudSyncErrors(replaceJsonRows('tasks', tasks, session));
+type RecordTable = 'tasks' | 'goals';
+const META_SELECT = 'select=id,updated_at';
+
+function supabaseRecordTransport<T extends SyncableRecord>(table: RecordTable, getSession: () => SupabaseSession, userId: string): RecordSyncTransport<T> {
+  const userFilter = `user_id=eq.${encode(userId)}`;
+  const activeSession = () => {
+    const session = getSession();
+    if (session.user.id !== userId) throw new Error('云同步会话已切换账号，已停止旧账号的写入。');
+    return session;
+  };
+  const toMeta = (rows: { id: string; updated_at: string }[] | null | undefined): RemoteMeta[] => (rows ?? []).map((row) => ({ id: row.id, updatedAt: row.updated_at }));
+  return {
+    async insertIfAbsent(records) {
+      const inserted: RemoteMeta[] = [];
+      for (const chunk of chunked(records)) {
+        const rows = await withCloudSyncErrors(supabase.rest<{ id: string; updated_at: string }[]>(`${table}?${META_SELECT}`, {
+          method: 'POST',
+          headers: { Prefer: 'resolution=ignore-duplicates,return=representation' },
+          body: JSON.stringify(chunk.map((record) => ({ id: record.id, user_id: userId, data: record }))),
+        }, activeSession()));
+        inserted.push(...toMeta(rows));
+      }
+      return inserted;
+    },
+    async updateIfUnchanged(record, baseUpdatedAt) {
+      const rows = await withCloudSyncErrors(supabase.rest<{ id: string; updated_at: string }[]>(`${table}?id=eq.${encode(record.id)}&${userFilter}&updated_at=eq.${encode(baseUpdatedAt)}&${META_SELECT}`, {
+        method: 'PATCH',
+        headers: { Prefer: 'return=representation' },
+        body: JSON.stringify({ data: record }),
+      }, activeSession()));
+      return toMeta(rows)[0] ?? null;
+    },
+    async writeTombstone(id, data) {
+      const rows = await withCloudSyncErrors(supabase.rest<{ id: string; updated_at: string }[]>(`${table}?id=eq.${encode(id)}&${userFilter}&${META_SELECT}`, {
+        method: 'PATCH',
+        headers: { Prefer: 'return=representation' },
+        body: JSON.stringify({ data }),
+      }, activeSession()));
+      return toMeta(rows)[0] ?? null;
+    },
+    async fetch(ids) {
+      if (!ids.length) return [];
+      const results: RemoteRecord<T>[] = [];
+      for (const chunk of chunked(ids)) {
+        const list = chunk.map((id) => `"${id.replace(/"/g, '\\"')}"`).join(',');
+        const rows = await withCloudSyncErrors(supabase.rest<JsonRow<T>[]>(`${table}?select=id,user_id,data,updated_at&${userFilter}&id=in.(${encode(list)})`, { method: 'GET' }, activeSession()));
+        results.push(...(rows ?? []).map((row) => parseRemoteRow<T>(row)).filter((row): row is RemoteRecord<T> => row !== null));
+      }
+      return results;
+    },
+  };
 }
 
-export async function saveCloudGoals(goals: Goal[], session: SupabaseSession, owner: WorkspaceOwner): Promise<void> {
-  assertWorkspaceSessionOwner(owner, session.user.id);
-  await withCloudSyncErrors(replaceJsonRows('goals', goals, session));
+function pendingDeleteStore(owner: WorkspaceOwner, table: RecordTable): PendingDeleteStore {
+  const key = workspaceStorageKey(owner, `visualized-deadline.sync.pending-deletes.${table}`);
+  return {
+    read() {
+      try {
+        const parsed: unknown = JSON.parse(browserStorageAdapter.getItem(key) ?? '[]');
+        return Array.isArray(parsed) ? parsed.filter((entry): entry is PendingDelete => Boolean(entry) && typeof (entry as PendingDelete).id === 'string') : [];
+      } catch { return []; }
+    },
+    write(entries) {
+      if (entries.length) browserStorageAdapter.setItem(key, JSON.stringify(entries));
+      else browserStorageAdapter.removeItem(key);
+    },
+  };
+}
+
+/** One channel per signed-in owner and table; create a new one when the session owner changes. */
+export function createCloudRecordChannel<T extends SyncableRecord>(table: RecordTable, getSession: () => SupabaseSession, owner: WorkspaceOwner, normalize?: (record: T) => T): RecordSyncChannel<T> {
+  const userId = getSession().user.id;
+  assertWorkspaceSessionOwner(owner, userId);
+  return new RecordSyncChannel<T>(supabaseRecordTransport<T>(table, getSession, userId), pendingDeleteStore(owner, table), normalize);
 }
 
 export async function saveCloudPressureHistory(records: PressureHistoryRecord[], session: SupabaseSession, owner: WorkspaceOwner): Promise<void> {

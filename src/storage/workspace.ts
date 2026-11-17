@@ -43,6 +43,20 @@ export function workspaceStorageKey(owner: WorkspaceOwner, legacyKey: string): s
   return owner.kind === 'guest' ? legacyKey : `vd.workspace.user.${encodeURIComponent(owner.userId)}.${legacyKey}`;
 }
 
+/**
+ * Presents one owner's workspace as if it used the legacy unscoped keys, so backup,
+ * restore and inventory code can operate on exactly the active owner's data.
+ * Guest owners map to the legacy keys unchanged.
+ */
+export function workspaceStorageAdapter(storage: StorageAdapter, owner: WorkspaceOwner): StorageAdapter {
+  if (owner.kind === 'guest') return storage;
+  return {
+    getItem: (key) => storage.getItem(workspaceStorageKey(owner, key)),
+    setItem: (key, value) => storage.setItem(workspaceStorageKey(owner, key), value),
+    removeItem: (key) => storage.removeItem(workspaceStorageKey(owner, key)),
+  };
+}
+
 export function readWorkspaceOwner(storage: StorageAdapter): WorkspaceOwner {
   try {
     const parsed: unknown = JSON.parse(storage.getItem(storageKeys.workspaceActiveOwner) ?? 'null');

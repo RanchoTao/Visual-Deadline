@@ -89,7 +89,7 @@ test('a stale persisted owner is replaced by the authoritative session owner and
 
 test('every cloud sync entrypoint checks the active owner before its first transport call', () => {
   const source = readFileSync('src/lib/cloudSync.ts', 'utf8');
-  for (const name of ['loadCloudData', 'saveCloudTasks', 'saveCloudGoals', 'saveCloudPressureHistory', 'loadCloudLifeEvents', 'upsertCloudLifeEvents', 'deleteCloudLifeEvent', 'saveCloudProfile']) {
+  for (const name of ['loadCloudData', 'saveCloudPressureHistory', 'loadCloudLifeEvents', 'upsertCloudLifeEvents', 'deleteCloudLifeEvent', 'saveCloudProfile']) {
     const start = source.indexOf(`export async function ${name}`);
     const next = source.indexOf('\nexport async function ', start + 1);
     const body = source.slice(start, next === -1 ? undefined : next);
@@ -100,6 +100,16 @@ test('every cloud sync entrypoint checks the active owner before its first trans
     }));
     assert.ok(start >= 0 && guard >= 0 && guard < transport, `${name} must reject owner/session mismatch before transport`);
   }
+});
+
+test('record sync channels bind to the session owner and re-check it on every request', () => {
+  const source = readFileSync('src/lib/cloudSync.ts', 'utf8');
+  const start = source.indexOf('export function createCloudRecordChannel');
+  const body = source.slice(start, source.indexOf('\n}\n', start));
+  assert.ok(start >= 0 && body.indexOf('assertWorkspaceSessionOwner(owner, userId);') < body.indexOf('new RecordSyncChannel'), 'channel creation must assert the owner first');
+  const transport = source.slice(source.indexOf('function supabaseRecordTransport'), start);
+  assert.match(transport, /session\.user\.id !== userId\) throw/);
+  assert.doesNotMatch(transport, /}, session\)\)/, 'every request uses the re-checked active session');
 });
 
 test('failed authentication has no workspace-owner transition or authenticated cache creation', () => {

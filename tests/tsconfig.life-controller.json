@@ -40,6 +40,7 @@
     "../src/domain/plan/**/*.ts",
     "../src/domain/ops/**/*.ts",
     "../src/domain/review/**/*.ts",
+    "../src/domain/sync/**/*.ts",
     "../src/utils/pressureHistory.ts",
     "../src/domain/public/publicRouteTargets.ts",
     "../src/lib/legacySessionTransition.ts",

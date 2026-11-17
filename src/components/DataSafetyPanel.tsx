@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
-import { browserStorageAdapter, createCompleteBackup, formatBackupFilename, getAvailableBackupCount, getRecoveryNotice, notifyStorageChange, parseBackupText, restoreBackup, saveAutoBackup, STORAGE_RECOVERY_EVENT } from '../storage';
+import { useCurrentWorkspaceOwner } from '../hooks/useLocalStorage';
+import { browserStorageAdapter, createCompleteBackup, formatBackupFilename, getAvailableBackupCount, getRecoveryNotice, notifyStorageChange, parseBackupText, restoreBackup, saveAutoBackup, STORAGE_RECOVERY_EVENT, workspaceStorageAdapter } from '../storage';
 
 function downloadJson(filename: string, content: string): void {
   const blob = new Blob([content], { type: 'application/json;charset=utf-8' });
@@ -18,6 +19,8 @@ export function DataSafetyPanel() {
   const [status, setStatus] = useState(getRecoveryNotice());
   const [statusType, setStatusType] = useState<'info' | 'success' | 'error'>(getRecoveryNotice() ? 'info' : 'success');
   const [backupCount, setBackupCount] = useState(() => getAvailableBackupCount());
+  const owner = useCurrentWorkspaceOwner();
+  const ownerLabel = owner?.kind === 'user' ? '当前登录账号' : '本机访客空间';
 
   useEffect(() => {
     function handleRecovery(event: Event) {
@@ -32,11 +35,22 @@ export function DataSafetyPanel() {
   }, []);
 
   function handleExport() {
-    const envelope = createCompleteBackup(browserStorageAdapter);
+    if (!owner) {
+      setStatus('账号状态尚未就绪，请稍后再导出。');
+      setStatusType('error');
+      return;
+    }
+    const envelope = createCompleteBackup(workspaceStorageAdapter(browserStorageAdapter, owner));
+    if (envelope.metadata.totalRecordCount === 0) {
+      downloadJson(formatBackupFilename(new Date(envelope.metadata.exportedAt)), JSON.stringify(envelope, null, 2));
+      setStatus(`已导出${ownerLabel}的备份，但其中没有任何记录。如果你有任务却看到这条提示，请不要依赖这份备份。`);
+      setStatusType('info');
+      return;
+    }
     downloadJson(formatBackupFilename(new Date(envelope.metadata.exportedAt)), JSON.stringify(envelope, null, 2));
     saveAutoBackup();
     setBackupCount(getAvailableBackupCount());
-    setStatus('已导出完整 JSON 备份，并刷新本地安全快照。');
+    setStatus(`已导出${ownerLabel}的完整 JSON 备份（${envelope.metadata.totalRecordCount} 条记录）。`);
     setStatusType('success');
   }
 
@@ -57,7 +71,12 @@ export function DataSafetyPanel() {
         setStatusType('error');
         return;
       }
-      const result = restoreBackup(browserStorageAdapter, parsed.value);
+      if (!owner) {
+        setStatus('账号状态尚未就绪，请稍后再导入。');
+        setStatusType('error');
+        return;
+      }
+      const result = restoreBackup(workspaceStorageAdapter(browserStorageAdapter, owner), parsed.value);
       if (!result.ok) {
         setStatus(result.error || '导入失败：无法安全恢复备份。');
         setStatusType('error');
@@ -66,7 +85,7 @@ export function DataSafetyPanel() {
       notifyStorageChange();
       saveAutoBackup();
       setBackupCount(getAvailableBackupCount());
-      setStatus(`导入成功：已事务式恢复 ${result.restoredDomainCount} 个数据域，并保留导入前回滚快照。`);
+      setStatus(`导入成功：已恢复到${ownerLabel}，共 ${result.restoredDomainCount} 个数据域，并保留导入前回滚快照。`);
       setStatusType('success');
     } catch {
       setStatus('读取文件失败，请确认浏览器允许访问该 JSON 备份。');

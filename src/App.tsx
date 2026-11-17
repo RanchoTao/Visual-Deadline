@@ -41,7 +41,8 @@ import {
 import { appendPressureHistoryRecord, createPressureHistoryRecord, normalizePressureHistory, replaceTaskDerivedPressureHistory } from './utils/pressureHistory';
 import { sortActiveTasksByProgress } from './utils/taskDerivedState';
 import { generateDailyQuest } from './utils/dailyQuest';
-import { deleteCloudLifeEvent, loadCloudData, loadCloudLifeEvents, markCloudNotificationRead, saveCloudGoals, saveCloudPressureHistory, saveCloudProfile, saveCloudReviewState, saveCloudTasks, upsertCloudLifeEvents } from './lib/cloudSync';
+import { createCloudRecordChannel, deleteCloudLifeEvent, loadCloudData, loadCloudLifeEvents, markCloudNotificationRead, saveCloudPressureHistory, saveCloudProfile, saveCloudReviewState, upsertCloudLifeEvents } from './lib/cloudSync';
+import { applySyncOutcome, type RecordSyncChannel, type SyncableRecord } from './domain/sync/recordSync';
 import { assertWorkspaceSessionOwner, browserStorageAdapter, loadValue, mergeAuthenticatedWorkspaceRecords, saveValue, storageKeys, workspaceOnboardingFallback, workspaceOwnerKey } from './storage';
 import { createDefaultLifePreferences, createLifeEvent, deriveLifeState, getLifeEventsForOwner, mergeLifeEvents, planLifeController, setLifeEventsForOwner, undoLatestLifeEvent as removeLatestLifeEvent } from './domain/life-controller';
 import { buildHomeRecommendationComparison } from './domain/execution/homeProjection';
@@ -382,7 +383,10 @@ function AuthenticatedApp() {
   currentAuthoritativeOwnerKey.current = authoritativeOwnerKey;
   const [, setCloudStatus] = useState<string | undefined>();
   const [cloudToast, setCloudToast] = useState<string | undefined>();
-  const [, setCloudError] = useState<string | undefined>();
+  const [cloudError, setCloudError] = useState<string | undefined>();
+  const [syncErrors, setSyncErrors] = useState<Record<string, string>>({});
+  const [syncRetryNonce, setSyncRetryNonce] = useState(0);
+  const [cloudLoadNonce, setCloudLoadNonce] = useState(0);
   const [lifeEventCloudError, setLifeEventCloudError] = useState<string | undefined>();
   const [, setIsCloudLoading] = useState(false);
   const [isCloudReady, setIsCloudReady] = useState(false);
@@ -471,6 +475,50 @@ function AuthenticatedApp() {
     return storedTasks.map((task) => normalizeStoredTask(task));
   }, [tasks]);
   const normalizedGoals = useMemo(() => normalizeGoals(goals), [goals]);
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
+  const syncSessionUserId = session?.user.id;
+  const recordChannels = useMemo(() => {
+    if (!syncSessionUserId || !workspaceOwner || workspaceOwner.kind !== 'user' || workspaceOwner.userId !== syncSessionUserId) return undefined;
+    const getSession = () => {
+      const current = sessionRef.current;
+      if (!current) throw new Error('登录已失效，请重新登录后同步。');
+      return current;
+    };
+    return {
+      tasks: createCloudRecordChannel<Task>('tasks', getSession, workspaceOwner, (task) => normalizeStoredTask(task)),
+      goals: createCloudRecordChannel<Goal>('goals', getSession, workspaceOwner, (goal) => normalizeGoal(goal)),
+    };
+    // Keyed on the owner identity string so channels (and their sync base) survive re-renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [syncSessionUserId, authoritativeOwnerKey]);
+  const setSyncError = useCallback((domain: string, message: string | undefined) => {
+    setSyncErrors((current) => {
+      if (message === undefined ? !(domain in current) : current[domain] === message) return current;
+      const next = { ...current };
+      if (message === undefined) delete next[domain]; else next[domain] = message;
+      return next;
+    });
+  }, []);
+  const pushRecordChannel = useCallback(<T extends SyncableRecord,>(domain: string, channel: RecordSyncChannel<T>, records: T[], apply: (update: (current: T[]) => T[]) => void) => {
+    channel.push(records).then((outcome) => {
+      if (outcome.adopted.length || outcome.removed.length) apply((current) => applySyncOutcome(Array.isArray(current) ? current : [], outcome));
+      if (outcome.conflicts) setCloudToast(`${domain}在其他设备上也有修改，已保留较新的版本。`);
+      setSyncError(domain, undefined);
+      setCloudStatus('已同步到云端');
+    }).catch((error) => {
+      setSyncError(domain, error instanceof Error ? error.message : `${domain}云同步失败。`);
+    });
+  }, [setSyncError]);
+  const retryCloudSync = useCallback(() => {
+    if (!isCloudReady) setCloudLoadNonce((value) => value + 1);
+    else setSyncRetryNonce((value) => value + 1);
+  }, [isCloudReady]);
+  useEffect(() => {
+    const handleOnline = () => setSyncRetryNonce((value) => value + 1);
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, []);
   const normalizedOpsState = useMemo(() => normalizeOpsState(opsState), [opsState]);
   const normalizedReviewState = useMemo(() => normalizeReviewState(reviewState), [reviewState]);
   const normalizedAchievements = useMemo(() => normalizeStoredAchievements(achievements), [achievements]);
@@ -485,14 +533,14 @@ function AuthenticatedApp() {
     notificationReadReceiptFlushInFlight.current = true;
     try {
       const failures = await notificationReadReceiptQueue.current.flush(({ notificationId, readAt }) => markCloudNotificationRead(notificationId, readAt, session, workspaceOwner));
-      if (failures.length > 0 && currentAuthoritativeOwnerKey.current === requestOwnerKey) {
+      if (currentAuthoritativeOwnerKey.current === requestOwnerKey) {
         const error = failures[0];
-        setCloudError(`通知已在本机标记为已读，但云端同步失败；将自动重试：${error instanceof Error ? error.message : '未知错误'}`);
+        setSyncError('通知', failures.length > 0 ? `已在本机标记为已读，云端同步失败：${error instanceof Error ? error.message : '未知错误'}` : undefined);
       }
     } finally {
       notificationReadReceiptFlushInFlight.current = false;
     }
-  }, [authoritativeOwnerKey, isCloudReady, isWorkspaceReady, session, workspaceOwner]);
+  }, [authoritativeOwnerKey, isCloudReady, isWorkspaceReady, session, setSyncError, workspaceOwner]);
 
   useEffect(() => {
     if (!isCloudReady) return;
@@ -500,7 +548,7 @@ function AuthenticatedApp() {
     // Keep failed optimistic read receipts retryable without changing their monotonic true value.
     const intervalId = window.setInterval(() => { void flushNotificationReadReceipts(); }, 30 * 1000);
     return () => window.clearInterval(intervalId);
-  }, [flushNotificationReadReceipts, isCloudReady]);
+  }, [flushNotificationReadReceipts, isCloudReady, syncRetryNonce]);
 
   useEffect(() => {
     if (!isWorkspaceReady) return;
@@ -603,8 +651,9 @@ function AuthenticatedApp() {
       .then(async (cloudData) => {
         if (!isMounted) return;
         isApplyingCloudData.current = true;
-        const mergedTasks = mergeAuthenticatedWorkspaceRecords(workspaceOwner, session.user.id, normalizedTasks, cloudData.tasks);
-        const mergedGoals = mergeAuthenticatedWorkspaceRecords(workspaceOwner, session.user.id, normalizedGoals, cloudData.goals);
+        if (!recordChannels) throw new Error('云同步通道尚未就绪，请重试。');
+        const mergedTasks = recordChannels.tasks.hydrate(normalizedTasks, cloudData.tasksRemote);
+        const mergedGoals = recordChannels.goals.hydrate(normalizedGoals, cloudData.goalsRemote);
         const mergedPressureHistory = mergeAuthenticatedWorkspaceRecords(workspaceOwner, session.user.id, normalizedPressureHistory, cloudData.pressureHistory);
         const mergedSocialNodes = cloudData.socialNodes ?? socialNodes;
         const mergedSocialLayoutVersion = cloudData.socialLayoutVersion ?? socialLayoutVersion;
@@ -642,7 +691,10 @@ function AuthenticatedApp() {
         setCloudStatus(pendingGuestImport ? '检测到本机数据，尚未导入到当前账号。' : '已连接云端工作区');
         if (!pendingGuestImport) setCloudToast('已连接云端工作区');
         window.setTimeout(() => {
-          if (isMounted) isApplyingCloudData.current = false;
+          if (!isMounted) return;
+          isApplyingCloudData.current = false;
+          // Push records that exist only on this device (offline edits) now that the snapshot is applied.
+          setSyncRetryNonce((value) => value + 1);
         }, 0);
       })
       .catch((error) => {
@@ -656,7 +708,7 @@ function AuthenticatedApp() {
     return () => {
       isMounted = false;
     };
-  }, [isAuthLoading, isWorkspaceReady, pendingGuestImport, session?.access_token, session?.user.id, workspaceOwner]);
+  }, [cloudLoadNonce, isAuthLoading, isWorkspaceReady, pendingGuestImport, recordChannels, session?.access_token, session?.user.id, workspaceOwner]);
 
   function confirmGuestImport(): void {
     if (!session || !guestImportPreview) return;
@@ -726,43 +778,39 @@ function AuthenticatedApp() {
   }
 
   useEffect(() => {
-    if (!session || !workspaceOwner || !isWorkspaceReady || !isCloudReady || isApplyingCloudData.current) return;
-    let isCurrent = true;
-    saveCloudTasks(normalizedTasks, session, workspaceOwner).then(() => { if (isCurrent) setCloudStatus('已同步到云端'); }).catch((error) => { if (isCurrent) setCloudError(error instanceof Error ? error.message : '任务云同步失败。'); });
-    return () => { isCurrent = false; };
-  }, [isCloudReady, isWorkspaceReady, normalizedTasks, session, workspaceOwner]);
+    if (!session || !workspaceOwner || !isWorkspaceReady || !isCloudReady || isApplyingCloudData.current || !recordChannels?.tasks.isReady) return;
+    pushRecordChannel('任务', recordChannels.tasks, normalizedTasks, setTasks);
+  }, [isCloudReady, isWorkspaceReady, normalizedTasks, pushRecordChannel, recordChannels, session, syncRetryNonce, workspaceOwner]);
+
+  useEffect(() => {
+    if (!session || !workspaceOwner || !isWorkspaceReady || !isCloudReady || isApplyingCloudData.current || !recordChannels?.goals.isReady) return;
+    pushRecordChannel('目标', recordChannels.goals, normalizedGoals, setGoals);
+  }, [isCloudReady, isWorkspaceReady, normalizedGoals, pushRecordChannel, recordChannels, session, syncRetryNonce, workspaceOwner]);
 
   useEffect(() => {
     if (!session || !workspaceOwner || !isWorkspaceReady || !isCloudReady || isApplyingCloudData.current) return;
     let isCurrent = true;
-    saveCloudGoals(normalizedGoals, session, workspaceOwner).then(() => { if (isCurrent) setCloudStatus('已同步到云端'); }).catch((error) => { if (isCurrent) setCloudError(error instanceof Error ? error.message : '目标云同步失败。'); });
+    saveCloudPressureHistory(normalizedPressureHistory, session, workspaceOwner).then(() => { if (isCurrent) { setCloudStatus('已同步到云端'); setSyncError('压力历史', undefined); } }).catch((error) => { if (isCurrent) setSyncError('压力历史', error instanceof Error ? error.message : '压力历史云同步失败。'); });
     return () => { isCurrent = false; };
-  }, [isCloudReady, isWorkspaceReady, normalizedGoals, session, workspaceOwner]);
-
-  useEffect(() => {
-    if (!session || !workspaceOwner || !isWorkspaceReady || !isCloudReady || isApplyingCloudData.current) return;
-    let isCurrent = true;
-    saveCloudPressureHistory(normalizedPressureHistory, session, workspaceOwner).then(() => { if (isCurrent) setCloudStatus('已同步到云端'); }).catch((error) => { if (isCurrent) setCloudError(error instanceof Error ? error.message : '压力历史云同步失败。'); });
-    return () => { isCurrent = false; };
-  }, [isCloudReady, isWorkspaceReady, normalizedPressureHistory, session, workspaceOwner]);
+  }, [isCloudReady, isWorkspaceReady, normalizedPressureHistory, session, setSyncError, syncRetryNonce, workspaceOwner]);
 
   useEffect(() => {
     if (!session || !workspaceOwner || !isWorkspaceReady || !isCloudReady || isApplyingCloudData.current) return;
     let isCurrent = true;
     saveCloudProfile({ profile: normalizedProfile, pressureCalibration: normalizedPressureCalibration, onboardingComplete, socialNodes, socialLayoutVersion, opsState: normalizedOpsState, reminderSettings }, session, workspaceOwner)
-      .then(() => { if (isCurrent) setCloudStatus('已同步到云端'); })
-      .catch((error) => { if (isCurrent) setCloudError(error instanceof Error ? error.message : '个人设置云同步失败。'); });
+      .then(() => { if (isCurrent) { setCloudStatus('已同步到云端'); setSyncError('个人设置', undefined); } })
+      .catch((error) => { if (isCurrent) setSyncError('个人设置', error instanceof Error ? error.message : '个人设置云同步失败。'); });
     return () => { isCurrent = false; };
-  }, [isCloudReady, isWorkspaceReady, normalizedOpsState, normalizedPressureCalibration, normalizedProfile, onboardingComplete, reminderSettings, session, socialLayoutVersion, socialNodes, workspaceOwner]);
+  }, [isCloudReady, isWorkspaceReady, normalizedOpsState, normalizedPressureCalibration, normalizedProfile, onboardingComplete, reminderSettings, session, setSyncError, socialLayoutVersion, socialNodes, syncRetryNonce, workspaceOwner]);
 
   useEffect(() => {
     if (!session || !workspaceOwner || !isWorkspaceReady || !isCloudReady || isApplyingCloudData.current) return;
     let isCurrent = true;
     saveCloudReviewState(normalizedReviewState, session, workspaceOwner)
-      .then(() => { if (isCurrent) setCloudStatus('回顾历史已同步到云端'); })
-      .catch((error) => { if (isCurrent) setCloudError(error instanceof Error ? error.message : '回顾历史云同步失败。'); });
+      .then(() => { if (isCurrent) { setCloudStatus('回顾历史已同步到云端'); setSyncError('回顾历史', undefined); } })
+      .catch((error) => { if (isCurrent) setSyncError('回顾历史', error instanceof Error ? error.message : '回顾历史云同步失败。'); });
     return () => { isCurrent = false; };
-  }, [isCloudReady, isWorkspaceReady, normalizedReviewState, session, workspaceOwner]);
+  }, [isCloudReady, isWorkspaceReady, normalizedReviewState, session, setSyncError, syncRetryNonce, workspaceOwner]);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => setPressureClock(Date.now()), 60 * 1000);
@@ -1029,6 +1077,7 @@ function AuthenticatedApp() {
     if (!deletedTask || !window.confirm(`永久删除“${deletedTask.title}”？此操作会移除相关目标和前置任务引用。`)) return;
     const now = new Date().toISOString();
     const cleaned = deleteTaskWithReferences(normalizedTasks, normalizedGoals, taskId, now);
+    recordChannels?.tasks.queueDeletes([deletedTask], now);
     setTasks(cleaned.tasks); setGoals(cleaned.goals);
     setOpsState(deleteTaskFromOpsState(normalizedOpsState, taskId, now));
     recalculateTaskDerivedPressureHistory(cleaned.tasks, `删除任务后重算压力曲线：${deletedTask.title}`);
@@ -1077,6 +1126,8 @@ function AuthenticatedApp() {
 
   function deleteGoal(goalId: string) {
     const cleaned = deleteGoalWithPlanCleanup(normalizedGoals, normalizedTasks, goalId);
+    const removedGoals = normalizedGoals.filter((goal) => !cleaned.goals.some((kept) => kept.id === goal.id));
+    recordChannels?.goals.queueDeletes(removedGoals);
     setGoals(cleaned.goals); setTasks(cleaned.tasks);
   }
 
@@ -1273,6 +1324,16 @@ function AuthenticatedApp() {
             <p className="mt-4 rounded-2xl bg-sky-50 px-4 py-3 text-xs leading-5 text-sky-700 ring-1 ring-sky-100">保存后会重算压力映射系数、刷新当前压力指数、记录新的压力曲线节点，并让推荐卡片显示新的校准压力权重。</p>
             <div className="mt-6 flex justify-end gap-3"><button type="button" onClick={() => setIsRecalibrationOpen(false)} className="rounded-full px-5 py-2.5 text-sm font-semibold text-slate-500 hover:bg-slate-100">取消</button><button type="button" onClick={submitRecalibration} className="rounded-full bg-white/85 px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">保存校准</button></div>
           </section>
+        </div>
+      ) : null}
+      {session && (cloudError || Object.keys(syncErrors).length) ? (
+        <div className="fixed bottom-24 right-4 z-[115] flex max-w-sm items-start gap-3 rounded-2xl border border-rose-200 bg-white/95 px-4 py-3 text-sm text-slate-700 shadow-xl shadow-rose-100/60 backdrop-blur md:bottom-6" role="alert">
+          <div className="min-w-0">
+            <p className="font-semibold text-rose-700">云同步未完成</p>
+            <p className="mt-0.5 break-words text-xs leading-5 text-slate-500">{cloudError ?? Object.entries(syncErrors).map(([domain, message]) => `${domain}：${message}`).join('；')}</p>
+            <p className="mt-0.5 text-xs leading-5 text-slate-400">修改已保存在本机，恢复连接后会自动重试。</p>
+          </div>
+          <button type="button" onClick={retryCloudSync} className="shrink-0 rounded-full bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900">重试</button>
         </div>
       ) : null}
       {cloudToast ? (
